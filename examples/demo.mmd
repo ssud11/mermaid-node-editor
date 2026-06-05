@@ -1,7 +1,7 @@
 flowchart TD
     A[Session open] --> B{Authenticated?}
     B -->|yes| C[Load workspace]
-    B -->|no| D[Show login]
+    B -->|no| D[Show]
     D --> A
     subgraph core [Core flow]
         C --> E([Render UI])
