@@ -80,6 +80,6 @@
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.21.5",
     "playwright-core": "^1.60.0",
-    "typescript": "^5.4.5"
+    "typescript": "^6.0.3"
   }
 }
