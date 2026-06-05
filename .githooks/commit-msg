@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Conventional Commits enforcement for mermaid-node-editor.
+# Activated via `core.hooksPath` (auto-set by the npm "prepare" script;
+# or run once: git config core.hooksPath .githooks).
+# Emergency bypass: git commit --no-verify
+
+msg_file="$1"
+subject="$(grep -vE '^[[:space:]]*(#|$)' "$msg_file" | head -n1)"
+
+# Let git's own merge/revert/fixup/squash machinery through unchecked.
+case "$subject" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._-]+\))?!?: .+'
+if ! printf '%s\n' "$subject" | grep -qE "$pattern"; then
+  {
+    echo "✗ Commit message must follow Conventional Commits."
+    echo "  subject : $subject"
+    echo "  expected: <type>(<scope>)?: <description>"
+    echo "  types   : feat fix docs style refactor perf test build ci chore revert"
+    echo "  example : feat(parser): preserve quoted subgraph titles on write-back"
+    echo "  bypass  : git commit --no-verify"
+  } >&2
+  exit 1
+fi
+
+if [ "${#subject}" -gt 72 ]; then
+  echo "✗ Commit subject is ${#subject} chars; keep it ≤ 72." >&2
+  exit 1
+fi
+exit 0

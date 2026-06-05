@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Track GitHub Actions SHA bumps so security updates arrive as reviewable PRs
+  # (per ~/projects/CLAUDE.md CI security baseline).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
