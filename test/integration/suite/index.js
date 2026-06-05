@@ -54,6 +54,84 @@ async function run() {
   assert.ok(text.includes('B[Halt]'), 'node B label should become Halt');
 
   console.log('IT-2 write-back PASS: id-rename propagates to edges + label edit lands via WorkspaceEdit');
+
+  // 6. Multi-file / multi-block / subgraph coverage — scenarios previously only
+  //    inferred from reading the code, now asserted end-to-end.
+  const readText = async (uri) => (await vscode.workspace.openTextDocument(uri)).getText();
+
+  // (a) Active-editor targeting: an edit lands in the FOCUSED file only. This is
+  //     also the split-editor mechanism (the provider only ever sees onSelection).
+  const docA = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[Alpha] --> B[Bee]\n',
+  });
+  const docB = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[Gamma] --> B[Dee]\n',
+  });
+  const edA = await vscode.window.showTextDocument(docA, { preview: false });
+  edA.selection = new vscode.Selection(1, 2, 1, 2);
+  provider.onSelection(edA);
+  await provider.onMessage({ type: 'nodeLabelChanged', id: 'A', value: 'Alpha2' });
+
+  const edB = await vscode.window.showTextDocument(docB, { preview: false });
+  edB.selection = new vscode.Selection(1, 2, 1, 2);
+  provider.onSelection(edB);
+  await provider.onMessage({ type: 'nodeLabelChanged', id: 'A', value: 'Gamma2' });
+
+  const tA = await readText(docA.uri);
+  const tB = await readText(docB.uri);
+  assert.ok(tA.includes('A[Alpha2]') && !tA.includes('Gamma2'), 'edit must land in focused file A only');
+  assert.ok(tB.includes('A[Gamma2]') && !tB.includes('Alpha2'), 'edit must land in focused file B only');
+  console.log('IT-6 PASS: active-editor switching targets the focused file (covers split focus)');
+
+  // (b) Multi-block Markdown: the cursor scopes which block is edited; a node that
+  //     lives in another block can't be touched.
+  const md = [
+    '# Demo', '',
+    '```mermaid', 'graph TD', '  A[First] --> B[Two]', '```', '',
+    'Prose between blocks.', '',
+    '```mermaid', 'graph TD', '  C[Third] --> D[Four]', '```', '',
+  ].join('\n');
+  const mdDoc = await vscode.workspace.openTextDocument({ language: 'markdown', content: md });
+  const mdEd = await vscode.window.showTextDocument(mdDoc, { preview: false });
+
+  mdEd.selection = new vscode.Selection(4, 4, 4, 4); // inside block 1 (node A)
+  provider.onSelection(mdEd);
+  await provider.onMessage({ type: 'nodeLabelChanged', id: 'A', value: 'First2' });
+  await provider.onMessage({ type: 'nodeLabelChanged', id: 'C', value: 'NOPE' }); // C is in block 2 -> no-op
+
+  mdEd.selection = new vscode.Selection(11, 4, 11, 4); // inside block 2 (node C)
+  provider.onSelection(mdEd);
+  await provider.onMessage({ type: 'nodeLabelChanged', id: 'C', value: 'Third2' });
+
+  const mdText = await readText(mdDoc.uri);
+  assert.ok(mdText.includes('A[First2]'), 'block 1 node editable when cursor is in block 1');
+  assert.ok(mdText.includes('C[Third2]'), 'block 2 node editable when cursor is in block 2');
+  assert.ok(!mdText.includes('NOPE'), 'a node outside the cursor block must not be edited');
+  console.log('IT-6 PASS: multi-block Markdown is cursor-scoped to the right block');
+
+  // (c) Cursor outside any block -> empty state -> edit messages are no-ops.
+  mdEd.selection = new vscode.Selection(7, 0, 7, 0); // prose line, between blocks
+  provider.onSelection(mdEd);
+  const before = await readText(mdDoc.uri);
+  await provider.onMessage({ type: 'nodeLabelChanged', id: 'A', value: 'SHOULD_NOT_APPLY' });
+  const after = await readText(mdDoc.uri);
+  assert.strictEqual(after, before, 'with cursor outside any block, an edit message must be a no-op');
+  console.log('IT-6 PASS: cursor outside a block clears + ignores edits');
+
+  // (d) Subgraph title edit end-to-end (through the panel glue, not just the pure fn).
+  const sgDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  subgraph sg [Cluster]\n    A[X] --> B[Y]\n  end\n',
+  });
+  const sgEd = await vscode.window.showTextDocument(sgDoc, { preview: false });
+  sgEd.selection = new vscode.Selection(2, 4, 2, 4);
+  provider.onSelection(sgEd);
+  await provider.onMessage({ type: 'subgraphLabelChanged', id: 'sg', value: 'Renamed' });
+  const sgText = await readText(sgDoc.uri);
+  assert.ok(/subgraph sg \[Renamed\]/.test(sgText), 'subgraph title should write back via the panel glue');
+  console.log('IT-6 PASS: subgraph title edit lands end-to-end');
 }
 
 module.exports = { run };
