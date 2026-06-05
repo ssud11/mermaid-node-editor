@@ -1,6 +1,18 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: ALL ITERATIONS DONE (IT-0→IT-6 + GIF) — ready to publish | next=operator publish | GATE: publish (operator-only) -->
+<!-- STATUS: v1.0.0 release-prep DONE; pre-public steps pending | next=ultrareview→scrub→publish | GATE: operator (resume in a fresh session) -->
+
+## ⏭ Resume here — pre-public steps (new session)
+
+Build complete; **v1.0.0** committed + pushed. `.vsix` = `mermaid-node-editor-1.0.0.vsix`, publisher `ssud11`, repo `github.com/ssud11/mermaid-node-editor` (still **private**). Docs were trimmed to a lean, user-facing README (dev detail → `CONTRIBUTING.md`); commits no longer carry an AI co-author trailer. Remaining before public — all operator-driven:
+
+1. **Ultrareview** — operator runs `/code-review ultra` (user-triggered + billed; an agent cannot launch it). Apply any fixes as clean commits (no trailer).
+2. **Scrub for public** — operator runs `bash ~/scrub-mermaid-for-public.sh`: rewrites history to remove `CLAUDE.md` / `POLISH-STATE.md` / `.claude/` (kept on disk via `.git/info/exclude`) and strip the `Co-Authored-By: Claude` trailer + drop now-empty process-only commits. Review its verification output.
+3. **Force-push** — `git push --force origin main` (the script prints it). An agent can read/verify git state but **cannot run the rewrite or force-push** (harness blocks destructive history ops — that's expected).
+4. **Icon** — `icon.png` is still the generated placeholder; swap if desired.
+5. **Go public + publish** — flip the repo public (the README GIF only renders once public; vsce rewrites the image to a GitHub raw URL), then upload the `.vsix` in the Marketplace UI or `vsce publish`.
+
+Security review (this session): no secrets in tracked files; CSP + CSPRNG nonce, no `innerHTML`, scoped `WorkspaceEdit`, no runtime deps. The only pre-public concern was the AI-process files above (handled by the scrub).
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
