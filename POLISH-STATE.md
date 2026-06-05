@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: IT-3 in-progress | next=IT-3 | GATE: none -->
+<!-- STATUS: IT-3 done | next=IT-4 | GATE: it4-icon-design -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -50,7 +50,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - [x] `repository` field in `package.json` — `github.com/ssud11/mermaid-node-editor` (private; operator-confirmed)
 - [ ] `CHANGELOG.md`
 - [ ] README has screenshot **and** animated GIF
-- [ ] Theme-matched UI (`--vscode-*` tokens; clean empty/unsupported states)
+- [x] Theme-matched UI (`--vscode-*` tokens; clean empty/unsupported states) — signed off IT-1; read-only subgraph id dimmed IT-3
 - [ ] `/code-review` (high) + `/security-review` clean
 - [ ] `vsce package` → `.vsix` builds, no warnings
 - [ ] CI green on push/PR — typecheck + unit + `vsce package` ([.github/workflows/ci.yml](.github/workflows/ci.yml))
@@ -77,7 +77,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - Extend the harness into real assertions: activation · webview message round-trip · `WorkspaceEdit` write-back lands · ID-rename edge propagation end-to-end. Wire `npm run test:integration`.
 - **Accept:** integration suite passes headless. _(continue)_
 
-### IT-3 — UI / theme polish  · _status: TODO_
+### IT-3 — UI / theme polish  · _status: DONE (read-only subgraph id dimmed; design already signed off IT-1)_
 - [style.css](src/webview/style.css) → `var(--vscode-*)` tokens, spacing, focus rings, hover, empty + unsupported states. Re-capture light+dark screenshots.
 - **Accept:** native look both themes; no hard-coded colors. → **REVIEW-GATE** (design taste).
 
@@ -97,6 +97,12 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · IT-3 — UI/theme polish · GATE: it4-icon-design
+- **Built:** `style.css` — read-only subgraph id input now dimmed (`opacity .6` + `not-allowed` cursor), visually distinct from editable fields. Re-ran the visual harness → updated `artifacts/01-04`. The panel was already fully `--vscode-*`-token-based and signed off at IT-1, so no further changes warranted.
+- **Result:** VISUAL PASS; TEST gate green. Design confirmed.
+- **GATE — needs you:** IT-4's Marketplace **icon** (128×128) is a design-taste call. CHANGELOG + gallery metadata I'll do autonomously; the icon needs your direction (or "you generate a candidate").
+- **Resume:** pick an icon direction → I produce icon + CHANGELOG + metadata, then IT-5 (README/GIF).
 
 ### 2026-06-05 · IT-2 — Write-back integration assertions · CONTINUE (no gate)
 - **Built:** test seam — `activate()` now returns `{ provider }`; `MermaidEditorProvider.onMessage` made public. Extended `test/integration/suite/index.js` with end-to-end write-back assertions.
