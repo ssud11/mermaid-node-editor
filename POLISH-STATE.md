@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: not-started | next=IT-0 | GATE: none -->
+<!-- STATUS: IT-0 done | next=IT-1 | GATE: none -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -42,17 +42,17 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 
 ## Publish-ready checklist (definition of done)
 
-- [ ] TEST gate green (typecheck + 22 unit tests + esbuild bundle)
+- [x] TEST gate green (typecheck + 22 unit tests + esbuild bundle) — verified IT-0
 - [ ] **Runtime — automated** `@vscode/test-electron` smoke passes headless under xvfb
 - [ ] **Runtime — operator visual sign-off** at a gate (screenshots: label edit, ID rename→edge propagation, subgraph title, unsupported notice)
 - [ ] `icon` field + `icon.png` (128×128)
-- [ ] `repository` field in `package.json`
+- [x] `repository` field in `package.json` — `github.com/ssud11/mermaid-node-editor` (private; operator-confirmed)
 - [ ] `CHANGELOG.md`
 - [ ] README has screenshot **and** animated GIF
 - [ ] Theme-matched UI (`--vscode-*` tokens; clean empty/unsupported states)
 - [ ] `/code-review` (high) + `/security-review` clean
 - [ ] `vsce package` → `.vsix` builds, no warnings
-- [ ] `git init` + clean history
+- [x] `git init` + clean history — commit c82be81 on `main`, 22 files
 - [ ] **[operator-only gate]** upload/publish the `.vsix` (web UI, or PAT + `vsce publish`)
 
 ---
@@ -61,7 +61,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 
 > Runtime truth first (can invalidate `panel.ts`/`main.js` assumptions), then lock with automation, then polish surface, then package, then harden.
 
-### IT-0 — Baseline + git  · _status: TODO_
+### IT-0 — Baseline + git  · _status: DONE (commit c82be81)_
 - Re-confirm TEST gate green from clean; `git init` + first commit; add `repository` field to `package.json`.
 - **Accept:** green gate; repo initialised; `vsce package --dry-run` stops warning about missing repository. _(no gate — continue)_
 
@@ -84,6 +84,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 
 ### IT-5 — README + GIF demo  · _status: TODO_
 - Screenshot + animated GIF of the edit→write-back flow; feature list; install/usage; supported-shapes table; known limitations.
+- **Repo is PRIVATE** → bundle README images *inside* the `.vsix` (relative paths), NOT `raw.githubusercontent.com` URLs (those need auth and won't render on the Marketplace). Verify images render from the packaged extension.
 - **Accept:** README renders well as a Marketplace landing page. → **REVIEW-GATE** (copy + GIF taste).
 
 ### IT-6 — Hardening + final CHECK  · _status: TODO_
@@ -94,4 +95,9 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
 
-_(empty — first `/polish-iterate` pass appends here)_
+### 2026-06-05 · IT-0 — Baseline + git · CONTINUE (no gate)
+- **Built:** added `repository` field to `package.json` (assumed `github.com/ssud11/mermaid-note-editor.git`); added `artifacts/` + `.claude/settings.local.json` to `.gitignore`.
+- **TEST:** typecheck clean · 22/22 unit tests pass · esbuild → `dist/extension.js` 9.5 kb. Green.
+- **CHECK:** `git init` + initial commit `c82be81` on `main` (22 files; node_modules/dist/out excluded).
+- **Follow-ups for operator:** confirm the GitHub repo name matches the `repository` URL assumption.
+- **Next:** IT-1 (xvfb runtime smoke + screenshots) → will end at a REVIEW-GATE for your visual/F5 sign-off.
