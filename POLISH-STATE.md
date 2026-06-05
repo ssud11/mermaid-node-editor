@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: IT-0 done | next=IT-1 | GATE: none -->
+<!-- STATUS: IT-1 smoke green | next=IT-2 | GATE: it1-visual-signoff -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -44,7 +44,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ## Publish-ready checklist (definition of done)
 
 - [x] TEST gate green (typecheck + 22 unit tests + esbuild bundle) — verified IT-0
-- [ ] **Runtime — automated** `@vscode/test-electron` smoke passes headless under xvfb
+- [x] **Runtime — automated** `@vscode/test-electron` smoke passes headless under xvfb — IT-1, exit 0
 - [ ] **Runtime — operator visual sign-off** at a gate (screenshots: label edit, ID rename→edge propagation, subgraph title, unsupported notice)
 - [ ] `icon` field + `icon.png` (128×128)
 - [x] `repository` field in `package.json` — `github.com/ssud11/mermaid-node-editor` (private; operator-confirmed)
@@ -68,7 +68,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - Re-confirm TEST gate green from clean; `git init` + first commit; add `repository` field to `package.json`.
 - **Accept:** green gate; repo initialised; `vsce package --dry-run` stops warning about missing repository. _(no gate — continue)_
 
-### IT-1 — Runtime smoke + screenshots (xvfb)  · _status: TODO_
+### IT-1 — Runtime smoke + screenshots (xvfb)  · _status: SMOKE DONE → GATE (visual sign-off)_
 - Stand up a minimal `@vscode/test-electron` harness; launch the real extension host headless under `xvfb-run`; open [examples/demo.mmd](examples/demo.mmd); capture screenshots of: panel populated, label edit, ID rename, subgraph title, `sequenceDiagram` unsupported notice → `artifacts/`.
 - Fix obvious breakage in [panel.ts](src/webview/panel.ts) / [main.js](src/webview/main.js).
 - **Accept:** smoke launches; screenshots captured. → **REVIEW-GATE** (your visual/F5 sign-off on the 5 behaviours).
@@ -97,6 +97,16 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · IT-1 — Runtime smoke (xvfb) · REVIEW-GATE: it1-visual-signoff
+- **Built:** `test/integration/runTest.js` + `suite/index.js` — headless extension-host smoke via `@vscode/test-electron`; `npm run test:integration` (xvfb). `.vscode-test/` added to .gitignore; `.vscodeignore` tightened (excludes .github/.githooks/.claude/dev-meta from the `.vsix`).
+- **Bug found + fixed:** the host sets `ELECTRON_RUN_AS_NODE=1`, so the downloaded VS Code launched as plain Node and rejected every flag (`bad option`, exit 9). `runTest.js` now strips it. Tell: `code --version` printed `v24.15.0` (the Node version).
+- **Result — PASS (exit 0):** extension loads + activates; commands `mermaid-node-editor.open/.refresh` registered; `demo.mmd` opens; **`resolveWebviewView` runs clean** (the zero-coverage panel.ts path). Unit gate still 22/22.
+- **REVIEW PACKET — needs you:**
+  - **Design call:** headless *webview screenshots* aren't practical via the extension-test API. Recommend the visual half of "Both" be your **xrdp F5 pass**; the automated smoke covers the runtime/activation path (and runs in CI at IT-2).
+  - **Your visual/F5 sign-off:** open this folder in VS Code on xrdp → F5 → open `examples/demo.mmd`, cursor inside → confirm: panel populates · label edit writes back · ID rename updates all edges · subgraph title edits · `sequenceDiagram` shows the unsupported notice.
+  - **FYI:** one moderate `npm audit` finding via `@vscode/test-electron` (dev-only, transitive); not auto-fixing under `--force` without your ok.
+- **Resume:** set `GATE: none` (add any fixes as new backlog items) → loop continues to IT-2 (turn the smoke into assertions + add the integration job to CI).
 
 ### 2026-06-05 · Config — commit rule + CI · CONTINUE (no gate)
 - **Built:** `.githooks/commit-msg` (Conventional Commits, hard-enforced via `core.hooksPath`, auto-set by npm `prepare`); `.github/workflows/ci.yml` (typecheck + unit + `vsce package`, SHA-pinned, `contents: read`, no publish); `.github/dependabot.yml` (actions + npm). Loop now COMMITs + pushes each green pass.
