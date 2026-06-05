@@ -132,6 +132,24 @@ async function run() {
   const sgText = await readText(sgDoc.uri);
   assert.ok(/subgraph sg \[Renamed\]/.test(sgText), 'subgraph title should write back via the panel glue');
   console.log('IT-6 PASS: subgraph title edit lands end-to-end');
+
+  // (e) A newline in a pasted label is collapsed, not injected into the source.
+  const nlDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[One] --> B[Two]\n',
+  });
+  const nlEd = await vscode.window.showTextDocument(nlDoc, { preview: false });
+  nlEd.selection = new vscode.Selection(1, 4, 1, 4);
+  provider.onSelection(nlEd);
+  await provider.onMessage({ type: 'nodeLabelChanged', id: 'A', value: 'Line1\nLine2' });
+  const nlText = await readText(nlDoc.uri);
+  assert.ok(nlText.includes('A[Line1 Line2]'), 'newline in a label should collapse to a space');
+  assert.ok(!nlText.includes('Line1\nLine2'), 'a label newline must not split the source line');
+  console.log('IT-6 PASS: newline in a pasted label is collapsed, not injected');
+
+  // (f) The 'ready' handshake is handled (previously a silent no-op).
+  await provider.onMessage({ type: 'ready' });
+  console.log('IT-6 PASS: ready handshake handled without error');
 }
 
 module.exports = { run };

@@ -78,8 +78,15 @@ Publishing to the Marketplace requires a publisher account and `vsce publish`.
 
 ## Known limitations
 
-- Edge labels written as `A -- text --> B` (dash-delimited, not `|pipe|`) may add a spurious entry to the read-only connection list. Pipe-form labels are handled correctly.
+The editable fields (label / id / subgraph title) and the safe ID-rename are the supported surface. The **read-only connection list** is a best-effort convenience; its remaining gaps are all flowchart edge-parsing edge cases:
+
+- Edge labels written as `A -- text --> B` (dash-delimited, not `|pipe|`) may add a spurious entry to the connection list. Pipe-form labels are handled correctly.
+- Reversed-direction arrows (`B <-- A`) appear with the direction reversed in the connection list.
+- Fan-out edges written `A & B --> C` are not parsed, so those connections are omitted.
 - Only nodes defined with a bracketed label are editable; bare-referenced ids appear only in connection lists.
+- A node whose id is literally `end` (a Mermaid keyword) is not detected.
+- An unquoted label containing a `]` is read only up to the first `]` — quote such labels.
+- Re-editing a `"`-quoted label that itself contains a `"` is not perfectly round-trip safe.
 
 ## License
 
