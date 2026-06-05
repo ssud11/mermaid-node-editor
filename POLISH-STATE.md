@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: IT-6 fixes done (T1+T2); T3 documented | next=final signoff + GIF | GATE: it6-final-signoff -->
+<!-- STATUS: ALL ITERATIONS DONE (IT-0→IT-6 + GIF) — ready to publish | next=operator publish | GATE: publish (operator-only) -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -49,7 +49,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - [x] `icon` field + `icon.png` (128×128) — **placeholder** (revisit before publish)
 - [x] `repository` field in `package.json` — `github.com/ssud11/mermaid-node-editor` (private; operator-confirmed)
 - [x] `CHANGELOG.md`
-- [ ] README: screenshot ✅ done (`images/panel-dark.png`); animated GIF ⏳ pending (presenting discussion)
+- [x] README: animated GIF hero (`images/demo.gif`) — recorded on xrdp + ffmpeg-optimized
 - [x] Theme-matched UI (`--vscode-*` tokens; clean empty/unsupported states) — signed off IT-1; read-only subgraph id dimmed IT-3
 - [x] `/code-review` (high) + security review — done; T1+T2 fixed, T3 documented
 - [x] `vsce package` → `.vsix` builds, no warnings — 17.99 KB, 11 files, clean
@@ -85,7 +85,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - `icon.png` (128×128) + `icon` field; `galleryBanner`; tidy categories/keywords; `CHANGELOG.md` (Keep-a-Changelog, `0.1.0`).
 - **Accept:** `vsce package --dry-run` clean; icon renders. → **REVIEW-GATE** (icon design).
 
-### IT-5 — README + GIF demo  · _status: README + screenshot DONE; GIF deferred to "presenting" discussion_
+### IT-5 — README + GIF demo  · _status: DONE — animated demo hero (`images/demo.gif`, 5.5s/107KB) recorded + optimized_
 - Screenshot + animated GIF of the edit→write-back flow; feature list; install/usage; supported-shapes table; known limitations.
 - **Repo is PRIVATE** → bundle README images *inside* the `.vsix` (relative paths), NOT `raw.githubusercontent.com` URLs (those need auth and won't render on the Marketplace). Verify images render from the packaged extension.
 - **Accept:** README renders well as a Marketplace landing page. → **REVIEW-GATE** (copy + GIF taste).
@@ -97,6 +97,13 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · IT-5 GIF — animated demo hero · DONE (all roadmap complete)
+- **Recorded** the real extension on the xrdp desktop (Peek → GIF), driving the ID rename `B → Auth`. First take 47s and missed the rename (edited the Label, not the ID); coached ID-vs-Label; second take nailed the ripple.
+- **Processed** with ffmpeg: cropped the empty right, trimmed to the tight action window (6.5–12s), 12fps, scaled 900px, palette-optimized → `images/demo.gif` (5.5s, 107 KB).
+- **Verified (not assumed):** reproduced against the real code that label/id edits preserve `{}` shape — the square brackets in the take were the operator's manual edit, not a bug.
+- **Wired** as the README hero (replaced + removed the static `panel-dark.png`). `.vsix` = 12 files, 120.3 KB, GIF bundled.
+- **IT-0 → IT-6 + GIF all complete.** Only the operator-only publish remains.
 
 ### 2026-06-05 · IT-6 — fixes (T1 + T2) + T3 docs · GATE: it6-final-signoff
 - **Fixed (7):** first-open render race (handle webview `{type:'ready'}`); active-editor guard in `onDidChangeTextEditorSelection`; CSPRNG nonce (`crypto.randomBytes`); newline strip on edited values; `computeIdRename` — collision check now covers edge-referenced ids (no silent merge), skips the directive + subgraph-declaration lines (no keyword/title clobber), and protects arrow operators (single-char `x`/`o` ids safe).
