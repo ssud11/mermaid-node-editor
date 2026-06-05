@@ -12,3 +12,9 @@ esbuild.config.js
 .git/**
 **/.DS_Store
 *.vsix
+.github/**
+.githooks/**
+.claude/**
+POLISH-STATE.md
+CLAUDE.md
+package-lock.json
