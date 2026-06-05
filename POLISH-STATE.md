@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: IT-1 smoke green | next=IT-2 | GATE: it1-visual-signoff -->
+<!-- STATUS: IT-1 smoke+visual green | next=IT-2 | GATE: it1-visual-signoff (screenshots ready) -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -97,6 +97,13 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · IT-1 visual — Playwright webview screenshots · GATE: it1-visual-signoff (screenshots ready)
+- **Built (operator request — "use playwright"):** `test/visual/{harness.html,snap.js}` — renders the REAL webview (style.css + main.js) in chromium via `playwright-core`, reusing this box's chromium-1224 (no download; Gotcha 30 GL flags `--disable-gpu` + `LIBGL_ALWAYS_SOFTWARE=1`). `npm run visual` → 4 PNGs in `artifacts/` + DOM assertions. Local-only (not CI), per operator choice.
+- **Decision resolved:** the earlier "headless webview screenshots impractical" call is superseded — Playwright on the *isolated webview* works well and is the visual layer going forward (also serves IT-3 theme polish).
+- **Result — VISUAL PASS:** screenshots reviewed (by me): panel renders clean + native in dark & light; node/subgraph cards correct; **injection-safe confirmed visually** (`<b>End</b>` + `<img src=x>` render as literal text); unsupported notice correct.
+- **REVIEW PACKET — your sign-off:** open `artifacts/01-populated-dark.png` · `02-populated-light.png` · `03-unsupported-dark.png` · `04-empty-dark.png`. Confirm the design reads right. (A real xrdp F5 is still welcome for true end-to-end, but the wiring is already proven by the test-electron smoke.)
+- **Resume:** "signed off" (+ any design tweaks → IT-3 backlog) → loop continues to IT-2.
 
 ### 2026-06-05 · IT-1 — Runtime smoke (xvfb) · REVIEW-GATE: it1-visual-signoff
 - **Built:** `test/integration/runTest.js` + `suite/index.js` — headless extension-host smoke via `@vscode/test-electron`; `npm run test:integration` (xvfb). `.vscode-test/` added to .gitignore; `.vscodeignore` tightened (excludes .github/.githooks/.claude/dev-meta from the `.vsix`).

@@ -69,6 +69,7 @@
     "build:tests": "tsc -p ./tsconfig.json",
     "test": "npm run build:tests && node --test out/test/*.test.js",
     "test:integration": "node ./test/integration/runTest.js",
+    "visual": "node ./test/visual/snap.js",
     "typecheck": "tsc -p ./tsconfig.json --noEmit",
     "vscode:prepublish": "npm run compile",
     "package": "npx @vscode/vsce package"
@@ -78,6 +79,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.21.5",
+    "playwright-core": "^1.60.0",
     "typescript": "^5.4.5"
   }
 }

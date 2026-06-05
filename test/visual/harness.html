@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Loads the REAL webview assets so the visual test reflects production. -->
+    <link rel="stylesheet" href="../../src/webview/style.css" />
+    <title>webview harness</title>
+    <script>
+      // Stub the VS Code webview bridge so the real main.js runs unchanged.
+      // The Playwright driver dispatches `message` events to feed it data.
+      window.acquireVsCodeApi = () => ({
+        postMessage() {},
+        getState() {},
+        setState() {},
+      });
+    </script>
+  </head>
+  <body>
+    <div id="error" class="error" hidden></div>
+    <div id="root"></div>
+    <script src="../../src/webview/main.js"></script>
+  </body>
+</html>

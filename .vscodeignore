@@ -18,3 +18,4 @@ esbuild.config.js
 POLISH-STATE.md
 CLAUDE.md
 package-lock.json
+artifacts/**

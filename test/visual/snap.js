@@ -1,0 +1,148 @@
+// IT-1/IT-3 visual harness — renders the REAL webview (style.css + main.js) in
+// chromium via playwright-core, feeds sample data, screenshots light + dark, and
+// asserts the DOM renders correctly (incl. no markup injection from labels/ids).
+//
+// Reuses this box's already-installed chromium (no download). Per gotcha-bank
+// Gotcha 30 (xrdp iGPU): run headless with --disable-gpu and LIBGL_ALWAYS_SOFTWARE=1.
+// Output PNGs -> artifacts/ (gitignored), for the operator's gate review.
+const path = require('path');
+const fs = require('fs');
+const assert = require('assert');
+const { chromium } = require('playwright-core');
+
+const HARNESS = 'file://' + path.resolve(__dirname, 'harness.html');
+const OUT = path.resolve(__dirname, '../../artifacts');
+const EXEC =
+  process.env.PW_CHROMIUM ||
+  path.join(process.env.HOME, '.local/share/playwright-chromium-current');
+
+// Representative VS Code theme variables (Dark Modern / Light Modern).
+const COMMON = {
+  '--vscode-font-family': '-apple-system, "Segoe UI", system-ui, sans-serif',
+  '--vscode-font-size': '13px',
+  '--vscode-editor-font-family': '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
+};
+const DARK = {
+  ...COMMON,
+  '--vscode-foreground': '#cccccc',
+  '--vscode-editor-background': '#1e1e1e',
+  '--vscode-sideBar-background': '#181818',
+  '--vscode-descriptionForeground': '#9d9d9d',
+  '--vscode-panel-border': '#2b2b2b',
+  '--vscode-editorWidget-background': '#252526',
+  '--vscode-input-foreground': '#cccccc',
+  '--vscode-input-background': '#313131',
+  '--vscode-input-border': '#3c3c3c',
+  '--vscode-focusBorder': '#0078d4',
+  '--vscode-inputValidation-errorBackground': '#5a1d1d',
+  '--vscode-inputValidation-errorBorder': '#be1100',
+  '--vscode-badge-background': '#616161',
+  '--vscode-badge-foreground': '#ffffff',
+};
+const LIGHT = {
+  ...COMMON,
+  '--vscode-foreground': '#3b3b3b',
+  '--vscode-editor-background': '#ffffff',
+  '--vscode-sideBar-background': '#f8f8f8',
+  '--vscode-descriptionForeground': '#767676',
+  '--vscode-panel-border': '#e5e5e5',
+  '--vscode-editorWidget-background': '#f3f3f3',
+  '--vscode-input-foreground': '#616161',
+  '--vscode-input-background': '#ffffff',
+  '--vscode-input-border': '#cecece',
+  '--vscode-focusBorder': '#0090f1',
+  '--vscode-inputValidation-errorBackground': '#fdf3f3',
+  '--vscode-inputValidation-errorBorder': '#e51400',
+  '--vscode-badge-background': '#c4c4c4',
+  '--vscode-badge-foreground': '#3b3b3b',
+};
+
+const SAMPLE = {
+  startLine: 0,
+  diagramType: 'flowchart',
+  supported: true,
+  fileName: 'demo.mmd',
+  nodes: [
+    { id: 'A', label: 'Start', outgoing: ['B'], incoming: [] },
+    { id: 'B', label: 'Is it valid?', outgoing: ['C', 'D'], incoming: ['A'] },
+    { id: 'C', label: 'Process', outgoing: ['E'], incoming: ['B'] },
+    { id: 'D', label: 'Reject', outgoing: [], incoming: ['B'] },
+    // label + a connection id carrying HTML metachars — must render as text:
+    { id: 'E', label: '<b>End</b>', outgoing: [], incoming: ['C', '<img src=x>'] },
+  ],
+  subgraphs: [{ id: 'flow', label: 'Validation', editable: true }],
+  edgeCount: 5,
+};
+const UNSUPPORTED = {
+  startLine: 0,
+  diagramType: 'sequenceDiagram',
+  supported: false,
+  fileName: 'demo.mmd',
+  nodes: [],
+  subgraphs: [],
+  edgeCount: 0,
+};
+
+async function setTheme(page, vars) {
+  await page.evaluate((v) => {
+    for (const [k, val] of Object.entries(v)) document.documentElement.style.setProperty(k, val);
+    document.body.style.background = 'var(--vscode-editor-background)';
+  }, vars);
+}
+
+async function feed(page, message) {
+  await page.evaluate((msg) => {
+    window.dispatchEvent(new MessageEvent('message', { data: msg }));
+  }, message);
+}
+
+async function shot(page, theme, name, message) {
+  await page.goto(HARNESS);
+  await setTheme(page, theme);
+  if (message) await feed(page, message);
+  await page.waitForTimeout(120);
+  await page.screenshot({ path: path.join(OUT, name), fullPage: true });
+}
+
+(async () => {
+  fs.mkdirSync(OUT, { recursive: true });
+  const browser = await chromium.launch({
+    executablePath: EXEC,
+    headless: true,
+    args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+  });
+  const page = await browser.newPage({ viewport: { width: 340, height: 640 } });
+
+  await shot(page, DARK, '01-populated-dark.png', { type: 'update', block: SAMPLE });
+  await shot(page, LIGHT, '02-populated-light.png', { type: 'update', block: SAMPLE });
+  await shot(page, DARK, '03-unsupported-dark.png', { type: 'update', block: UNSUPPORTED });
+  await shot(page, DARK, '04-empty-dark.png', { type: 'clear' });
+
+  // --- assertions on the populated state ---
+  await page.goto(HARNESS);
+  await setTheme(page, DARK);
+  await feed(page, { type: 'update', block: SAMPLE });
+  await page.waitForTimeout(80);
+
+  const startCount = await page.locator('input[value="Start"]').count();
+  assert.ok(startCount >= 1, 'a node label input with value "Start" should render');
+
+  const injectedEls = await page.locator('b, img').count();
+  assert.strictEqual(injectedEls, 0, 'labels/ids with HTML must render as text, not elements');
+
+  // innerText reflects CSS text-transform:uppercase, so match case-insensitively.
+  const sectionText = await page.locator('.section-title').first().innerText();
+  assert.ok(/nodes \(5\)/i.test(sectionText), 'should show "Nodes (5)" section title');
+
+  // unsupported notice
+  await feed(page, { type: 'update', block: UNSUPPORTED });
+  await page.waitForTimeout(80);
+  const body = await page.locator('body').innerText();
+  assert.ok(/not supported in v1/.test(body), 'unsupported diagram should show the v1 notice');
+
+  await browser.close();
+  console.log('VISUAL PASS: 4 screenshots in artifacts/ + DOM assertions (no injection, sections, unsupported)');
+})().catch((err) => {
+  console.error('Visual harness failed:', err);
+  process.exit(1);
+});
