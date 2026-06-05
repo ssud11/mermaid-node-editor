@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: IT-4 done | next=IT-5 | GATE: none -->
+<!-- STATUS: IT-5 README+shot done (GIF deferred) | next=IT-6 | GATE: none -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -49,7 +49,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - [x] `icon` field + `icon.png` (128×128) — **placeholder** (revisit before publish)
 - [x] `repository` field in `package.json` — `github.com/ssud11/mermaid-node-editor` (private; operator-confirmed)
 - [x] `CHANGELOG.md`
-- [ ] README has screenshot **and** animated GIF
+- [ ] README: screenshot ✅ done (`images/panel-dark.png`); animated GIF ⏳ pending (presenting discussion)
 - [x] Theme-matched UI (`--vscode-*` tokens; clean empty/unsupported states) — signed off IT-1; read-only subgraph id dimmed IT-3
 - [ ] `/code-review` (high) + `/security-review` clean
 - [x] `vsce package` → `.vsix` builds, no warnings — 17.99 KB, 11 files, clean
@@ -85,7 +85,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - `icon.png` (128×128) + `icon` field; `galleryBanner`; tidy categories/keywords; `CHANGELOG.md` (Keep-a-Changelog, `0.1.0`).
 - **Accept:** `vsce package --dry-run` clean; icon renders. → **REVIEW-GATE** (icon design).
 
-### IT-5 — README + GIF demo  · _status: TODO_
+### IT-5 — README + GIF demo  · _status: README + screenshot DONE; GIF deferred to "presenting" discussion_
 - Screenshot + animated GIF of the edit→write-back flow; feature list; install/usage; supported-shapes table; known limitations.
 - **Repo is PRIVATE** → bundle README images *inside* the `.vsix` (relative paths), NOT `raw.githubusercontent.com` URLs (those need auth and won't render on the Marketplace). Verify images render from the packaged extension.
 - **Accept:** README renders well as a Marketplace landing page. → **REVIEW-GATE** (copy + GIF taste).
@@ -97,6 +97,19 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · IT-5 — README screenshot (GIF deferred) · CONTINUE
+- **Built:** added a centered panel screenshot (`images/panel-dark.png`, from the Playwright dark render) to the README. README was already comprehensive (features/usage/shapes/architecture/limitations) — left otherwise as-is.
+- **Result:** `vsce package` clean — 12 files, 40.32 KB; image bundled.
+- **Private-repo caveat:** vsce may rewrite the relative image to a GitHub raw URL needing auth → verify rendering at publish, or it resolves once the repo goes public.
+- **Deferred (operator):** the animated **GIF** demo — operator wants to design the "cool live code-moving" demo as a dedicated presenting discussion after IT-6.
+- **Next:** IT-6 (/code-review + /security-review + final .vsix).
+
+### 2026-06-05 · Test hardening — multi-file/block/subgraph coverage · CONTINUE (no gate)
+- **Why:** operator asked whether the multi-file / multi-block / subgraph behaviors were actually tested. They were NOT — only inferred from reading the code (`getBlockAtLine` had no direct test). Verification-discipline gap, owned and closed.
+- **Built:** 4 new end-to-end assertions in `test/integration/suite/index.js`: (a) active-editor switching targets the focused file (covers split focus — same code path); (b) multi-block Markdown is cursor-scoped (a node outside the cursor's block can't be edited); (c) cursor outside any block → clear + edit no-op; (d) subgraph title write-back through the panel glue.
+- **Result — all 4 PASS, no bugs.** The code behaves as described; now asserted under xvfb. Suite = IT-1 smoke + IT-2 write-back + these 4.
+- **Bonus:** the commit-msg hook rejected a 74-char subject (limit 72) — hard enforcement confirmed working live.
 
 ### 2026-06-05 · IT-4 — Marketplace icon + CHANGELOG + metadata · CONTINUE (no gate)
 - **Built:** `icon.png` (128×128, **placeholder** per operator — node-graph glyph; source `assets/icon.svg` + `assets/render-icon.js` via playwright-core). `icon` field + `galleryBanner` (#19222f dark) in package.json. `CHANGELOG.md` (Keep-a-Changelog, 0.1.0). `.vscodeignore` excludes `assets/`.
