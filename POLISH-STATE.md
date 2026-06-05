@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: IT-1 smoke+visual green | next=IT-2 | GATE: it1-visual-signoff (screenshots ready) -->
+<!-- STATUS: IT-2 done | next=IT-3 | GATE: none -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -45,7 +45,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 
 - [x] TEST gate green (typecheck + 22 unit tests + esbuild bundle) — verified IT-0
 - [x] **Runtime — automated** `@vscode/test-electron` smoke passes headless under xvfb — IT-1, exit 0
-- [ ] **Runtime — operator visual sign-off** at a gate (screenshots: label edit, ID rename→edge propagation, subgraph title, unsupported notice)
+- [x] **Runtime — operator visual sign-off** — signed off 2026-06-05 on Playwright screenshots (dark/light/unsupported/empty in `artifacts/`)
 - [ ] `icon` field + `icon.png` (128×128)
 - [x] `repository` field in `package.json` — `github.com/ssud11/mermaid-node-editor` (private; operator-confirmed)
 - [ ] `CHANGELOG.md`
@@ -68,12 +68,12 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - Re-confirm TEST gate green from clean; `git init` + first commit; add `repository` field to `package.json`.
 - **Accept:** green gate; repo initialised; `vsce package --dry-run` stops warning about missing repository. _(no gate — continue)_
 
-### IT-1 — Runtime smoke + screenshots (xvfb)  · _status: SMOKE DONE → GATE (visual sign-off)_
+### IT-1 — Runtime smoke + screenshots (xvfb)  · _status: DONE (smoke + Playwright visual; operator signed off 2026-06-05)_
 - Stand up a minimal `@vscode/test-electron` harness; launch the real extension host headless under `xvfb-run`; open [examples/demo.mmd](examples/demo.mmd); capture screenshots of: panel populated, label edit, ID rename, subgraph title, `sequenceDiagram` unsupported notice → `artifacts/`.
 - Fix obvious breakage in [panel.ts](src/webview/panel.ts) / [main.js](src/webview/main.js).
 - **Accept:** smoke launches; screenshots captured. → **REVIEW-GATE** (your visual/F5 sign-off on the 5 behaviours).
 
-### IT-2 — Automated integration assertions  · _status: TODO_
+### IT-2 — Automated integration assertions  · _status: DONE (write-back verified end-to-end)_
 - Extend the harness into real assertions: activation · webview message round-trip · `WorkspaceEdit` write-back lands · ID-rename edge propagation end-to-end. Wire `npm run test:integration`.
 - **Accept:** integration suite passes headless. _(continue)_
 
@@ -97,6 +97,12 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · IT-2 — Write-back integration assertions · CONTINUE (no gate)
+- **Built:** test seam — `activate()` now returns `{ provider }`; `MermaidEditorProvider.onMessage` made public. Extended `test/integration/suite/index.js` with end-to-end write-back assertions.
+- **Result — PASS (real host, xvfb):** `nodeIdChanged` A→Z → `WorkspaceEdit` → `Z[Start]` **and** edge `B --> A` propagates to `B --> Z` (old `A[Start]` gone); `nodeLabelChanged` B→Halt → `B[Halt]`. The previously zero-coverage panel.ts glue is now verified. typecheck + 22 unit green.
+- **Decision:** the integration suite stays **local-only** (loop CHECK), NOT in CI — same rationale as the visual harness (keep CI lean; the 240 MB VS Code download per run isn't worth it for a solo repo). Say the word to gate it on every push instead.
+- **Next:** IT-3 (UI/theme polish) — the panel already uses `--vscode-*` tokens throughout and you signed off on the look at IT-1, so this is likely light → ends at a design-taste gate.
 
 ### 2026-06-05 · IT-1 visual — Playwright webview screenshots · GATE: it1-visual-signoff (screenshots ready)
 - **Built (operator request — "use playwright"):** `test/visual/{harness.html,snap.js}` — renders the REAL webview (style.css + main.js) in chromium via `playwright-core`, reusing this box's chromium-1224 (no download; Gotcha 30 GL flags `--disable-gpu` + `LIBGL_ALWAYS_SOFTWARE=1`). `npm run visual` → 4 PNGs in `artifacts/` + DOM assertions. Local-only (not CI), per operator choice.
