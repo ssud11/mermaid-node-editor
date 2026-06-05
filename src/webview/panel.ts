@@ -144,7 +144,8 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     };
   }
 
-  private async onMessage(msg: any): Promise<void> {
+  // Public so the integration test can drive a webview message end-to-end.
+  async onMessage(msg: any): Promise<void> {
     if (!msg || typeof msg.type !== 'string') {
       return;
     }
