@@ -5,7 +5,7 @@ A VS Code extension that adds a **visual property editor** for Mermaid flowchart
 **Problem it solves:** Mermaid has no visual editing layer. Renaming a node ID means manually find-replacing every edge reference across the file. This extension gives you a property sidebar for Mermaid flowcharts instead.
 
 <p align="center">
-  <img src="images/panel-dark.png" alt="The Mermaid Node Editor panel listing a flowchart's nodes with editable ID and Label fields and a read-only connection list" width="320">
+  <img src="images/demo.gif" alt="Renaming a node's ID in the sidebar and watching every edge reference update automatically" width="820">
 </p>
 
 > Note: the project folder is `mermaid-note-editor` but the extension's identity is `mermaid-node-editor` (it edits *nodes*).
@@ -20,14 +20,6 @@ A VS Code extension that adds a **visual property editor** for Mermaid flowchart
 - Subgraph **titles** are editable.
 - Read-only **connection list** per node (`→ outgoing`, `← incoming`).
 - Theme-aware UI (uses VS Code CSS variables).
-
-## Not in v1 (intentionally out of scope)
-
-- Sequence / state / class / ER diagrams (flowchart only — others show an "unsupported" notice).
-- Adding/deleting nodes from the sidebar, drag-to-reorder, a visual canvas.
-- Editing labels of nodes that are only *referenced* but never defined with brackets.
-- Renaming a subgraph's id (its title is editable; its id is shown read-only).
-- Multi-file diagrams.
 
 ## Usage
 
