@@ -30,7 +30,12 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
   );
 
   context.subscriptions.push(
-    vscode.window.onDidChangeTextEditorSelection((e) => provider.onSelection(e.textEditor)),
+    vscode.window.onDidChangeTextEditorSelection((e) => {
+      // Only react to the focused editor — not background / peek / split editors.
+      if (e.textEditor === vscode.window.activeTextEditor) {
+        provider.onSelection(e.textEditor);
+      }
+    }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) {
         provider.onSelection(editor);
