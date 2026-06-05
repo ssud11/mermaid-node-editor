@@ -21,7 +21,6 @@
       "Bash(mkdir:*)"
     ],
     "deny": [
-      "Bash(git push:*)",
       "Bash(npx @vscode/vsce publish:*)",
       "Bash(vsce publish:*)",
       "Bash(git reset --hard:*)",

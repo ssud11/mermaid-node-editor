@@ -89,7 +89,7 @@ This project ships with a **self-driving** design→build→test→check loop. T
 - **[POLISH-STATE.md](POLISH-STATE.md)** — durable ledger / loop memory: roadmap IT-0→IT-6, publish-ready checklist, iteration log, and a top `STATUS:` marker. Survives across sessions.
 - **`/polish-iterate`** ([.claude/commands/polish-iterate.md](.claude/commands/polish-iterate.md)) — one autonomous pass: GATE-check → DESIGN → BUILD → TEST → CHECK → DECIDE (continue or open a REVIEW-GATE).
 - **`/loop /polish-iterate`** — drives repeated passes self-paced (native `/loop`). This is how it "works on its own" within a session.
-- **`.claude/settings.json`** — scoped `permissions.allow` (npm / git / esbuild / `vsce package`) so passes don't stall on prompts; `git push` + `vsce publish` stay denied. Plus a `SessionStart` hook that prints the `STATUS:` line. _(Pending operator authorization — auto-approve grants are self-modifying.)_
+- **`.claude/settings.json`** — scoped `permissions.allow` (npm / git / esbuild / `vsce package`) so passes don't stall on prompts; `vsce publish` + destructive ops stay denied. **`git push` deny removed 2026-06-05** — operator OK'd it while the repo is private; **re-add it once the repo goes public** so pushes return to operator-only. Plus a `SessionStart` hook that prints the `STATUS:` line.
 
 **Resume in any new session:** read [POLISH-STATE.md](POLISH-STATE.md), then run `/loop /polish-iterate`.
 

@@ -99,5 +99,5 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - **Built:** added `repository` field to `package.json` (assumed `github.com/ssud11/mermaid-note-editor.git`); added `artifacts/` + `.claude/settings.local.json` to `.gitignore`.
 - **TEST:** typecheck clean · 22/22 unit tests pass · esbuild → `dist/extension.js` 9.5 kb. Green.
 - **CHECK:** `git init` + initial commit `c82be81` on `main` (22 files; node_modules/dist/out excluded).
-- **Follow-ups for operator:** confirm the GitHub repo name matches the `repository` URL assumption.
+- **Follow-up for operator (NOT blocking; needed by IT-5):** repo `ssud11/mermaid-node-editor` created (private, browser-confirmed) but the 2 local commits are NOT pushed — this box's fine-grained PAT is scoped to 3 other repos and can't push here. Grant the token access to this repo (or use SSH), then `git remote add origin … && git push -u origin main`. The loop runs local-only until IT-5, so no rush.
 - **Next:** IT-1 (xvfb runtime smoke + screenshots) → will end at a REVIEW-GATE for your visual/F5 sign-off.
