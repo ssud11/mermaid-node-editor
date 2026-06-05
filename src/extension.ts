@@ -4,7 +4,13 @@
 import * as vscode from 'vscode';
 import { MermaidEditorProvider } from './webview/panel';
 
-export function activate(context: vscode.ExtensionContext): void {
+// Returned from activate() as the extension's public API — the integration test
+// uses ext.exports.provider to drive the provider end-to-end.
+export interface MermaidEditorApi {
+  provider: MermaidEditorProvider;
+}
+
+export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
   const provider = new MermaidEditorProvider(context.extensionUri);
 
   context.subscriptions.push(
@@ -32,6 +38,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidChangeTextDocument((e) => provider.onDocChange(e.document))
   );
+
+  return { provider };
 }
 
 export function deactivate(): void {
