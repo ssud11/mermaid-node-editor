@@ -101,6 +101,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ### 2026-06-05 · Config — commit rule + CI · CONTINUE (no gate)
 - **Built:** `.githooks/commit-msg` (Conventional Commits, hard-enforced via `core.hooksPath`, auto-set by npm `prepare`); `.github/workflows/ci.yml` (typecheck + unit + `vsce package`, SHA-pinned, `contents: read`, no publish); `.github/dependabot.yml` (actions + npm). Loop now COMMITs + pushes each green pass.
 - **Operator decisions:** Conventional Commits + commit-msg hook; CI now (test + build). Push allowed while repo private.
+- **Limitation:** this box's fine-grained PAT isn't scoped to `mermaid-node-editor`, so CI run status is NOT observable from here (`gh run list` → 404; SSH push still works). The local TEST gate mirrors CI's test step, so it's the authority; CI is a backstop. To check CI from here, add the repo to the PAT's repository access.
 - **Next:** IT-1 (xvfb runtime smoke); CI gains the xvfb integration job at IT-2.
 
 ### 2026-06-05 · IT-0 — Baseline + git · CONTINUE (no gate)
