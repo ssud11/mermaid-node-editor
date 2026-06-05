@@ -1,0 +1,123 @@
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background, var(--vscode-sideBar-background));
+  padding: 8px 10px 16px;
+  margin: 0;
+}
+
+.header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+  margin: 4px 0 2px;
+}
+
+.subhead {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin: 0 0 10px;
+  word-break: break-all;
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--vscode-descriptionForeground);
+  margin: 16px 0 6px;
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  padding-bottom: 3px;
+}
+
+.node {
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 6px;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.field label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 2px;
+}
+
+input[type='text'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+}
+
+input[type='text']:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+input.id-field {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.connections {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 4px;
+}
+
+.connections .arrow {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-foreground);
+}
+
+.empty {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 12px 4px;
+}
+
+.error {
+  background: var(--vscode-inputValidation-errorBackground, rgba(190, 30, 30, 0.2));
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1e1e);
+  color: var(--vscode-foreground);
+  padding: 6px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.badge {
+  display: inline-block;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}

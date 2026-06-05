@@ -1,0 +1,99 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { findMermaidBlocks } from '../src/parser';
+import {
+  buildNodeRaw,
+  computeIdRename,
+  computeLabelEdit,
+  computeSubgraphLabelEdit,
+  needsQuoting,
+  renameIdInLine,
+} from '../src/editor';
+
+function block(text: string) {
+  return { block: findMermaidBlocks(text, true)[0], lines: text.split('\n') };
+}
+
+test('needsQuoting: detects syntax-significant chars', () => {
+  assert.equal(needsQuoting('plain'), false);
+  assert.equal(needsQuoting('has space'), false); // spaces are fine unquoted in mermaid
+  assert.equal(needsQuoting('a[b]'), true);
+  assert.equal(needsQuoting('pipe|here'), true);
+  assert.equal(needsQuoting(''), true);
+  assert.equal(needsQuoting(' leading'), true);
+});
+
+test('buildNodeRaw: preserves bracket shape, adds quotes only when needed', () => {
+  assert.equal(buildNodeRaw({ open: '[', close: ']', quote: '' }, 'A', 'New'), 'A[New]');
+  assert.equal(buildNodeRaw({ open: '{', close: '}', quote: '' }, 'A', 'a|b'), 'A{"a|b"}');
+  assert.equal(buildNodeRaw({ open: '[', close: ']', quote: '"' }, 'A', 'keep'), 'A["keep"]');
+});
+
+test('computeLabelEdit: replaces just the node label span', () => {
+  const { block: b } = block('graph TD\nA[Start] --> B[End]');
+  const r = computeLabelEdit(b, 'A', 'Begin');
+  assert.equal(r.ok, true);
+  assert.equal(r.edits.length, 1);
+  assert.equal(r.edits[0].line, 1);
+  assert.equal(r.edits[0].newText, 'A[Begin]');
+  // span must cover exactly "A[Start]"
+  assert.equal(r.edits[0].startChar, 0);
+  assert.equal(r.edits[0].endChar, 'A[Start]'.length);
+});
+
+test('computeLabelEdit: edits the right node when two share a line', () => {
+  const { block: b } = block('graph TD\nA[Start] --> B[End]');
+  const r = computeLabelEdit(b, 'B', 'Finish');
+  assert.equal(r.edits[0].newText, 'B[Finish]');
+  assert.equal(r.edits[0].startChar, 'A[Start] --> '.length);
+});
+
+test('renameIdInLine: renames references but not text inside labels', () => {
+  assert.equal(renameIdInLine('A[A is here] --> B', 'A', 'Z'), 'Z[A is here] --> B');
+  assert.equal(renameIdInLine('B --> A', 'A', 'Z'), 'B --> Z');
+  assert.equal(renameIdInLine('A -->|A label| C', 'A', 'Z'), 'Z -->|A label| C');
+});
+
+test('renameIdInLine: whole-word only (does not touch A10 when renaming A)', () => {
+  assert.equal(renameIdInLine('A --> A10', 'A', 'Z'), 'Z --> A10');
+});
+
+test('computeIdRename: propagates across the whole block', () => {
+  const text = ['graph TD', 'A[Start] --> B[Mid]', 'B --> A', 'C --> A'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Start');
+  assert.equal(r.ok, true);
+  // Apply the edits to verify the end result.
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.deepEqual(out, ['graph TD', 'Start[Start] --> B[Mid]', 'B --> Start', 'C --> Start']);
+});
+
+test('computeIdRename: rejects collision with an existing id', () => {
+  const { block: b, lines } = block('graph TD\nA[X] --> B[Y]');
+  const r = computeIdRename(b, lines, 'A', 'B');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /already exists/);
+});
+
+test('computeIdRename: rejects an invalid id', () => {
+  const { block: b, lines } = block('graph TD\nA[X] --> B[Y]');
+  const r = computeIdRename(b, lines, 'A', 'has space');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /Invalid id/);
+});
+
+test('computeSubgraphLabelEdit: keeps the id, rewrites the title', () => {
+  const text = ['flowchart LR', 'subgraph grp [Old Title]', 'A[x]', 'end'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeSubgraphLabelEdit(b, lines, 'grp', 'New Title');
+  assert.equal(r.ok, true);
+  assert.equal(r.edits[0].newText, 'subgraph grp [New Title]');
+});
+
+test('computeSubgraphLabelEdit: adds a bracket when the subgraph had only an id', () => {
+  const text = ['flowchart LR', 'subgraph grp', 'A[x]', 'end'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeSubgraphLabelEdit(b, lines, 'grp', 'A Title');
+  assert.equal(r.edits[0].newText, 'subgraph grp [A Title]');
+});

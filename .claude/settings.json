@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npm run typecheck)",
+      "Bash(npm test)",
+      "Bash(npm run compile)",
+      "Bash(npm run test:integration)",
+      "Bash(node --test:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx @vscode/vsce package:*)",
+      "Bash(xvfb-run:*)",
+      "Bash(git init)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(npx @vscode/vsce publish:*)",
+      "Bash(vsce publish:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(rm -rf:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -m1 'STATUS:' \"$CLAUDE_PROJECT_DIR/POLISH-STATE.md\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
