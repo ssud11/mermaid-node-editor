@@ -1,8 +1,8 @@
 {
   "name": "mermaid-node-editor",
   "displayName": "Mermaid Node Editor",
-  "description": "Visual property editor for Mermaid diagram nodes — click a node, edit its label and ID from a sidebar; changes write back to the source instantly.",
-  "version": "0.1.0",
+  "description": "A sidebar editor for Mermaid flowchart nodes — rename an ID and every edge updates with it.",
+  "version": "1.0.0",
   "license": "MIT",
   "publisher": "ssud11",
   "repository": {
