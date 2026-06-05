@@ -9,6 +9,11 @@
     "type": "git",
     "url": "https://github.com/ssud11/mermaid-node-editor.git"
   },
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#19222f",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
