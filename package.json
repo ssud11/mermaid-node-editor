@@ -1,0 +1,80 @@
+{
+  "name": "mermaid-node-editor",
+  "displayName": "Mermaid Node Editor",
+  "description": "Visual property editor for Mermaid diagram nodes — click a node, edit its label and ID from a sidebar; changes write back to the source instantly.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "publisher": "ssud11",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ssud11/mermaid-note-editor.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "mermaid",
+    "diagram",
+    "flowchart",
+    "editor",
+    "markdown"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onLanguage:mermaid"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "mermaid",
+        "aliases": [
+          "Mermaid",
+          "mermaid"
+        ],
+        "extensions": [
+          ".mmd",
+          ".mermaid"
+        ]
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "type": "webview",
+          "id": "mermaidNodeEditor",
+          "name": "Mermaid Node Editor"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "mermaid-node-editor.open",
+        "title": "Mermaid: Open Node Editor"
+      },
+      {
+        "command": "mermaid-node-editor.refresh",
+        "title": "Mermaid: Refresh Node Editor"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "build:tests": "tsc -p ./tsconfig.json",
+    "test": "npm run build:tests && node --test out/test/*.test.js",
+    "typecheck": "tsc -p ./tsconfig.json --noEmit",
+    "vscode:prepublish": "npm run compile",
+    "package": "npx @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  }
+}

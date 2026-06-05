@@ -1,0 +1,10 @@
+flowchart TD
+    A[Session open] --> B{Authenticated?}
+    B -->|yes| C[Load workspace]
+    B -->|no| D[Show login]
+    D --> A
+    subgraph core [Core flow]
+        C --> E([Render UI])
+        E --> F[(Save state)]
+    end
+    F --> G((Done))
