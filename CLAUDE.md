@@ -95,6 +95,12 @@ This project ships with a **self-driving** design→build→test→check loop. T
 
 **Review-gate protocol** — the loop STOPS and hands back when it needs a design/taste call (icon, GIF, theme), hits a bug it can't confidently fix, reaches a milestone (e.g. `.vsix` staged or IT-1 screenshots ready), fails the same step ≥3× , or reaches any outward-facing/destructive action (always gated). At a gate it writes a REVIEW PACKET (what to look at, design + bugs). Operator feedback → new backlog items → `GATE: none` → loop resumes.
 
+## Commit convention & CI
+
+**Commits (hard-enforced):** Conventional Commits — one roadmap item per commit, to `main` only when the TEST gate is green, with the Claude co-author trailer. The hook [.githooks/commit-msg](.githooks/commit-msg) rejects non-conforming subjects (activated via `core.hooksPath`, auto-set by the npm `prepare` script). Types: `feat fix docs style refactor perf test build ci chore revert`. Emergency bypass: `git commit --no-verify`. This **overrides** the machine-level "commit only when asked / branch first" default — autonomous commits are authorized for this project.
+
+**CI:** [.github/workflows/ci.yml](.github/workflows/ci.yml) runs typecheck + unit tests + `vsce package` (build) on push/PR to `main`. **Test + build only — it never publishes** (`vsce publish` stays operator-only). Actions are SHA-pinned with `permissions: contents: read` per the `~/projects/CLAUDE.md` security baseline; [.github/dependabot.yml](.github/dependabot.yml) tracks Actions + npm updates. The xvfb integration job is added to CI at IT-2.
+
 ## Suggested next steps (in order)
 
 1. **F5 manual test** — the #1 unverified thing. Open `examples/demo.mmd`, confirm: panel populates, label edit writes back, ID rename updates all edges, subgraph title edits, unsupported notice shows for a `sequenceDiagram`. Fix whatever's broken in `panel.ts`/`main.js` (most likely failure surface — it has zero test coverage).

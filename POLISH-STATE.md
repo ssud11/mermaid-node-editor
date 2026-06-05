@@ -20,6 +20,7 @@ Ledger + memory for the **autonomous** design → build → test → check → d
 | **BUILD** | Implement it (code / assets / `package.json` metadata) | Edit/Write |
 | **TEST** (fast gate, must stay green) | `npm run typecheck` · `npm test` · `npm run compile` | Bash (allowlisted) |
 | **CHECK** (deep) | xvfb integration smoke + screenshots · `/code-review` · `/security-review` · `vsce package` | per item |
+| **COMMIT** | Commit (Conventional Commits, green gate only) + `git push` → triggers CI | git + commit-msg hook |
 | **DECIDE** | Update ledger + `STATUS:`; CONTINUE to next pass, or open a REVIEW-GATE | this ledger |
 
 ---
@@ -52,6 +53,8 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - [ ] Theme-matched UI (`--vscode-*` tokens; clean empty/unsupported states)
 - [ ] `/code-review` (high) + `/security-review` clean
 - [ ] `vsce package` → `.vsix` builds, no warnings
+- [ ] CI green on push/PR — typecheck + unit + `vsce package` ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+- [x] Commit convention hard-enforced — Conventional Commits via [.githooks/commit-msg](.githooks/commit-msg)
 - [x] `git init` + clean history — commit c82be81 on `main`, 22 files
 - [ ] **[operator-only gate]** upload/publish the `.vsix` (web UI, or PAT + `vsce publish`)
 
@@ -94,6 +97,11 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · Config — commit rule + CI · CONTINUE (no gate)
+- **Built:** `.githooks/commit-msg` (Conventional Commits, hard-enforced via `core.hooksPath`, auto-set by npm `prepare`); `.github/workflows/ci.yml` (typecheck + unit + `vsce package`, SHA-pinned, `contents: read`, no publish); `.github/dependabot.yml` (actions + npm). Loop now COMMITs + pushes each green pass.
+- **Operator decisions:** Conventional Commits + commit-msg hook; CI now (test + build). Push allowed while repo private.
+- **Next:** IT-1 (xvfb runtime smoke); CI gains the xvfb integration job at IT-2.
 
 ### 2026-06-05 · IT-0 — Baseline + git · CONTINUE (no gate)
 - **Built:** added `repository` field to `package.json` (assumed `github.com/ssud11/mermaid-note-editor.git`); added `artifacts/` + `.claude/settings.local.json` to `.gitignore`.

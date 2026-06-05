@@ -25,7 +25,10 @@ Run `npm run typecheck`, `npm test`, `npm run compile`. If any fail, fix and re-
 - Packaging items → `npx @vscode/vsce package` (or `--dry-run`).
 Report what you actually ran vs. what stays assumed (follow `~/verification-discipline.md`). Never claim "works" for something you did not run.
 
-## 5 · DECIDE — continue or gate
+## 5 · COMMIT (green gate only)
+Commit the pass to `main` — one roadmap item per commit, a Conventional Commits subject (`type(scope): description`; the `.githooks/commit-msg` hook hard-enforces it), and the Claude co-author trailer. Then `git push` to sync the remote and trigger CI. Never run `vsce publish` (operator-only).
+
+## 6 · DECIDE — continue or gate
 Update `POLISH-STATE.md`: mark the item's status; add CHECK findings as new backlog items; append a dated block to the Iteration log; tick the publish-ready checklist; update the top `STATUS:` marker.
 
 Open a **REVIEW-GATE** — set `GATE: <name>`, append a REVIEW PACKET to the log, and END the loop — if the pass hit ANY gate condition in POLISH-STATE.md's "Review-gate protocol": a design/taste call, an unresolved bug, a milestone (`.vsix` staged or IT-1 screenshots ready), a step that failed ≥3 passes, or any outward-facing/destructive action.
