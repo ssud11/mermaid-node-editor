@@ -2,6 +2,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { findMermaidBlocks, MermaidBlock } from '../parser';
 import {
   computeIdRename,
@@ -149,9 +150,20 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     if (!msg || typeof msg.type !== 'string') {
       return;
     }
+    // The webview signals it has loaded + attached its listener — (re)send the
+    // current block now; the initial post in resolveWebviewView can race ahead
+    // of the webview script being ready, dropping the first render.
+    if (msg.type === 'ready') {
+      this.refreshFromActiveEditor();
+      return;
+    }
     if (!this.currentUri) {
       return;
     }
+
+    // Values from the webview are untrusted; collapse newlines so a pasted
+    // multi-line value can't split the source line.
+    const value = typeof msg.value === 'string' ? msg.value.replace(/[\r\n]+/g, ' ') : '';
 
     let doc: vscode.TextDocument;
     try {
@@ -172,13 +184,13 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     let result: EditResult | undefined;
     switch (msg.type) {
       case 'nodeLabelChanged':
-        result = computeLabelEdit(block, msg.id, msg.value);
+        result = computeLabelEdit(block, msg.id, value);
         break;
       case 'nodeIdChanged':
-        result = computeIdRename(block, lines, msg.id, msg.value);
+        result = computeIdRename(block, lines, msg.id, value);
         break;
       case 'subgraphLabelChanged':
-        result = computeSubgraphLabelEdit(block, lines, msg.id, msg.value);
+        result = computeSubgraphLabelEdit(block, lines, msg.id, value);
         break;
       default:
         return;
@@ -227,10 +239,6 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
 }
 
 function makeNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let text = '';
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
+  // CSPRNG — a CSP nonce's entire value is being unguessable per load.
+  return crypto.randomBytes(16).toString('hex');
 }

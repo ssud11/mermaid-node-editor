@@ -97,3 +97,44 @@ test('computeSubgraphLabelEdit: adds a bracket when the subgraph had only an id'
   const r = computeSubgraphLabelEdit(b, lines, 'grp', 'A Title');
   assert.equal(r.edits[0].newText, 'subgraph grp [A Title]');
 });
+
+// --- IT-6 regression tests: edge-case rename bugs found in code review ---
+
+test('computeIdRename: rejects renaming onto a bare referenced id (no silent merge)', () => {
+  // X is referenced in edges but never bracket-defined; renaming A->X would
+  // collapse A and X into one node.
+  const { block: b, lines } = block('graph TD\nA[Start] --> X\nB --> X');
+  const r = computeIdRename(b, lines, 'A', 'X');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /already exists/);
+});
+
+test('computeIdRename: does not rewrite the graph directive (node named TD)', () => {
+  const { block: b, lines } = block('graph TD\nTD[Top] --> B');
+  const r = computeIdRename(b, lines, 'TD', 'Z');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[0], 'graph TD'); // directive untouched
+  assert.equal(out[1], 'Z[Top] --> B');
+});
+
+test('computeIdRename: does not rewrite text inside a subgraph title', () => {
+  const text = ['flowchart LR', 'subgraph S1 [About A]', 'A[x] --> B[y]', 'end'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Z');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[1], 'subgraph S1 [About A]'); // title text untouched
+  assert.equal(out[2], 'Z[x] --> B[y]'); // body node renamed
+});
+
+test('computeIdRename: does not rewrite the o/x letter inside --o / --x arrowheads', () => {
+  const { block: b, lines } = block('graph TD\nA[Start] --o o[Circle]');
+  const r = computeIdRename(b, lines, 'o', 'Z');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[1], 'A[Start] --o Z[Circle]'); // arrowhead --o intact, node o renamed
+});

@@ -84,6 +84,13 @@ function protectedRanges(line: string): Range[] {
   while ((p = pipeRe.exec(line)) !== null) {
     ranges.push([p.index, p.index + p[0].length]);
   }
+  // Arrow operators (`-->`, `--x`, `--o`, `<--`, `==>`, …) — protect them so a
+  // single-char id `x`/`o` is never rewritten inside an arrowhead.
+  const arrowRe = /(?<=^|\s)[<xo]?[-.=]{2,}[>xo]?(?=\s|$)/g;
+  let a: RegExpExecArray | null;
+  while ((a = arrowRe.exec(line)) !== null) {
+    ranges.push([a.index, a.index + a[0].length]);
+  }
   return ranges;
 }
 
@@ -127,7 +134,18 @@ export function computeIdRename(
   if (!ID_RE.test(newId)) {
     return { ok: false, edits: [], error: `Invalid id "${newId}". Use letters, digits and underscores only.` };
   }
-  if (block.nodes.some((n) => n.id === newId) || block.subgraphs.some((s) => s.id === newId)) {
+  // Reject collisions with ANY id already in the block — including ids that
+  // appear only as edge references (not just bracket-defined nodes/subgraphs).
+  // Otherwise renaming onto a bare id silently merges two distinct nodes.
+  const usedIds = new Set<string>();
+  for (const n of block.nodes) usedIds.add(n.id);
+  for (const s of block.subgraphs) usedIds.add(s.id);
+  for (const e of block.edges) {
+    usedIds.add(e.from);
+    usedIds.add(e.to);
+  }
+  usedIds.delete(oldId);
+  if (usedIds.has(newId)) {
     return { ok: false, edits: [], error: `Id "${newId}" already exists in this diagram.` };
   }
 
@@ -135,6 +153,12 @@ export function computeIdRename(
   for (let ln = block.contentStart; ln < block.contentEnd; ln++) {
     const original = lines[ln];
     if (original === undefined) {
+      continue;
+    }
+    const trimmed = original.trim();
+    // The diagram directive (`graph TD`) and subgraph declarations carry
+    // keywords / titles, not node references — never rewrite ids there.
+    if (/^(graph|flowchart)\b/i.test(trimmed) || /^subgraph\b/i.test(trimmed)) {
       continue;
     }
     const replaced = renameIdInLine(original, oldId, newId);

@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: IT-5 README+shot done (GIF deferred) | next=IT-6 | GATE: none -->
+<!-- STATUS: IT-6 fixes done (T1+T2); T3 documented | next=final signoff + GIF | GATE: it6-final-signoff -->
 
 Ledger + memory for the **autonomous** design → build → test → check → design polish loop. Survives across sessions; every `/polish-iterate` pass reads this file and updates it — including the `STATUS:` marker above (a `SessionStart` hook prints it so each new session knows where the loop is).
 
@@ -51,7 +51,7 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - [x] `CHANGELOG.md`
 - [ ] README: screenshot ✅ done (`images/panel-dark.png`); animated GIF ⏳ pending (presenting discussion)
 - [x] Theme-matched UI (`--vscode-*` tokens; clean empty/unsupported states) — signed off IT-1; read-only subgraph id dimmed IT-3
-- [ ] `/code-review` (high) + `/security-review` clean
+- [x] `/code-review` (high) + security review — done; T1+T2 fixed, T3 documented
 - [x] `vsce package` → `.vsix` builds, no warnings — 17.99 KB, 11 files, clean
 - [ ] CI green on push/PR — typecheck + unit + `vsce package` ([.github/workflows/ci.yml](.github/workflows/ci.yml))
 - [x] Commit convention hard-enforced — Conventional Commits via [.githooks/commit-msg](.githooks/commit-msg)
@@ -90,13 +90,28 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 - **Repo is PRIVATE** → bundle README images *inside* the `.vsix` (relative paths), NOT `raw.githubusercontent.com` URLs (those need auth and won't render on the Marketplace). Verify images render from the packaged extension.
 - **Accept:** README renders well as a Marketplace landing page. → **REVIEW-GATE** (copy + GIF taste).
 
-### IT-6 — Hardening + final CHECK  · _status: TODO_
+### IT-6 — Hardening + final CHECK  · _status: review done; T1+T2 fixed (7 bugs, +6 tests); T3 documented; .vsix 41.6 KB_
 - `/code-review high` · `/simplify` · `/security-review` (verify CSP/nonce + no-innerHTML hold). Full sweep: typecheck + unit + integration + `vsce package` → `.vsix`.
 - **Accept:** reviews clean; `.vsix` staged. → **REVIEW-GATE** (final sign-off → you publish).
 
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-05 · IT-6 — fixes (T1 + T2) + T3 docs · GATE: it6-final-signoff
+- **Fixed (7):** first-open render race (handle webview `{type:'ready'}`); active-editor guard in `onDidChangeTextEditorSelection`; CSPRNG nonce (`crypto.randomBytes`); newline strip on edited values; `computeIdRename` — collision check now covers edge-referenced ids (no silent merge), skips the directive + subgraph-declaration lines (no keyword/title clobber), and protects arrow operators (single-char `x`/`o` ids safe).
+- **Tests:** +4 unit regression tests (each fails against the OLD code) → 26/26 unit; +2 integration (newline collapse, ready handshake) → 8/8 integration. typecheck clean.
+- **Documented (T3):** reversed arrows, `&` fan-out, `end`-as-id, unquoted `]`, `#quot;` round-trip → README "Known limitations".
+- **Repackaged + reinstalled** the hardened `.vsix` (41.6 KB) into the operator's VS Code (reload window to load it).
+- **GATE it6-final-signoff:** operator final review → operator publishes. Remaining: the IT-5 animated GIF (the "presenting" discussion).
+
+### 2026-06-05 · IT-6 — code review (3 agents) · REVIEW-GATE: it6-bug-triage
+- **Ran** a 3-agent review over parser.ts / editor.ts / panel.ts+main.js+extension.ts (no diff on clean main → reviewed full source). **Verified each finding against the code myself** (read editor.ts + parser.ts).
+- **~15 real bugs** — tests were green but cover happy paths only. Triage:
+  - **T1 (easy + impactful):** initial-render race (webview sends `{type:'ready'}` but onMessage has no handler → panel stays empty until the cursor moves — this is the "click into the diagram" behaviour); missing active-editor guard in `onDidChangeTextEditorSelection` (a non-focused editor can hijack the target doc — my IT-6 test gave false confidence here); `Math.random()` CSP nonce → use CSPRNG; label/id newlines not stripped (paste splits the line).
+  - **T2 (silent rename corruption):** `computeIdRename` merges into bare referenced-but-undefined ids; rewrites tokens inside the `graph TD` directive line and subgraph titles; single-char ids `x`/`o` collide with `--x`/`--o` arrowheads.
+  - **T3 (rare → document as v1 limits):** reversed arrows `<--` reversed in the connection list; `A & B` fan-out edges dropped; node literally named `end` dropped; unquoted label containing `]` truncated; `#quot;` escape non-reversible.
+- **GATE:** operator scope decision — "ship v1, nothing more" → pick which tiers to fix vs document.
 
 ### 2026-06-05 · IT-5 — README screenshot (GIF deferred) · CONTINUE
 - **Built:** added a centered panel screenshot (`images/panel-dark.png`, from the Playwright dark render) to the README. README was already comprehensive (features/usage/shapes/architecture/limitations) — left otherwise as-is.
