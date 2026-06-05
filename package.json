@@ -7,7 +7,7 @@
   "publisher": "ssud11",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ssud11/mermaid-note-editor.git"
+    "url": "https://github.com/ssud11/mermaid-node-editor.git"
   },
   "engines": {
     "vscode": "^1.85.0"
