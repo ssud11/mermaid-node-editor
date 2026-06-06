@@ -140,7 +140,7 @@ async function shot(page, theme, name, message) {
   const body = await page.locator('body').innerText();
   assert.ok(/not supported in v1/.test(body), 'unsupported diagram should show the v1 notice');
 
-  // --- #3 regression (2026-06-06 deep-review): a rejected edit must show an error
+  // --- #3 regression: a rejected edit must show an error
   //     that is NOT instantly wiped, and must reset the field to canonical. The fixed
   //     contract is a single {type:'error', message, block} message. Old main.js
   //     ignored msg.block (would not render the field from the error) -> fails there. ---
