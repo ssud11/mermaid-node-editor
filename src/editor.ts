@@ -143,6 +143,13 @@ export function computeIdRename(
   if (!ID_RE.test(newId)) {
     return { ok: false, edits: [], error: `Invalid id "${newId}". Use letters, digits and underscores only.` };
   }
+  // Subgraph ids are read-only in v1: the `subgraph` declaration line is
+  // intentionally never rewritten, so renaming one would rename its edge
+  // references while orphaning the declaration. Reject it here so EVERY caller
+  // (sidebar + F2 rename) is safe, matching the read-only sidebar subgraph field.
+  if (block.subgraphs.some((s) => s.hasId && s.id === oldId)) {
+    return { ok: false, edits: [], error: `"${oldId}" is a subgraph id — renaming subgraph ids isn't supported in v1 (edit its title instead).` };
+  }
   // Reject collisions with ANY id already in the block — including ids that
   // appear only as edge references (not just bracket-defined nodes/subgraphs).
   // Otherwise renaming onto a bare id silently merges two distinct nodes.
