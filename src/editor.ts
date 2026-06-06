@@ -69,7 +69,7 @@ function overlaps(start: number, end: number, ranges: Range[]): boolean {
 }
 
 /** Spans on a line where an id token must NOT be treated as a reference. */
-function protectedRanges(line: string): Range[] {
+export function protectedRanges(line: string): Range[] {
   const ranges: Range[] = [];
   for (const n of scanNodes(line, 0)) {
     ranges.push([n.labelStart, n.labelEnd]); // node label content
