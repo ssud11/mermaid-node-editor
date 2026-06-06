@@ -25,6 +25,13 @@ window.addEventListener('message', (event) => {
       break;
     case 'error':
       showError(msg.message);
+      // Reset the field(s) to the canonical value carried with the error, WITHOUT
+      // hiding the error. render() only rebuilds #root, so the #error box stays
+      // visible — the user sees both why the edit failed and the restored value.
+      if (msg.block) {
+        current = msg.block;
+        render();
+      }
       break;
   }
 });
