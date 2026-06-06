@@ -80,7 +80,7 @@
     "package": "npx @vscode/vsce package"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^25.9.2",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.21.5",
