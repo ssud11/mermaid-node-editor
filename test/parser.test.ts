@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findMermaidBlocks, scanNodes } from '../src/parser';
+import { findMermaidBlocks, scanNodes, blockAtLine } from '../src/parser';
 
 test('scanNodes: basic rectangle node', () => {
   const nodes = scanNodes('A[Start]', 0);
@@ -167,4 +167,37 @@ test('parseEdges: two statements on one line parse separately (no spurious cross
     b.edges.map((e) => `${e.from}->${e.to}`).sort(),
     ['A->B', 'C->D']
   );
+});
+
+// --- subgraph id column spans (for go-to-definition / rename) ---
+
+test('parseSubgraph: id columns for `subgraph id [Title]`', () => {
+  const b = findMermaidBlocks(['graph TD', '  subgraph AR1 ["Rules loads"]', '  end'].join('\n'), true)[0];
+  const sg = b.subgraphs[0];
+  const line = '  subgraph AR1 ["Rules loads"]';
+  assert.equal(sg.id, 'AR1');
+  assert.equal(line.slice(sg.idStart, sg.idEnd), 'AR1');
+});
+
+test('parseSubgraph: id columns for a plain `subgraph BR2`', () => {
+  const b = findMermaidBlocks(['graph TD', 'subgraph BR2', 'end'].join('\n'), true)[0];
+  const sg = b.subgraphs[0];
+  assert.equal(sg.id, 'BR2');
+  assert.equal('subgraph BR2'.slice(sg.idStart, sg.idEnd), 'BR2');
+});
+
+// --- blockAtLine: cursor → block lookup ---
+
+test('blockAtLine (.mmd): always the single block', () => {
+  const blocks = findMermaidBlocks(['graph TD', 'A --> B'].join('\n'), true);
+  assert.equal(blockAtLine(blocks, 1, true), blocks[0]);
+  assert.equal(blockAtLine(blocks, 99, true), blocks[0]);
+});
+
+test('blockAtLine (markdown): picks the block containing the line, else undefined', () => {
+  const text = ['# h', '```mermaid', 'graph TD', 'A --> B', '```', 'prose', '```mermaid', 'flowchart LR', 'X --> Y', '```'].join('\n');
+  const blocks = findMermaidBlocks(text, false);
+  assert.equal(blockAtLine(blocks, 3, false), blocks[0]); // inside first fence
+  assert.equal(blockAtLine(blocks, 8, false), blocks[1]); // inside second fence
+  assert.equal(blockAtLine(blocks, 5, false), undefined); // the prose line
 });
