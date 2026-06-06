@@ -78,6 +78,10 @@ export class MermaidRenameProvider implements vscode.RenameProvider {
     if (!hit) {
       throw new Error('Not a Mermaid tag — place the cursor on a node or subgraph id.');
     }
+    // Subgraph ids are read-only in v1 (matches the disabled sidebar field).
+    if (hit.block.subgraphs.some((s) => s.hasId && s.id === hit.tag.id)) {
+      throw new Error('Renaming subgraph ids is not supported in v1 — edit the subgraph title instead.');
+    }
     return {
       range: new vscode.Range(hit.tag.line, hit.tag.startChar, hit.tag.line, hit.tag.endChar),
       placeholder: hit.tag.id,

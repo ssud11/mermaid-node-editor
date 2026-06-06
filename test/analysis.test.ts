@@ -191,6 +191,16 @@ test('sweep#6: findReferences ignores an id inside an unquoted subgraph title', 
   assert.deepEqual(findReferences(block, lines, 'N').map((r) => r.line).sort((a, b) => a - b), [1, 4]);
 });
 
+// F2-rename regression: renaming a subgraph id must be rejected (the declaration
+// line is never rewritten, so a partial rename would orphan the subgraph).
+test('rename: computeIdRename rejects renaming a subgraph id', () => {
+  const lines = ['graph LR', 'subgraph AR1 [Rules]', 'RA1[x] --> RA2[y]', 'end', 'A --> AR1'];
+  const block = findMermaidBlocks(lines.join('\n'), true)[0];
+  const res = computeIdRename(block, lines, 'AR1', 'ZZ');
+  assert.equal(res.ok, false);
+  assert.match(res.error || '', /subgraph/i);
+});
+
 // Latent rename-corruption the sweep exposed: computeIdRename must not rewrite a
 // `direction TD` keyword line when renaming a node named TD.
 test('sweep#4b: computeIdRename does not rewrite a direction keyword line', () => {
