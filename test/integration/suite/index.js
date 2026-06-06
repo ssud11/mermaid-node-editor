@@ -150,6 +150,27 @@ async function run() {
   // (f) The 'ready' handshake is handled (previously a silent no-op).
   await provider.onMessage({ type: 'ready' });
   console.log('IT-6 PASS: ready handshake handled without error');
+
+  // 7. A2 — duplicate-tag linting surfaces as native Diagnostics (warnings).
+  const dupDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[First] --> B[x]\n  A[Second]\n  subgraph S1 [One]\n  end\n  subgraph S1 [Two]\n  end\n',
+  });
+  await vscode.window.showTextDocument(dupDoc, { preview: false });
+  // Diagnostics compute on open; poll briefly for the collection to populate.
+  let diags = [];
+  for (let i = 0; i < 30; i++) {
+    diags = vscode.languages.getDiagnostics(dupDoc.uri);
+    if (diags.length) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.ok(diags.some((d) => /defined more than once/i.test(d.message)), 'duplicate node id should warn');
+  assert.ok(diags.some((d) => /declared more than once/i.test(d.message)), 'duplicate subgraph id should warn');
+  assert.ok(
+    diags.every((d) => d.severity === vscode.DiagnosticSeverity.Warning),
+    'duplicate-tag lints should be warnings'
+  );
+  console.log('A2 PASS: duplicate-tag diagnostics surface as warnings');
 }
 
 module.exports = { run };
