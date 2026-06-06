@@ -116,3 +116,36 @@ test('findBlocks: comments are ignored', () => {
   assert.deepEqual(b.nodes.map((n) => n.id), ['A']);
   assert.equal(b.nodes[0].label, 'Real');
 });
+
+// --- 2026-06-06 deep-review regression: YAML frontmatter (title:/config:) before
+// the diagram keyword must not mark a valid flowchart unsupported. ---
+
+test('findBlocks (.mmd): YAML title frontmatter before the flowchart is supported', () => {
+  const text = ['---', 'title: My Flow', '---', 'flowchart LR', 'A[Start] --> B[End]'].join('\n');
+  const b = findMermaidBlocks(text, true)[0];
+  assert.equal(b.supported, true);
+  assert.equal(b.diagramType, 'flowchart LR');
+  assert.deepEqual(b.nodes.map((n) => n.id).sort(), ['A', 'B']);
+});
+
+test('findBlocks (.mmd): multi-line config frontmatter is skipped', () => {
+  const text = ['---', 'config:', '  theme: dark', '  look: handDrawn', '---', 'graph TD', 'A --> B'].join('\n');
+  const b = findMermaidBlocks(text, true)[0];
+  assert.equal(b.supported, true);
+  assert.deepEqual(
+    b.edges.map((e) => `${e.from}->${e.to}`),
+    ['A->B']
+  );
+});
+
+test('findBlocks (markdown): frontmatter inside a mermaid fence is supported', () => {
+  const text = ['```mermaid', '---', 'title: X', '---', 'flowchart TD', 'A[a] --> B[b]', '```'].join('\n');
+  const b = findMermaidBlocks(text, false)[0];
+  assert.equal(b.supported, true);
+  assert.deepEqual(b.nodes.map((n) => n.id).sort(), ['A', 'B']);
+});
+
+test('findBlocks: an unterminated frontmatter fence stays unsupported (no runaway)', () => {
+  const b = findMermaidBlocks(['---', 'title: X', 'flowchart LR', 'A --> B'].join('\n'), true)[0];
+  assert.equal(b.supported, false);
+});

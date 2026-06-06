@@ -248,6 +248,21 @@ function buildBlock(
     if (t === '' || t.startsWith('%%')) {
       continue;
     }
+    // Skip a leading YAML frontmatter block (`--- ... ---`) that Mermaid allows
+    // before the diagram keyword (for title:/config:). Without this the opening
+    // `---` is taken as the diagram type and a valid flowchart is wrongly marked
+    // unsupported. Frontmatter must be the first meaningful content.
+    if (t === '---') {
+      let j = i + 1;
+      while (j < contentEnd && lines[j].trim() !== '---') {
+        j++;
+      }
+      if (j >= contentEnd) {
+        break; // no closing fence — malformed; leave unsupported
+      }
+      i = j; // loop's i++ resumes on the line after the closing `---`
+      continue;
+    }
     const dt = /^(graph|flowchart)\b\s*([A-Za-z]{1,2})?/i.exec(t);
     block.diagramType = t;
     block.supported = !!dt;
