@@ -84,6 +84,15 @@ function protectedRanges(line: string): Range[] {
   while ((p = pipeRe.exec(line)) !== null) {
     ranges.push([p.index, p.index + p[0].length]);
   }
+  // Inline edge labels in dash/dotted/thick form (`A -- text --> B`, `A == t ==> B`,
+  // `A -. t .-> B`): protect the inner <text> so an id-like word in the label prose is
+  // never rewritten during an id rename. Mirrors the pipe-form handling above.
+  const inlineLabelRe = /(?<=^|\s)([<xo]?[-.=]{2,}\s+)(.+?)(\s+[-.=]{2,}[>xo]?)(?=\s|$)/g;
+  let il: RegExpExecArray | null;
+  while ((il = inlineLabelRe.exec(line)) !== null) {
+    const innerStart = il.index + il[1].length;
+    ranges.push([innerStart, innerStart + il[2].length]);
+  }
   // Arrow operators (`-->`, `--x`, `--o`, `<--`, `==>`, …) — protect them so a
   // single-char id `x`/`o` is never rewritten inside an arrowhead.
   const arrowRe = /(?<=^|\s)[<xo]?[-.=]{2,}[>xo]?(?=\s|$)/g;
