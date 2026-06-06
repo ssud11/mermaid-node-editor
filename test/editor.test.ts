@@ -138,3 +138,25 @@ test('computeIdRename: does not rewrite the o/x letter inside --o / --x arrowhea
   for (const e of r.edits) out[e.line] = e.newText;
   assert.equal(out[1], 'A[Start] --o Z[Circle]'); // arrowhead --o intact, node o renamed
 });
+
+// --- 2026-06-06 deep-review regression: id rename must not corrupt inline
+// edge-LABEL prose (dash / thick / dotted forms). Pipe-form was already safe. ---
+
+test('renameIdInLine: does not rewrite an id-word inside a dash-delimited edge label', () => {
+  // `send A data` is label prose, not a reference — renaming node A must leave it.
+  assert.equal(
+    renameIdInLine('A -- send A data --> B', 'A', 'X'),
+    'X -- send A data --> B'
+  );
+});
+
+test('renameIdInLine: protects inline labels in dotted and thick edge forms', () => {
+  assert.equal(renameIdInLine('A -. start tip .-> B', 'start', 'S'), 'A -. start tip .-> B');
+  assert.equal(renameIdInLine('A == start now ==> B', 'start', 'S'), 'A == start now ==> B');
+  assert.equal(renameIdInLine('A --- keep A here --- B', 'A', 'X'), 'X --- keep A here --- B');
+});
+
+test('renameIdInLine: still rewrites real endpoint ids around an inline label', () => {
+  // The label prose is protected, but the from/to node ids around it are not.
+  assert.equal(renameIdInLine('A -- to A --> A', 'A', 'X'), 'X -- to A --> X');
+});
