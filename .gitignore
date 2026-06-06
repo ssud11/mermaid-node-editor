@@ -5,4 +5,5 @@ out/
 *.vsix
 .DS_Store
 artifacts/
+reviews/
 .claude/settings.local.json
