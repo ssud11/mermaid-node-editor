@@ -160,3 +160,12 @@ test('renameIdInLine: still rewrites real endpoint ids around an inline label', 
   // The label prose is protected, but the from/to node ids around it are not.
   assert.equal(renameIdInLine('A -- to A --> A', 'A', 'X'), 'X -- to A --> X');
 });
+
+test('computeIdRename: collision guard sees a bare ref even with a trailing semicolon', () => {
+  // Before the `;`-statement parse fix, the edge `A --> B;` was dropped, so B was
+  // invisible to the collision guard and renaming X->B silently merged two nodes.
+  const { block: b, lines } = block('graph TD\nA[Start] --> B;\nX[Other]');
+  const r = computeIdRename(b, lines, 'X', 'B');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /already exists/);
+});
