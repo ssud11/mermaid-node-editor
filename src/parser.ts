@@ -257,25 +257,32 @@ function buildBlock(
     edges: [],
   };
 
+  // Skip a leading YAML frontmatter block (`--- ... ---`) that Mermaid allows
+  // before the diagram keyword (title:/config:/id:). Advance contentStart PAST it
+  // so node scanning AND the analysis/edit layers (which iterate
+  // contentStart..contentEnd) never treat frontmatter as diagram content — e.g. a
+  // node named `id` must not collide with a `id: <uuid>` frontmatter key. Without
+  // the skip the opening `---` is also taken as the diagram type and a valid
+  // flowchart is wrongly marked unsupported.
+  let first = block.contentStart;
+  while (first < contentEnd && (lines[first].trim() === '' || lines[first].trim().startsWith('%%'))) {
+    first++;
+  }
+  if (first < contentEnd && lines[first].trim() === '---') {
+    let j = first + 1;
+    while (j < contentEnd && lines[j].trim() !== '---') {
+      j++;
+    }
+    if (j >= contentEnd) {
+      return block; // unterminated frontmatter — malformed; leave unsupported
+    }
+    block.contentStart = j + 1;
+  }
+
   // First meaningful content line decides the diagram type.
-  for (let i = contentStart; i < contentEnd; i++) {
+  for (let i = block.contentStart; i < contentEnd; i++) {
     const t = lines[i].trim();
     if (t === '' || t.startsWith('%%')) {
-      continue;
-    }
-    // Skip a leading YAML frontmatter block (`--- ... ---`) that Mermaid allows
-    // before the diagram keyword (for title:/config:). Without this the opening
-    // `---` is taken as the diagram type and a valid flowchart is wrongly marked
-    // unsupported. Frontmatter must be the first meaningful content.
-    if (t === '---') {
-      let j = i + 1;
-      while (j < contentEnd && lines[j].trim() !== '---') {
-        j++;
-      }
-      if (j >= contentEnd) {
-        break; // no closing fence — malformed; leave unsupported
-      }
-      i = j; // loop's i++ resumes on the line after the closing `---`
       continue;
     }
     const dt = /^(graph|flowchart)\b\s*([A-Za-z]{1,2})?/i.exec(t);
@@ -289,7 +296,7 @@ function buildBlock(
   }
 
   const nodesById = new Map<string, MermaidNode>();
-  for (let i = contentStart; i < contentEnd; i++) {
+  for (let i = block.contentStart; i < contentEnd; i++) {
     const raw = lines[i];
     const trimmed = raw.trim();
     if (trimmed === '' || trimmed.startsWith('%%')) {
