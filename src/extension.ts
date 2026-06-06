@@ -5,6 +5,11 @@ import * as vscode from 'vscode';
 import { MermaidEditorProvider, isSupportedDoc, isMmd } from './webview/panel';
 import { findMermaidBlocks } from './parser';
 import { findDuplicateDeclarations } from './analysis';
+import { MermaidDefinitionProvider, MermaidReferenceProvider } from './providers';
+
+// Providers fire for .mmd and inside ```mermaid fences in markdown (gated by
+// getBlockAtLine returning a block only when the cursor is within one).
+const MERMAID_SELECTOR: vscode.DocumentSelector = [{ language: 'mermaid' }, { language: 'markdown' }];
 
 // Returned from activate() as the extension's public API — the integration test
 // uses ext.exports.provider to drive the provider end-to-end.
@@ -73,6 +78,12 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
       }
     }),
     vscode.workspace.onDidChangeTextDocument((e) => provider.onDocChange(e.document))
+  );
+
+  // Tag navigation: Go to Definition (F12 / right-click) + Find References (Shift+F12).
+  context.subscriptions.push(
+    vscode.languages.registerDefinitionProvider(MERMAID_SELECTOR, new MermaidDefinitionProvider()),
+    vscode.languages.registerReferenceProvider(MERMAID_SELECTOR, new MermaidReferenceProvider())
   );
 
   // Duplicate-tag linting: native Diagnostics (squiggle + Problems panel).
