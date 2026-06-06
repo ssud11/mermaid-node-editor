@@ -171,6 +171,34 @@ async function run() {
     'duplicate-tag lints should be warnings'
   );
   console.log('A2 PASS: duplicate-tag diagnostics surface as warnings');
+
+  // 8. A3 — Go to Definition + Find References on a tag.
+  const navDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph LR\nA[Start] --> B[Mid]\nB --> C[End]\nC --> A\n',
+  });
+  await vscode.window.showTextDocument(navDoc, { preview: false });
+
+  const defs = await vscode.commands.executeCommand(
+    'vscode.executeDefinitionProvider',
+    navDoc.uri,
+    new vscode.Position(3, 6) // the "A" in "C --> A"
+  );
+  assert.ok(Array.isArray(defs) && defs.length >= 1, 'go-to-definition should resolve A');
+  const defRange = defs[0].range || defs[0].targetRange;
+  assert.strictEqual(defRange.start.line, 1, 'A should be defined on line 1 (A[Start])');
+
+  const refs = await vscode.commands.executeCommand(
+    'vscode.executeReferenceProvider',
+    navDoc.uri,
+    new vscode.Position(1, 0) // on the A definition
+  );
+  const refLines = refs.map((r) => r.range.start.line).sort((a, b) => a - b);
+  assert.ok(
+    refLines.includes(1) && refLines.includes(3),
+    'references should include the def (line 1) and the C --> A edge (line 3)'
+  );
+  console.log('A3 PASS: go-to-definition + find-references resolve tags across edges');
 }
 
 module.exports = { run };
