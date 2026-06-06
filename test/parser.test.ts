@@ -117,7 +117,7 @@ test('findBlocks: comments are ignored', () => {
   assert.equal(b.nodes[0].label, 'Real');
 });
 
-// --- 2026-06-06 deep-review regression: YAML frontmatter (title:/config:) before
+// --- regression: YAML frontmatter (title:/config:) before
 // the diagram keyword must not mark a valid flowchart unsupported. ---
 
 test('findBlocks (.mmd): YAML title frontmatter before the flowchart is supported', () => {
@@ -150,7 +150,7 @@ test('findBlocks: an unterminated frontmatter fence stays unsupported (no runawa
   assert.equal(b.supported, false);
 });
 
-// --- 2026-06-06 deep-review regression: `;` statement terminators must not drop
+// --- regression: `;` statement terminators must not drop
 // real edges or synthesize spurious ones. ---
 
 test('parseEdges: a trailing semicolon does not drop the edge', () => {
