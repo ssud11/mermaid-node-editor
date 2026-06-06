@@ -165,9 +165,15 @@ export function computeIdRename(
       continue;
     }
     const trimmed = original.trim();
-    // The diagram directive (`graph TD`) and subgraph declarations carry
-    // keywords / titles, not node references — never rewrite ids there.
-    if (/^(graph|flowchart)\b/i.test(trimmed) || /^subgraph\b/i.test(trimmed)) {
+    // The diagram directive (`graph TD`), `direction` lines, and subgraph
+    // declarations carry keywords / titles, not node references — never rewrite
+    // ids there. (Frontmatter is already excluded: block.contentStart sits past
+    // it.) This stops a node named `TD`/`LR` from clobbering a `direction TD` line.
+    if (
+      /^(graph|flowchart)\b/i.test(trimmed) ||
+      /^direction\b/i.test(trimmed) ||
+      /^subgraph\b/i.test(trimmed)
+    ) {
       continue;
     }
     const replaced = renameIdInLine(original, oldId, newId);

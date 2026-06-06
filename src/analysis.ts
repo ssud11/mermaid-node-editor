@@ -36,6 +36,7 @@ export interface DuplicateGroup {
 
 const IDENT = /[A-Za-z0-9_]+/g;
 const DIRECTIVE = /^(graph|flowchart)\b/i;
+const DIRECTION = /^direction\b/i; // `direction TD` — a keyword line, not tags
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -71,6 +72,16 @@ export function findTagAtPosition(
   if (text === undefined) {
     return undefined;
   }
+  // Only tags inside the diagram body are navigable — not frontmatter, the
+  // markdown fence, the diagram directive, or `direction` keyword lines.
+  if (line < block.contentStart || line >= block.contentEnd) {
+    return undefined;
+  }
+  const trimmed = text.trim();
+  if (DIRECTIVE.test(trimmed) || DIRECTION.test(trimmed)) {
+    return undefined;
+  }
+
   // Identifier token covering the cursor.
   IDENT.lastIndex = 0;
   let token: { id: string; start: number; end: number } | undefined;
@@ -89,22 +100,30 @@ export function findTagAtPosition(
   if (!collectIds(block).has(token.id)) {
     return undefined; // a keyword / label word / unrelated identifier
   }
+
+  // On a subgraph declaration line, only the subgraph id is a tag — title words
+  // (including unquoted free-text titles) are never references.
+  const sgOnLine = block.subgraphs.find((s) => s.line === line);
+  if (sgOnLine) {
+    if (sgOnLine.hasId && sgOnLine.id === token.id && sgOnLine.idStart === token.start) {
+      return { id: token.id, kind: 'subgraph', line, startChar: token.start, endChar: token.end };
+    }
+    return undefined;
+  }
+
   if (inRange(token.start, token.end, protectedRanges(text))) {
     return undefined; // inside a label / quoted string / arrow operator
   }
 
-  // Is this occurrence the declaration itself, or a reference?
+  // Declaration occurrence vs a bare edge reference.
   const node = block.nodes.find((n) => n.id === token!.id && n.line === line && n.startChar === token!.start);
-  if (node) {
-    return { id: token.id, kind: 'node', line, startChar: token.start, endChar: token.end };
-  }
-  const sg = block.subgraphs.find(
-    (s) => s.hasId && s.id === token!.id && s.line === line && s.idStart === token!.start
-  );
-  if (sg) {
-    return { id: token.id, kind: 'subgraph', line, startChar: token.start, endChar: token.end };
-  }
-  return { id: token.id, kind: 'ref', line, startChar: token.start, endChar: token.end };
+  return {
+    id: token.id,
+    kind: node ? 'node' : 'ref',
+    line,
+    startChar: token.start,
+    endChar: token.end,
+  };
 }
 
 /**
@@ -140,7 +159,25 @@ export function findReferences(
   const re = new RegExp(`\\b${escapeRegExp(id)}\\b`, 'g');
   for (let ln = block.contentStart; ln < block.contentEnd; ln++) {
     const text = lines[ln];
-    if (text === undefined || DIRECTIVE.test(text.trim())) {
+    if (text === undefined) {
+      continue;
+    }
+    const trimmed = text.trim();
+    // Keyword lines carry no tag references (a node named TD must not match the
+    // `direction TD` keyword, nor `graph LR` etc.).
+    if (DIRECTIVE.test(trimmed) || DIRECTION.test(trimmed)) {
+      continue;
+    }
+    // On a subgraph declaration line the only tag is the subgraph id itself —
+    // never words inside the (possibly unquoted, free-text) title.
+    const sgOnLine = block.subgraphs.find((s) => s.line === ln);
+    if (sgOnLine) {
+      if (sgOnLine.hasId && sgOnLine.id === id) {
+        const isDecl = !!decl && decl.line === ln && decl.startChar === sgOnLine.idStart;
+        if (!(isDecl && !includeDeclaration)) {
+          out.push({ line: ln, startChar: sgOnLine.idStart, endChar: sgOnLine.idEnd });
+        }
+      }
       continue;
     }
     const ranges = protectedRanges(text);
