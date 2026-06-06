@@ -11,6 +11,7 @@ import {
   EditResult,
   TextEditDesc,
 } from '../editor';
+import { findDuplicateDeclarations } from '../analysis';
 
 export function isMmd(doc: vscode.TextDocument): boolean {
   return (
@@ -45,6 +46,7 @@ interface BlockView {
   nodes: Array<{ id: string; label: string; outgoing: string[]; incoming: string[] }>;
   subgraphs: Array<{ id: string; label: string; editable: boolean }>;
   edgeCount: number;
+  warnings: Array<{ id: string; message: string }>; // duplicate-tag lint, keyed by id
 }
 
 export class MermaidEditorProvider implements vscode.WebviewViewProvider {
@@ -129,6 +131,8 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
       push(outgoing, e.from, e.to);
       push(incoming, e.to, e.from);
     }
+    const lines = doc.getText().split(/\r?\n/);
+    const warnings = findDuplicateDeclarations(block, lines).map((d) => ({ id: d.id, message: d.message }));
     return {
       startLine: block.startLine,
       diagramType: block.diagramType,
@@ -142,6 +146,7 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
       })),
       subgraphs: block.subgraphs.map((s) => ({ id: s.id, label: s.label, editable: true })),
       edgeCount: block.edges.length,
+      warnings,
     };
   }
 
