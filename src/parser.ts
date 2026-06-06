@@ -212,13 +212,18 @@ const ARROW_SPLIT = /\s*[<xo]?[-.=]{2,}[->xo]?\s*/;
 function parseEdges(line: string, lineNumber: number, nodes: MermaidNode[]): MermaidEdge[] {
   let skeleton = edgeSkeleton(line, nodes);
   skeleton = skeleton.replace(/\|[^|]*\|/g, ' '); // drop |edge labels|
-  const ids = skeleton
-    .split(ARROW_SPLIT)
-    .map((p) => p.trim())
-    .filter((p) => ID_TOKEN.test(p));
   const edges: MermaidEdge[] = [];
-  for (let k = 0; k < ids.length - 1; k++) {
-    edges.push({ from: ids[k], to: ids[k + 1], line: lineNumber });
+  // `;` terminates/separates Mermaid statements (`A-->B; C-->D`). Parse each
+  // statement independently: otherwise a trailing `;` drops the edge (`B;` fails
+  // the id test) and two statements on one line synthesize a spurious cross-edge.
+  for (const stmt of skeleton.split(';')) {
+    const ids = stmt
+      .split(ARROW_SPLIT)
+      .map((p) => p.trim())
+      .filter((p) => ID_TOKEN.test(p));
+    for (let k = 0; k < ids.length - 1; k++) {
+      edges.push({ from: ids[k], to: ids[k + 1], line: lineNumber });
+    }
   }
   return edges;
 }

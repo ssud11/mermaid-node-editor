@@ -149,3 +149,22 @@ test('findBlocks: an unterminated frontmatter fence stays unsupported (no runawa
   const b = findMermaidBlocks(['---', 'title: X', 'flowchart LR', 'A --> B'].join('\n'), true)[0];
   assert.equal(b.supported, false);
 });
+
+// --- 2026-06-06 deep-review regression: `;` statement terminators must not drop
+// real edges or synthesize spurious ones. ---
+
+test('parseEdges: a trailing semicolon does not drop the edge', () => {
+  const b = findMermaidBlocks(['graph TD', 'A --> B;'].join('\n'), true)[0];
+  assert.deepEqual(
+    b.edges.map((e) => `${e.from}->${e.to}`),
+    ['A->B']
+  );
+});
+
+test('parseEdges: two statements on one line parse separately (no spurious cross-edge)', () => {
+  const b = findMermaidBlocks(['graph TD', 'A --> B; C --> D'].join('\n'), true)[0];
+  assert.deepEqual(
+    b.edges.map((e) => `${e.from}->${e.to}`).sort(),
+    ['A->B', 'C->D']
+  );
+});
