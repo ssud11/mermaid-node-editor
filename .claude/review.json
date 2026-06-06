@@ -1,0 +1,34 @@
+{
+  "projectName": "mermaid-node-editor",
+  "confidenceThreshold": 60,
+  "models": { "review": "opus", "verify": "opus", "synthesize": "opus" },
+  "scopeNotes": "v1 VS Code extension that adds a sidebar property editor for Mermaid flowchart nodes (edit a node's label/id; id rename propagates to edge refs). Scope-frozen: 'ship this, nothing more'. FLOWCHARTS ONLY (graph/flowchart). Architectural rule (load-bearing): src/parser.ts and src/editor.ts are PURE and must stay free of the vscode module (they unit-test in plain Node); vscode-coupled code lives in src/webview/panel.ts + src/extension.ts. A prior review round (IT-6) already fixed a batch of bugs and added regression tests, so focus on what REMAINS. Report ONLY real, reproducible, user-affecting bugs or security issues; no nitpicks, no style, nothing a typechecker/linter catches, no 'add more tests'.",
+  "knownLimitations": [
+    "Out-of-scope BY DESIGN (do not report as bugs): sequence/state/class/ER diagrams (shown as 'unsupported'); add/delete/reorder nodes; visual canvas; editing labels of bare-referenced-but-undefined ids; renaming subgraph ids; multi-file diagrams.",
+    "DOCUMENTED display limitation: dash-delimited edge labels (A -- text --> B) may add a spurious entry to the read-only CONNECTION LIST (the pipe form -->|text| is handled correctly). NOTE: this documented limitation is specifically about the connection-LIST display; a separate defect where an id rename rewrites/corrupts the edge-label PROSE in the source is NOT covered by this and IS in scope to report.",
+    "These README/CLAUDE.md known limitations are already documented and should NOT be reported: reversed arrows in the connection list, '&' fan-out edges, a node literally named 'end', an unquoted label containing ']', and the '&quot;' escape round-trip — UNLESS the finding is a NEW, distinct, more-severe manifestation (e.g. silent source corruption rather than a cosmetic connection-list entry)."
+  ],
+  "excludeGlobs": ["node_modules/**", "dist/**", "out/**", ".vscode-test/**", "artifacts/**", "reviews/**", "*.vsix", "images/**", "assets/**"],
+  "lenses": [
+    {
+      "key": "parser",
+      "files": ["src/parser.ts"],
+      "focus": "Correctness of the PARSER. Mermaid block detection (markdown fenced ```mermaid blocks + whole .mmd), node/subgraph/edge extraction, the regexes, line/column position computation, shape & quoting detection, getBlockAtLine boundaries. Hunt for: off-by-one positions, regex that mis-parses a legitimate v1 flowchart shape (incl. YAML frontmatter-prefixed flowcharts, directive lines), block-boundary errors, nested fences, wrong column spans that would make write-back land in the wrong place."
+    },
+    {
+      "key": "editor",
+      "files": ["src/editor.ts", "src/parser.ts"],
+      "focus": "Correctness of the WRITE-BACK logic. computeLabelEdit, computeIdRename (id rename + edge-reference propagation — the load-bearing feature), computeSubgraphLabelEdit. Hunt for: cases where an id rename corrupts the source (incl. rewriting edge-LABEL prose or arrow-operator characters), misses an edge reference, clobbers an unrelated token, mis-computes a TextEditDesc span, or mishandles quoting/shape preservation on write-back. Construct concrete failing inputs in your evidence."
+    },
+    {
+      "key": "glue",
+      "files": ["src/webview/panel.ts", "src/webview/main.js", "src/extension.ts", "src/webview/index.html"],
+      "focus": "The EXTENSION + WEBVIEW glue. WebviewViewProvider lifecycle, the webview<->extension message protocol, converting TextEditDesc[] to WorkspaceEdit and applying it, the re-parse-fresh-each-edit invariant, selection/active-editor/doc-change listeners staying synced, races on first open, ordering of posted messages (e.g. an error message immediately overwritten by an update). Hunt for: messages dropped/mis-routed/suppressed, stale positions, edits applied to the wrong document, listener leaks, panel/document desync."
+    },
+    {
+      "key": "conventions",
+      "files": ["src/webview/main.js", "src/webview/index.html", "src/webview/style.css", "src/extension.ts"],
+      "focus": "CONVENTION adherence + SECURITY. (1) Security: CSP correctness + nonce generation (must use a cryptographic RNG such as crypto.randomBytes, NOT a weak non-cryptographic PRNG); the no-innerHTML / createElement+textContent invariant (any path that could inject user-label markup); WorkspaceEdit scoping. (2) Conventions per CLAUDE.md: the parser/editor layers staying free of the vscode module; packaging correctness. Report only real violations or exploitable gaps, not a theoretical hardening wishlist."
+    }
+  ]
+}
