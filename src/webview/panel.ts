@@ -11,7 +11,7 @@ import {
   EditResult,
   TextEditDesc,
 } from '../editor';
-import { findDuplicateDeclarations } from '../analysis';
+import { findDuplicateDeclarations, findTagAtPosition, findDeclaration } from '../analysis';
 
 export function isMmd(doc: vscode.TextDocument): boolean {
   return (
@@ -85,15 +85,23 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
       this.clear();
       return;
     }
-    const line = editor.selection.active.line;
-    const block = getBlockAtLine(doc, line);
+    const pos = editor.selection.active;
+    const block = getBlockAtLine(doc, pos.line);
     if (!block) {
       this.clear();
       return;
     }
     this.currentUri = doc.uri;
     this.currentBlockStart = block.startLine;
-    this.post({ type: 'update', block: this.toView(block, doc) });
+    // If the cursor sits on a tag that's in the list, tell the panel to select it
+    // (scroll its row into view + expand it) — selection sync from source → panel.
+    const lines = doc.getText().split(/\r?\n/);
+    const tag = findTagAtPosition(block, lines, pos.line, pos.character);
+    const focusedId =
+      tag && (block.nodes.some((n) => n.id === tag.id) || block.subgraphs.some((s) => s.id === tag.id))
+        ? tag.id
+        : undefined;
+    this.post({ type: 'update', block: this.toView(block, doc), focusedId });
   }
 
   onDocChange(doc: vscode.TextDocument): void {
@@ -162,6 +170,11 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
       this.refreshFromActiveEditor();
       return;
     }
+    // Reveal a tag in the source when its row is clicked (panel → source sync).
+    if (msg.type === 'nodeClicked') {
+      await this.revealTag(msg.id);
+      return;
+    }
     if (!this.currentUri) {
       return;
     }
@@ -217,8 +230,36 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     const refreshed = getBlockAtLine(fresh, this.currentBlockStart);
     if (refreshed) {
       this.currentBlockStart = refreshed.startLine;
-      this.post({ type: 'update', block: this.toView(refreshed, fresh) });
+      // Keep the just-edited tag selected — the new id after a rename, else the same id.
+      const focusedId = msg.type === 'nodeIdChanged' ? value : msg.id;
+      this.post({ type: 'update', block: this.toView(refreshed, fresh), focusedId });
     }
+  }
+
+  /** Reveal a tag's declaration in the source editor without stealing focus. */
+  private async revealTag(id: string): Promise<void> {
+    if (!this.currentUri) {
+      return;
+    }
+    let doc: vscode.TextDocument;
+    try {
+      doc = await vscode.workspace.openTextDocument(this.currentUri);
+    } catch {
+      return;
+    }
+    const block = getBlockAtLine(doc, this.currentBlockStart);
+    if (!block) {
+      return;
+    }
+    const decl = findDeclaration(block, id);
+    if (!decl) {
+      return;
+    }
+    const start = new vscode.Position(decl.line, decl.startChar);
+    const end = new vscode.Position(decl.line, decl.endChar);
+    const editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
+    editor.selection = new vscode.Selection(start, start);
+    editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   }
 
   private async applyEdits(uri: vscode.Uri, edits: TextEditDesc[]): Promise<void> {
