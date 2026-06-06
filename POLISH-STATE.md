@@ -1,10 +1,10 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: v1.0.0 release-prep DONE; pre-public steps pending | next=ultrareview→scrub→publish | ⚠ 4 HIGH bugs flagged pre-public (reviews/deep-review-2026-06-06.md) — fix-or-ship is operator's call | GATE: operator (resume in a fresh session) -->
+<!-- STATUS: v1.0.1 — the 4 HIGH bugs /deep-review found are FIXED (+10 unit regression tests + visual coverage); pre-public steps pending | next=ultrareview→scrub→publish | GATE: operator (resume in a fresh session) -->
 
 ## ⏭ Resume here — pre-public steps (new session)
 
-Build complete; **v1.0.0** committed + pushed. `.vsix` = `mermaid-node-editor-1.0.0.vsix`, publisher `ssud11`, repo `github.com/ssud11/mermaid-node-editor` (still **private**). Docs were trimmed to a lean, user-facing README (dev detail → `CONTRIBUTING.md`); commits no longer carry an AI co-author trailer. Remaining before public — all operator-driven:
+Build complete; **v1.0.1** committed + pushed (was v1.0.0; bumped for the deep-review bug fixes). `.vsix` = `mermaid-node-editor-1.0.1.vsix`, publisher `ssud11`, repo `github.com/ssud11/mermaid-node-editor` (still **private**). Docs were trimmed to a lean, user-facing README (dev detail → `CONTRIBUTING.md`); commits no longer carry an AI co-author trailer. Remaining before public — all operator-driven:
 
 1. **Ultrareview** — operator runs `/code-review ultra` (user-triggered + billed; an agent cannot launch it). Apply any fixes as clean commits (no trailer).
 2. **Scrub for public** — operator runs `bash ~/scrub-mermaid-for-public.sh`: rewrites history to remove `CLAUDE.md` / `POLISH-STATE.md` / `.claude/` (kept on disk via `.git/info/exclude`) and strip the `Co-Authored-By: Claude` trailer + drop now-empty process-only commits. Review its verification output.
@@ -12,7 +12,7 @@ Build complete; **v1.0.0** committed + pushed. `.vsix` = `mermaid-node-editor-1.
 4. **Icon** — `icon.png` is still the generated placeholder; swap if desired.
 5. **Go public + publish** — flip the repo public (the README GIF only renders once public; vsce rewrites the image to a GitHub raw URL), then upload the `.vsix` in the Marketplace UI or `vsce publish`.
 
-> ⚠ **Pre-public bug decision (NEW 2026-06-06, your call):** the new `/deep-review` tool found **4 HIGH-severity bugs** still in the v1 code — see [reviews/deep-review-2026-06-06.md](reviews/deep-review-2026-06-06.md) (gitignored, on disk). (1) ID rename **silently corrupts** dash/dotted/thick edge-label prose; (2) YAML-frontmatter flowcharts shown "unsupported"; (3) validation errors instantly wiped (user never sees why an edit failed); (4) `;` statement terminators drop/synthesize edges → silent node merge on rename. All are real + reproduced; none are documented limitations. **Decide fix-or-ship before going public.** The rank-#1 dash-label fix is verified-ready (applied → 26 tests green → reverted); say the word and I'll re-apply any/all as clean commits. These can also just be the meat of your `/code-review ultra` pass (step 1).
+> ✅ **The 4 HIGH bugs /deep-review found are FIXED in v1.0.1 (2026-06-06)** — see [reviews/deep-review-2026-06-06.md](reviews/deep-review-2026-06-06.md) for the findings. (1) inline dash/dotted/thick edge-label prose no longer corrupted on ID rename (`20f4e8a`); (2) YAML-frontmatter flowcharts now recognized (`7a49cc5`); (3) `;` statements parsed — edges not dropped/merged (`2cf36eb`); (4) edit-rejection errors stay visible (`4d6d1b0`). Each shipped with regression tests (+10 unit; #3 via the Playwright webview harness — `npm run visual`). 36/36 unit green, `vsce package` clean at 1.0.1. **Nothing outstanding here** — `/code-review ultra` (step 1) is now a clean second-opinion pass, not a must-fix.
 
 Security review (this session): no secrets in tracked files; CSP + CSPRNG nonce, no `innerHTML`, scoped `WorkspaceEdit`, no runtime deps. The only pre-public concern was the AI-process files above (handled by the scrub).
 
@@ -111,6 +111,15 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-06 · Fixed the 4 HIGH deep-review bugs → v1.0.1 · DONE
+- **Fixed (one `fix:` commit each, every one on a green gate + a regression test that fails on the old code):**
+  - `20f4e8a` — `editor.ts protectedRanges`: protect inline dash/dotted/thick edge-label prose so an id rename can't rewrite words inside `A -- send A data --> B` (pipe form was already safe). +3 unit tests.
+  - `7a49cc5` — `parser.ts buildBlock`: skip a leading `--- … ---` YAML frontmatter block so titled/configured flowcharts aren't marked "unsupported". +4 unit tests.
+  - `2cf36eb` — `parser.ts parseEdges`: parse `;`-separated statements so edges aren't dropped/synthesized; also un-blinds the rename collision-guard (no more silent node merge). +3 unit tests (incl. the downstream editor guard).
+  - `4d6d1b0` — `panel.ts` + `main.js`: rejected edits now send a single `{error, message, block}` (no follow-up `update` to wipe it) and the webview resets the field without hiding the error. Verified via the **Playwright webview harness** (`npm run visual`) — error-persist + field-reset assertions (fail on old `main.js`).
+- **Version:** `1c0102f` — bumped 1.0.0 → **1.0.1** + CHANGELOG (operator: "fold as v1.0.1 for our records"). 36/36 unit green; `vsce package` clean → `mermaid-node-editor-1.0.1.vsix`.
+- All 5 commits pushed to `main`. mermaid otherwise unchanged.
 
 ### 2026-06-06 · Tooling — built the `/deep-review` skill (separate from the release loop) · DONE
 - **What:** operator + I built a reusable, local, multi-agent code-review tool (fan-out by lens → adversarially verify → synthesize) — the free, agent-runnable twin of cloud `/code-review ultra`. Approved plan: `/home/ssud11/.claude-account-b/plans/luminous-puzzling-squid.md` (copy in cowork `mermaid-note-editor/`).
