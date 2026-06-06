@@ -17,6 +17,14 @@ A sidebar editor for Mermaid flowchart nodes. Click into a diagram and the panel
 
 Flowcharts only (`graph` / `flowchart`). Other diagram types show an "unsupported" notice.
 
+## Install
+
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ssud11.mermaid-node-editor), or from the command line:
+
+```bash
+code --install-extension ssud11.mermaid-node-editor
+```
+
 ## Usage
 
 Open a `.mmd` file, or a Markdown file with a ` ```mermaid ` block, and put your cursor inside the diagram. The **Mermaid Node Editor** panel shows up in the Explorer. Edit a field and click away to apply. You can also run **Mermaid: Open Node Editor** from the Command Palette.
