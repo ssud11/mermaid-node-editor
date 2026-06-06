@@ -1,6 +1,6 @@
 # POLISH-STATE — Mermaid Node Editor → Marketplace
 
-<!-- STATUS: v1.0.0 release-prep DONE; pre-public steps pending | next=ultrareview→scrub→publish | GATE: operator (resume in a fresh session) -->
+<!-- STATUS: v1.0.0 release-prep DONE; pre-public steps pending | next=ultrareview→scrub→publish | ⚠ 4 HIGH bugs flagged pre-public (reviews/deep-review-2026-06-06.md) — fix-or-ship is operator's call | GATE: operator (resume in a fresh session) -->
 
 ## ⏭ Resume here — pre-public steps (new session)
 
@@ -11,6 +11,8 @@ Build complete; **v1.0.0** committed + pushed. `.vsix` = `mermaid-node-editor-1.
 3. **Force-push** — `git push --force origin main` (the script prints it). An agent can read/verify git state but **cannot run the rewrite or force-push** (harness blocks destructive history ops — that's expected).
 4. **Icon** — `icon.png` is still the generated placeholder; swap if desired.
 5. **Go public + publish** — flip the repo public (the README GIF only renders once public; vsce rewrites the image to a GitHub raw URL), then upload the `.vsix` in the Marketplace UI or `vsce publish`.
+
+> ⚠ **Pre-public bug decision (NEW 2026-06-06, your call):** the new `/deep-review` tool found **4 HIGH-severity bugs** still in the v1 code — see [reviews/deep-review-2026-06-06.md](reviews/deep-review-2026-06-06.md) (gitignored, on disk). (1) ID rename **silently corrupts** dash/dotted/thick edge-label prose; (2) YAML-frontmatter flowcharts shown "unsupported"; (3) validation errors instantly wiped (user never sees why an edit failed); (4) `;` statement terminators drop/synthesize edges → silent node merge on rename. All are real + reproduced; none are documented limitations. **Decide fix-or-ship before going public.** The rank-#1 dash-label fix is verified-ready (applied → 26 tests green → reverted); say the word and I'll re-apply any/all as clean commits. These can also just be the meat of your `/code-review ultra` pass (step 1).
 
 Security review (this session): no secrets in tracked files; CSP + CSPRNG nonce, no `innerHTML`, scoped `WorkspaceEdit`, no runtime deps. The only pre-public concern was the AI-process files above (handled by the scrub).
 
@@ -109,6 +111,12 @@ If NONE of the above fire: update `STATUS:`, mark the item, and CONTINUE — the
 ---
 
 ## Iteration log (newest on top — REVIEW PACKETs land here)
+
+### 2026-06-06 · Tooling — built the `/deep-review` skill (separate from the release loop) · DONE
+- **What:** operator + I built a reusable, local, multi-agent code-review tool (fan-out by lens → adversarially verify → synthesize) — the free, agent-runnable twin of cloud `/code-review ultra`. Approved plan: `/home/ssud11/.claude-account-b/plans/luminous-puzzling-squid.md` (copy in cowork `mermaid-note-editor/`).
+- **Shipped:** `.claude/review.json` (4 curated lenses + scope) + `.claude/commands/deep-review.md` (command + embedded Workflow template + gated `--fix`); `reviews/` gitignored; commits `942e23d` + `969c7d4` (pushed). Promoted to a **global skill** in both account dirs (`~/.claude-account-{a,b}/skills/deep-review/SKILL.md`, byte-identical) — `/deep-review` now works in any repo.
+- **Proven (all 3):** full-tree run (5→5 confirmed, parity PASS vs prototype, report written); scoped run (`src/parser.ts` → single lens, found the NEW `;` bug); `--fix` (applied rank-#1 fix → allowlist held → 26 tests green → bug fixed in repro → **reverted clean**). mermaid source untouched.
+- **Output:** the 4 HIGH bugs above (see the ⚠ note at top + `reviews/deep-review-2026-06-06.md`). **Flagged, not fixed** — operator's call.
 
 ### 2026-06-05 · IT-5 GIF — animated demo hero · DONE (all roadmap complete)
 - **Recorded** the real extension on the xrdp desktop (Peek → GIF), driving the ID rename `B → Auth`. First take 47s and missed the rename (edited the Label, not the ID); coached ID-vs-Label; second take nailed the ripple.
