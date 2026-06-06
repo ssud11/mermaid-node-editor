@@ -1,0 +1,10 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
+     fill="none" stroke="currentColor" stroke-width="1.7"
+     stroke-linecap="round" stroke-linejoin="round">
+  <!-- edges (parent -> children); drawn first so node outlines sit on top -->
+  <path d="M12 7.5 L6.5 14.5 M12 7.5 L17.5 14.5"/>
+  <!-- flowchart nodes (Mermaid [ ] shape) -->
+  <rect x="8"    y="2.5"  width="8" height="5" rx="1.5"/>
+  <rect x="2.5"  y="14.5" width="8" height="5" rx="1.5"/>
+  <rect x="13.5" y="14.5" width="8" height="5" rx="1.5"/>
+</svg>
