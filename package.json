@@ -4,7 +4,7 @@
   "description": "A sidebar editor for Mermaid flowchart nodes — rename an ID and every edge updates with it.",
   "version": "1.0.1",
   "license": "MIT",
-  "publisher": "ssud11",
+  "publisher": "SS-inkwright",
   "repository": {
     "type": "git",
     "url": "https://github.com/ssud11/mermaid-node-editor.git"

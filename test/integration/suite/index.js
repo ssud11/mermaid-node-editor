@@ -7,8 +7,8 @@ const vscode = require('vscode');
 
 async function run() {
   // 1. Extension is present and activates
-  const ext = vscode.extensions.getExtension('ssud11.mermaid-node-editor');
-  assert.ok(ext, 'extension ssud11.mermaid-node-editor should be discoverable');
+  const ext = vscode.extensions.getExtension('SS-inkwright.mermaid-node-editor');
+  assert.ok(ext, 'extension SS-inkwright.mermaid-node-editor should be discoverable');
   const api = await ext.activate();
   assert.ok(ext.isActive, 'extension should activate without throwing');
   assert.ok(api && api.provider, 'activate() should expose the provider for testing');

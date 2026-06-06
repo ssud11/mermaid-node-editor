@@ -19,10 +19,10 @@ Flowcharts only (`graph` / `flowchart`). Other diagram types show an "unsupporte
 
 ## Install
 
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ssud11.mermaid-node-editor), or from the command line:
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=SS-inkwright.mermaid-node-editor), or from the command line:
 
 ```bash
-code --install-extension ssud11.mermaid-node-editor
+code --install-extension SS-inkwright.mermaid-node-editor
 ```
 
 ## Usage
