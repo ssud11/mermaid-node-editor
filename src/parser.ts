@@ -29,6 +29,8 @@ export interface MermaidSubgraph {
   raw: string;
   hasId: boolean; // false when written as `subgraph "Title"` (no explicit id)
   quote: Quote;
+  idStart: number; // start column of the id/title token on the line
+  idEnd: number; // end column (exclusive) of the id/title token
 }
 
 export interface MermaidEdge {
@@ -160,6 +162,12 @@ function parseSubgraph(line: string, lineNumber: number): MermaidSubgraph | unde
   const indent = m[1];
   const rest = m[2].trim();
 
+  // Column where the content after the `subgraph` keyword begins (the id/title).
+  let cs = indent.length + 'subgraph'.length;
+  while (cs < line.length && /\s/.test(line[cs])) {
+    cs++;
+  }
+
   // `subgraph id [Title]`
   const withBracket = /^([A-Za-z0-9_]+)\s*\[(.*)\]\s*$/.exec(rest);
   if (withBracket) {
@@ -172,23 +180,25 @@ function parseSubgraph(line: string, lineNumber: number): MermaidSubgraph | unde
       raw: line,
       hasId: true,
       quote: inner.quote,
+      idStart: cs,
+      idEnd: cs + withBracket[1].length,
     };
   }
 
   // `subgraph "Title"` / `subgraph 'Title'`
   if ((rest.startsWith('"') && rest.endsWith('"')) || (rest.startsWith("'") && rest.endsWith("'"))) {
     const inner = stripQuotes(rest);
-    return { id: inner.value, label: inner.value, line: lineNumber, indent, raw: line, hasId: false, quote: inner.quote };
+    return { id: inner.value, label: inner.value, line: lineNumber, indent, raw: line, hasId: false, quote: inner.quote, idStart: cs, idEnd: cs + rest.length };
   }
 
   // `subgraph plainId`
   if (ID_TOKEN.test(rest)) {
-    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: true, quote: '' };
+    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: true, quote: '', idStart: cs, idEnd: cs + rest.length };
   }
 
   // `subgraph Some free text title`
   if (rest.length > 0) {
-    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: false, quote: '' };
+    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: false, quote: '', idStart: cs, idEnd: cs + rest.length };
   }
 
   return undefined;
@@ -337,4 +347,16 @@ export function findMermaidBlocks(text: string, isMmd: boolean): MermaidBlock[] 
     i = j;
   }
   return blocks;
+}
+
+/**
+ * Pick the block containing a given line. For `.mmd` the whole file is one block,
+ * so the first (only) block is always returned. Pure counterpart of the panel's
+ * cursor→block lookup so providers/diagnostics can share it.
+ */
+export function blockAtLine(blocks: MermaidBlock[], line: number, isMmd: boolean): MermaidBlock | undefined {
+  if (isMmd) {
+    return blocks[0];
+  }
+  return blocks.find((b) => line >= b.startLine && line <= b.endLine);
 }
