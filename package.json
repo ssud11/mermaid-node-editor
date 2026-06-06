@@ -47,12 +47,21 @@
         ]
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mermaid-node-editor",
+          "title": "Mermaid Node Editor",
+          "icon": "media/icon-activitybar.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "mermaid-node-editor": [
         {
           "type": "webview",
           "id": "mermaidNodeEditor",
-          "name": "Mermaid Node Editor"
+          "name": "Node Editor"
         }
       ]
     },
