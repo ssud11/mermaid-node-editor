@@ -72,6 +72,9 @@ const SAMPLE = {
   ],
   subgraphs: [{ id: 'flow', label: 'Validation', editable: true }],
   edgeCount: 5,
+  warnings: [
+    { id: 'C', message: 'Tag "C" is defined more than once with different labels — Mermaid merges them into one node.' },
+  ],
 };
 const UNSUPPORTED = {
   startLine: 0,
@@ -81,6 +84,7 @@ const UNSUPPORTED = {
   nodes: [],
   subgraphs: [],
   edgeCount: 0,
+  warnings: [],
 };
 
 async function setTheme(page, vars) {
@@ -113,26 +117,42 @@ async function shot(page, theme, name, message) {
   });
   const page = await browser.newPage({ viewport: { width: 340, height: 640 } });
 
-  await shot(page, DARK, '01-populated-dark.png', { type: 'update', block: SAMPLE });
-  await shot(page, LIGHT, '02-populated-light.png', { type: 'update', block: SAMPLE });
+  await shot(page, DARK, '01-populated-dark.png', { type: 'update', block: SAMPLE, focusedId: 'A' });
+  await shot(page, LIGHT, '02-populated-light.png', { type: 'update', block: SAMPLE, focusedId: 'A' });
   await shot(page, DARK, '03-unsupported-dark.png', { type: 'update', block: UNSUPPORTED });
   await shot(page, DARK, '04-empty-dark.png', { type: 'clear' });
 
-  // --- assertions on the populated state ---
+  // --- assertions on the populated state (A selected -> its detail is open) ---
   await page.goto(HARNESS);
   await setTheme(page, DARK);
-  await feed(page, { type: 'update', block: SAMPLE });
+  await feed(page, { type: 'update', block: SAMPLE, focusedId: 'A' });
   await page.waitForTimeout(80);
 
-  const startCount = await page.locator('input[value="Start"]').count();
-  assert.ok(startCount >= 1, 'a node label input with value "Start" should render');
+  // master list: one row per node (compact rows scale to large diagrams)
+  assert.ok((await page.locator('.row').count()) >= 5, 'a compact row should render per node');
 
+  // filter box present
+  assert.strictEqual(await page.locator('input.search').count(), 1, 'a filter box should render');
+
+  // the selected node's detail shows its editable label input
+  const startCount = await page.locator('input[value="Start"]').count();
+  assert.ok(startCount >= 1, 'the selected node detail should show its label input ("Start")');
+
+  // injection-safety: a label/id carrying HTML must render as text, never elements
   const injectedEls = await page.locator('b, img').count();
   assert.strictEqual(injectedEls, 0, 'labels/ids with HTML must render as text, not elements');
+
+  // duplicate-tag warning badge on the flagged row
+  assert.ok((await page.locator('.row-warn').count()) >= 1, 'a duplicate-tag row should show a warning badge');
 
   // innerText reflects CSS text-transform:uppercase, so match case-insensitively.
   const sectionText = await page.locator('.section-title').first().innerText();
   assert.ok(/nodes \(5\)/i.test(sectionText), 'should show "Nodes (5)" section title');
+
+  // filtering narrows the visible rows
+  await page.locator('input.search').fill('Reject');
+  await page.waitForTimeout(50);
+  assert.strictEqual(await page.locator('.row:visible').count(), 1, 'filter "Reject" should show exactly the D row');
 
   // unsupported notice
   await feed(page, { type: 'update', block: UNSUPPORTED });
@@ -140,34 +160,31 @@ async function shot(page, theme, name, message) {
   const body = await page.locator('body').innerText();
   assert.ok(/not supported in v1/.test(body), 'unsupported diagram should show the v1 notice');
 
-  // --- #3 regression: a rejected edit must show an error
-  //     that is NOT instantly wiped, and must reset the field to canonical. The fixed
-  //     contract is a single {type:'error', message, block} message. Old main.js
-  //     ignored msg.block (would not render the field from the error) -> fails there. ---
+  // --- #3 regression: a rejected edit must show an error that is NOT instantly
+  //     wiped, and must reset the field to canonical. The contract is a single
+  //     {type:'error', message, block} message. The edited row stays selected so
+  //     its detail re-renders from the canonical block. ---
   await page.goto(HARNESS);
   await setTheme(page, DARK);
-  // Fresh page (no prior 'update'): only the error message carries the block.
-  await feed(page, {
-    type: 'error',
-    message: 'Id "B" already exists in this diagram.',
-    block: SAMPLE,
-  });
+  await feed(page, { type: 'update', block: SAMPLE, focusedId: 'B' }); // select B, detail open
+  await page.waitForTimeout(40);
+  await feed(page, { type: 'error', message: 'Id "C" already exists in this diagram.', block: SAMPLE });
   await page.waitForTimeout(80);
   assert.ok(await page.locator('#error').isVisible(), 'error box must be visible after a rejected edit');
   const errText = await page.locator('#error').innerText();
   assert.ok(/already exists/.test(errText), 'error box should show the rejection reason');
   assert.ok(
-    (await page.locator('input[value="Start"]').count()) >= 1,
-    'field must be rendered from the block carried with the error (the fix)'
+    (await page.locator('input[value="B"]').count()) >= 1,
+    'the id field must reset to canonical (B) from the block carried with the error'
   );
   await page.screenshot({ path: path.join(OUT, '05-rejected-edit-dark.png'), fullPage: true });
   // A subsequent successful update clears the error (no regression of error-clearing).
-  await feed(page, { type: 'update', block: SAMPLE });
+  await feed(page, { type: 'update', block: SAMPLE, focusedId: 'B' });
   await page.waitForTimeout(80);
   assert.ok(!(await page.locator('#error').isVisible()), 'a successful update should clear the error');
 
   await browser.close();
-  console.log('VISUAL PASS: 5 screenshots in artifacts/ + DOM assertions (no injection, sections, unsupported, error-persist+reset)');
+  console.log('VISUAL PASS: 5 screenshots + DOM assertions (master-detail rows, filter, warning badge, no injection, unsupported, error-persist+reset)');
 })().catch((err) => {
   console.error('Visual harness failed:', err);
   process.exit(1);
