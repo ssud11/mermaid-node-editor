@@ -22,6 +22,7 @@ Run `npm run typecheck`, `npm test`, `npm run compile`. If any fail, fix and re-
 ## 4 · CHECK (deep verification, matched to the item)
 - Runtime / visual items → run the `@vscode/test-electron` smoke headless under `xvfb-run`; capture screenshots to `artifacts/`.
 - Code items → `/code-review`; anything touching the webview or write-back → also `/security-review`.
+- **Milestone passes only** (e.g. pre-`.vsix`, pre-release) → optionally run `/deep-review` (local multi-agent fan-out→verify→synthesize; ~15 min/~684k tokens). Fold its confirmed findings into `POLISH-STATE.md` as new backlog items, same as `/code-review` output. Do NOT run it on every inner-loop pass — it's too slow/costly for the self-driving cadence; the loop must not depend on it.
 - Packaging items → `npx @vscode/vsce package` (or `--dry-run`).
 Report what you actually ran vs. what stays assumed (follow `~/verification-discipline.md`). Never claim "works" for something you did not run.
 
