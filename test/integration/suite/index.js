@@ -217,6 +217,46 @@ async function run() {
   );
   assert.strictEqual(active.selection.active.line, 2, 'clicking row C should move the cursor to C[End] on line 2');
   console.log('A4 PASS: clicking a row reveals the tag in the source');
+
+  // 10. A5 — native F2 rename reuses computeIdRename (edge propagation + collision guard).
+  const renDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[Start] --> B[Mid]\n  B --> A\n',
+  });
+  await vscode.window.showTextDocument(renDoc, { preview: false });
+  const wsedit = await vscode.commands.executeCommand(
+    'vscode.executeDocumentRenameProvider',
+    renDoc.uri,
+    new vscode.Position(1, 2), // the A definition
+    'Z'
+  );
+  assert.ok(wsedit, 'F2 rename should produce a WorkspaceEdit');
+  await vscode.workspace.applyEdit(wsedit);
+  const rtext = (await vscode.workspace.openTextDocument(renDoc.uri)).getText();
+  assert.ok(rtext.includes('Z[Start]'), 'F2 rename should rename the definition A -> Z');
+  assert.ok(/B --> Z/.test(rtext), 'F2 rename should propagate to the edge reference');
+  assert.ok(!rtext.includes('A[Start]'), 'old id A[Start] should be gone after F2 rename');
+
+  // Collision guard: renaming onto an existing id must be rejected (shared with the sidebar).
+  const colDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[One] --> B[Two]\n',
+  });
+  await vscode.window.showTextDocument(colDoc, { preview: false });
+  let renameRejected = false;
+  let we2;
+  try {
+    we2 = await vscode.commands.executeCommand(
+      'vscode.executeDocumentRenameProvider',
+      colDoc.uri,
+      new vscode.Position(1, 2), // A
+      'B' // collides with existing B
+    );
+  } catch {
+    renameRejected = true;
+  }
+  assert.ok(renameRejected || !we2 || we2.size === 0, 'renaming onto an existing id must be rejected (no edits)');
+  console.log('A5 PASS: native F2 rename propagates to edges and rejects collisions');
 }
 
 module.exports = { run };
