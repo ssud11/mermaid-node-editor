@@ -197,9 +197,10 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     }
 
     if (!result.ok) {
-      this.post({ type: 'error', message: result.error ?? 'Edit failed.' });
-      // Re-render to reset the field to the canonical value.
-      this.post({ type: 'update', block: this.toView(block, doc) });
+      // Single message: show the error AND carry the canonical block so the field
+      // resets. Sending a separate follow-up 'update' would hide the error the
+      // instant it was shown (the webview's 'update' handler clears the error box).
+      this.post({ type: 'error', message: result.error ?? 'Edit failed.', block: this.toView(block, doc) });
       return;
     }
 

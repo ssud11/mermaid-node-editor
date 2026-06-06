@@ -140,8 +140,34 @@ async function shot(page, theme, name, message) {
   const body = await page.locator('body').innerText();
   assert.ok(/not supported in v1/.test(body), 'unsupported diagram should show the v1 notice');
 
+  // --- #3 regression (2026-06-06 deep-review): a rejected edit must show an error
+  //     that is NOT instantly wiped, and must reset the field to canonical. The fixed
+  //     contract is a single {type:'error', message, block} message. Old main.js
+  //     ignored msg.block (would not render the field from the error) -> fails there. ---
+  await page.goto(HARNESS);
+  await setTheme(page, DARK);
+  // Fresh page (no prior 'update'): only the error message carries the block.
+  await feed(page, {
+    type: 'error',
+    message: 'Id "B" already exists in this diagram.',
+    block: SAMPLE,
+  });
+  await page.waitForTimeout(80);
+  assert.ok(await page.locator('#error').isVisible(), 'error box must be visible after a rejected edit');
+  const errText = await page.locator('#error').innerText();
+  assert.ok(/already exists/.test(errText), 'error box should show the rejection reason');
+  assert.ok(
+    (await page.locator('input[value="Start"]').count()) >= 1,
+    'field must be rendered from the block carried with the error (the fix)'
+  );
+  await page.screenshot({ path: path.join(OUT, '05-rejected-edit-dark.png'), fullPage: true });
+  // A subsequent successful update clears the error (no regression of error-clearing).
+  await feed(page, { type: 'update', block: SAMPLE });
+  await page.waitForTimeout(80);
+  assert.ok(!(await page.locator('#error').isVisible()), 'a successful update should clear the error');
+
   await browser.close();
-  console.log('VISUAL PASS: 4 screenshots in artifacts/ + DOM assertions (no injection, sections, unsupported)');
+  console.log('VISUAL PASS: 5 screenshots in artifacts/ + DOM assertions (no injection, sections, unsupported, error-persist+reset)');
 })().catch((err) => {
   console.error('Visual harness failed:', err);
   process.exit(1);
