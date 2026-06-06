@@ -139,7 +139,7 @@ test('computeIdRename: does not rewrite the o/x letter inside --o / --x arrowhea
   assert.equal(out[1], 'A[Start] --o Z[Circle]'); // arrowhead --o intact, node o renamed
 });
 
-// --- 2026-06-06 deep-review regression: id rename must not corrupt inline
+// --- regression: id rename must not corrupt inline
 // edge-LABEL prose (dash / thick / dotted forms). Pipe-form was already safe. ---
 
 test('renameIdInLine: does not rewrite an id-word inside a dash-delimited edge label', () => {
