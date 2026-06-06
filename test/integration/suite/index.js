@@ -199,6 +199,24 @@ async function run() {
     'references should include the def (line 1) and the C --> A edge (line 3)'
   );
   console.log('A3 PASS: go-to-definition + find-references resolve tags across edges');
+
+  // 9. A4 — clicking a row reveals that tag in the source (panel → source sync).
+  const revealDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[Start] --> B[Mid]\n  B --> C[End]\n',
+  });
+  const revealEd = await vscode.window.showTextDocument(revealDoc, { preview: false });
+  revealEd.selection = new vscode.Selection(0, 0, 0, 0); // cursor on the directive line
+  provider.onSelection(revealEd);
+  await provider.onMessage({ type: 'nodeClicked', id: 'C' });
+  await new Promise((r) => setTimeout(r, 200));
+  const active = vscode.window.activeTextEditor;
+  assert.ok(
+    active && active.document.uri.toString() === revealDoc.uri.toString(),
+    'the source document should be the active editor after a reveal'
+  );
+  assert.strictEqual(active.selection.active.line, 2, 'clicking row C should move the cursor to C[End] on line 2');
+  console.log('A4 PASS: clicking a row reveals the tag in the source');
 }
 
 module.exports = { run };
