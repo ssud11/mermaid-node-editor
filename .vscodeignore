@@ -17,7 +17,7 @@ esbuild.config.js
 .claude/**
 POLISH-STATE.md
 CLAUDE.md
-PLAN-v1.1.md
+PLAN-*.md
 CONTRIBUTING.md
 package-lock.json
 artifacts/**
