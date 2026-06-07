@@ -85,9 +85,12 @@ export function protectedRanges(line: string): Range[] {
     ranges.push([p.index, p.index + p[0].length]);
   }
   // Inline edge labels in dash/dotted/thick form (`A -- text --> B`, `A == t ==> B`,
-  // `A -. t .-> B`): protect the inner <text> so an id-like word in the label prose is
-  // never rewritten during an id rename. Mirrors the pipe-form handling above.
-  const inlineLabelRe = /(?<=^|\s)([<xo]?[-.=]{2,}\s+)(.+?)(\s+[-.=]{2,}[>xo]?)(?=\s|$)/g;
+  // `A -. t .-> B`, and the glued `A --text--> B`): protect the inner <text> so an
+  // id-like word in the label prose is never rewritten during an id rename. The
+  // opening operator carries a `(?![>xo])` lookahead so it is NOT an arrowhead —
+  // that keeps a chained `A --> B --> C` from treating B as label text. The inner
+  // whitespace is optional (\s*) so a label abutting its operator is still caught.
+  const inlineLabelRe = /(?<=^|\s)([<xo]?[-.=]{2,}(?![>xo])\s*)(.+?)(\s*[-.=]{2,}[>xo]?)(?=\s|$)/g;
   let il: RegExpExecArray | null;
   while ((il = inlineLabelRe.exec(line)) !== null) {
     const innerStart = il.index + il[1].length;
@@ -179,7 +182,11 @@ export function computeIdRename(
     if (
       /^(graph|flowchart)\b/i.test(trimmed) ||
       /^direction\b/i.test(trimmed) ||
-      /^subgraph\b/i.test(trimmed)
+      /^subgraph\b/i.test(trimmed) ||
+      // style / classDef / linkStyle / click statements carry CSS values, class
+      // names and URLs (not node refs we own) — never rewrite ids inside them, or
+      // a node id that matches a value token would corrupt the styling.
+      /^(style|classDef|linkStyle|click)\b/i.test(trimmed)
     ) {
       continue;
     }
