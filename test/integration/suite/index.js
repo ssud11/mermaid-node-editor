@@ -257,6 +257,32 @@ async function run() {
   }
   assert.ok(renameRejected || !we2 || we2.size === 0, 'renaming onto an existing id must be rejected (no edits)');
   console.log('A5 PASS: native F2 rename propagates to edges and rejects collisions');
+
+  // 11. Split-view reveal must REUSE the existing editor, not open a duplicate copy
+  //     of the doc in the active column (the reported split-view bug).
+  const splitDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[Start] --> B[Mid]\n  B --> C[End]\n',
+  });
+  await vscode.window.showTextDocument(splitDoc, { viewColumn: vscode.ViewColumn.Two, preview: false });
+  const otherDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  Z[Z] --> Y[Y]\n',
+  });
+  await vscode.window.showTextDocument(otherDoc, { viewColumn: vscode.ViewColumn.One, preview: false });
+  const splitEd = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === splitDoc.uri.toString());
+  assert.ok(splitEd, 'the split doc should be visible in a column');
+  provider.onSelection(splitEd);
+  const countFor = (uri) => vscode.window.visibleTextEditors.filter((e) => e.document.uri.toString() === uri).length;
+  const beforeReveal = countFor(splitDoc.uri.toString());
+  await provider.onMessage({ type: 'nodeClicked', id: 'C' });
+  await new Promise((r) => setTimeout(r, 200));
+  const afterReveal = countFor(splitDoc.uri.toString());
+  assert.ok(
+    afterReveal <= beforeReveal,
+    `reveal must not duplicate the doc into another column (before=${beforeReveal}, after=${afterReveal})`
+  );
+  console.log('reveal PASS: split-view reveal reuses the existing editor (no duplicate)');
 }
 
 module.exports = { run };
