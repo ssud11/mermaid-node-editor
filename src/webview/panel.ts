@@ -241,11 +241,21 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     if (!this.currentUri) {
       return;
     }
+    const uriStr = this.currentUri.toString();
+    // Reuse an editor already showing this document. Calling showTextDocument when
+    // the doc is open in a NON-active column opens a duplicate copy in the active
+    // column (the split-view bug) — so only open one if none is currently visible.
+    let editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uriStr);
     let doc: vscode.TextDocument;
-    try {
-      doc = await vscode.workspace.openTextDocument(this.currentUri);
-    } catch {
-      return;
+    if (editor) {
+      doc = editor.document;
+    } else {
+      try {
+        doc = await vscode.workspace.openTextDocument(this.currentUri);
+      } catch {
+        return;
+      }
+      editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
     }
     const block = getBlockAtLine(doc, this.currentBlockStart);
     if (!block) {
@@ -257,7 +267,6 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     }
     const start = new vscode.Position(decl.line, decl.startChar);
     const end = new vscode.Position(decl.line, decl.endChar);
-    const editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
     editor.selection = new vscode.Selection(start, start);
     editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   }
