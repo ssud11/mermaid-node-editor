@@ -183,6 +183,23 @@ async function shot(page, theme, name, message) {
   await page.waitForTimeout(80);
   assert.ok(!(await page.locator('#error').isVisible()), 'a successful update should clear the error');
 
+  // --- deep-review #6: a passive refresh must NOT tear down a detail field the
+  //     user is mid-edit in (it would drop the uncommitted value). ---
+  await page.goto(HARNESS);
+  await setTheme(page, DARK);
+  await feed(page, { type: 'update', block: SAMPLE, focusedId: 'A' }); // A detail open
+  await page.waitForTimeout(40);
+  const aLabel = page.locator('.row-detail input').nth(1); // A's Label field
+  await aLabel.click();
+  await aLabel.fill('Edited-not-committed'); // focused, NOT blurred (no commit)
+  await feed(page, { type: 'update', block: SAMPLE }); // passive external refresh
+  await page.waitForTimeout(60);
+  assert.strictEqual(
+    await aLabel.inputValue(),
+    'Edited-not-committed',
+    'an in-progress detail edit must survive a passive refresh'
+  );
+
   await browser.close();
   console.log('VISUAL PASS: 5 screenshots + DOM assertions (master-detail rows, filter, warning badge, no injection, unsupported, error-persist+reset)');
 })().catch((err) => {
