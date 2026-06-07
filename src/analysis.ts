@@ -37,6 +37,7 @@ export interface DuplicateGroup {
 const IDENT = /[A-Za-z0-9_]+/g;
 const DIRECTIVE = /^(graph|flowchart)\b/i;
 const DIRECTION = /^direction\b/i; // `direction TD` — a keyword line, not tags
+const STYLING = /^(style|classDef|linkStyle|click)\b/i; // CSS values / classes / URLs, not tags
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -78,7 +79,7 @@ export function findTagAtPosition(
     return undefined;
   }
   const trimmed = text.trim();
-  if (DIRECTIVE.test(trimmed) || DIRECTION.test(trimmed)) {
+  if (DIRECTIVE.test(trimmed) || DIRECTION.test(trimmed) || STYLING.test(trimmed)) {
     return undefined;
   }
 
@@ -163,9 +164,10 @@ export function findReferences(
       continue;
     }
     const trimmed = text.trim();
-    // Keyword lines carry no tag references (a node named TD must not match the
-    // `direction TD` keyword, nor `graph LR` etc.).
-    if (DIRECTIVE.test(trimmed) || DIRECTION.test(trimmed)) {
+    // Keyword + styling lines carry no tag references we own (a node named TD must
+    // not match the `direction TD` keyword, nor `graph LR`, nor a CSS value inside
+    // a `style`/`classDef`/`linkStyle`/`click` statement).
+    if (DIRECTIVE.test(trimmed) || DIRECTION.test(trimmed) || STYLING.test(trimmed)) {
       continue;
     }
     // On a subgraph declaration line the only tag is the subgraph id itself —
