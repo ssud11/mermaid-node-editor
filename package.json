@@ -29,8 +29,7 @@
     "markdown"
   ],
   "activationEvents": [
-    "onLanguage:markdown",
-    "onLanguage:mermaid"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
