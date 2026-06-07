@@ -93,17 +93,30 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
   const refreshDiagnostics = (doc: vscode.TextDocument) =>
     diagnostics.set(doc.uri, computeMermaidDiagnostics(doc));
   let diagTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearDiagTimer = () => {
+    if (diagTimer) {
+      clearTimeout(diagTimer);
+      diagTimer = undefined;
+    }
+  };
   context.subscriptions.push(
     diagnostics,
     vscode.workspace.onDidOpenTextDocument(refreshDiagnostics),
     vscode.workspace.onDidChangeTextDocument((e) => {
       // Debounce: re-lint shortly after the user stops typing.
-      if (diagTimer) {
-        clearTimeout(diagTimer);
-      }
-      diagTimer = setTimeout(() => refreshDiagnostics(e.document), 250);
+      const doc = e.document;
+      clearDiagTimer();
+      diagTimer = setTimeout(() => {
+        diagTimer = undefined;
+        // Skip if the doc was closed during the debounce window — otherwise we'd
+        // re-add phantom squiggles to a document that's already gone.
+        if (!doc.isClosed) {
+          refreshDiagnostics(doc);
+        }
+      }, 250);
     }),
-    vscode.workspace.onDidCloseTextDocument((doc) => diagnostics.delete(doc.uri))
+    vscode.workspace.onDidCloseTextDocument((doc) => diagnostics.delete(doc.uri)),
+    { dispose: clearDiagTimer } // drop any pending timer on extension shutdown
   );
   // Lint anything already open at activation.
   for (const doc of vscode.workspace.textDocuments) {
