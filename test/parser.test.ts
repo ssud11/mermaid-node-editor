@@ -194,6 +194,34 @@ test('blockAtLine (.mmd): always the single block', () => {
   assert.equal(blockAtLine(blocks, 99, true), blocks[0]);
 });
 
+// --- deep-review regressions: fence boundaries + inline edge labels ---
+
+test('review#1: an unterminated mermaid fence is not a block (no prose capture)', () => {
+  const text = ['# Doc', '', '```mermaid', 'graph TD', 'A[x] --> B[y]', '', 'Plain prose with an A in it.'].join('\n');
+  assert.equal(findMermaidBlocks(text, false).length, 0);
+});
+
+test('review#1: a ```mermaid nested inside an outer ```` fence is not a block', () => {
+  const text = ['Example:', '````markdown', '```mermaid', 'graph TD', 'A[x] --> B[y]', '```', '````'].join('\n');
+  assert.equal(findMermaidBlocks(text, false).length, 0);
+});
+
+test('review#4: a single-word inline edge label is not a phantom node', () => {
+  const b = findMermaidBlocks(['graph LR', 'A[Start] -- check --> B[End]'].join('\n'), true)[0];
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ['A->B']);
+  assert.deepEqual(b.nodes.map((n) => n.id).sort(), ['A', 'B']);
+});
+
+test('review#4: a glued inline edge label is stripped too', () => {
+  const b = findMermaidBlocks(['graph LR', 'A[Start] --check--> B[End]'].join('\n'), true)[0];
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ['A->B']);
+});
+
+test('review#4: chained edges keep the middle node (no over-strip)', () => {
+  const b = findMermaidBlocks(['graph LR', 'A --> B --> C'].join('\n'), true)[0];
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ['A->B', 'B->C']);
+});
+
 test('blockAtLine (markdown): picks the block containing the line, else undefined', () => {
   const text = ['# h', '```mermaid', 'graph TD', 'A --> B', '```', 'prose', '```mermaid', 'flowchart LR', 'X --> Y', '```'].join('\n');
   const blocks = findMermaidBlocks(text, false);

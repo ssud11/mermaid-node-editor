@@ -222,6 +222,11 @@ const ARROW_SPLIT = /\s*[<xo]?[-.=]{2,}[->xo]?\s*/;
 function parseEdges(line: string, lineNumber: number, nodes: MermaidNode[]): MermaidEdge[] {
   let skeleton = edgeSkeleton(line, nodes);
   skeleton = skeleton.replace(/\|[^|]*\|/g, ' '); // drop |edge labels|
+  // Drop inline edge labels (`A -- text --> B`, glued `A --text--> B`, dotted/thick
+  // forms) so the label prose isn't split out as a phantom node endpoint. The
+  // opening operator must NOT be an arrowhead (the `(?![>xo])` lookahead) so a
+  // chained edge `A --> B --> C` keeps B as a real node.
+  skeleton = skeleton.replace(/(?<=^|\s)[<xo]?[-.=]{2,}(?![>xo])\s*.+?\s*[-.=]{2,}[>xo]?(?=\s|$)/g, ' --> ');
   const edges: MermaidEdge[] = [];
   // `;` terminates/separates Mermaid statements (`A-->B; C-->D`). Parse each
   // statement independently: otherwise a trailing `;` drops the edge (`B;` fails
@@ -325,13 +330,21 @@ function buildBlock(
   return block;
 }
 
-const FENCE_OPEN = /^\s*```+\s*mermaid\b.*$/i;
-const FENCE_CLOSE = /^\s*```+\s*$/;
+// A markdown code-fence line: 3+ backticks (or tildes), then an optional info
+// string (first non-space token decides the language).
+const FENCE = /^(\s*)(`{3,}|~{3,})\s*(\S*)/;
 
 /**
  * Find every Mermaid block in a document.
  *  - `.mmd` / `.mermaid` (isMmd=true): the whole file is one block.
  *  - markdown (isMmd=false): each fenced ```mermaid ... ``` block.
+ *
+ * The markdown scan is fence-aware: it walks code fences and skips their
+ * CONTENT, so a ```mermaid that is itself nested inside an outer fence (e.g. a
+ * ````markdown example) is not mistaken for a live diagram, and an UNTERMINATED
+ * ```mermaid fence does not swallow the rest of the file (which would otherwise
+ * let a write-back rewrite ordinary prose). A closing fence must use the same
+ * marker and be at least as long as the opener (CommonMark).
  */
 export function findMermaidBlocks(text: string, isMmd: boolean): MermaidBlock[] {
   const lines = text.split(/\r?\n/);
@@ -341,17 +354,31 @@ export function findMermaidBlocks(text: string, isMmd: boolean): MermaidBlock[] 
   }
 
   const blocks: MermaidBlock[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!FENCE_OPEN.test(lines[i])) {
+  let i = 0;
+  while (i < lines.length) {
+    const open = FENCE.exec(lines[i]);
+    if (!open) {
+      i++;
       continue;
     }
+    const fenceChar = open[2][0]; // '`' or '~'
+    const len = open[2].length;
+    const info = open[3].toLowerCase();
+    const closeRe = new RegExp('^\\s*' + fenceChar + '{' + len + ',}\\s*$');
     let j = i + 1;
-    while (j < lines.length && !FENCE_CLOSE.test(lines[j])) {
+    while (j < lines.length && !closeRe.test(lines[j])) {
       j++;
     }
-    const closing = Math.min(j, lines.length);
-    blocks.push(buildBlock(lines, i, i + 1, closing, closing));
-    i = j;
+    if (j >= lines.length) {
+      // Unterminated fence — not a valid block. Skip only this opener line so a
+      // stray fence cannot capture the remainder of the document.
+      i++;
+      continue;
+    }
+    if (info === 'mermaid') {
+      blocks.push(buildBlock(lines, i, i + 1, j, j));
+    }
+    i = j + 1; // resume after the closing fence (its content is consumed)
   }
   return blocks;
 }
