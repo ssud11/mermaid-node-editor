@@ -29,7 +29,7 @@ async function run() {
   // 4. Reveal the sidebar view -> triggers panel.ts resolveWebviewView()
   //    (loads index.html via asWebviewUri, wires the message listener) — the
   //    zero-coverage path. A throw here surfaces a real runtime defect.
-  await vscode.commands.executeCommand('mermaidNodeEditor.focus');
+  await vscode.commands.executeCommand('mermaidNodeEditorPanel.focus');
   await new Promise((r) => setTimeout(r, 1500));
   console.log('IT-1 smoke PASS: activate + commands + demo open + webview resolve');
 
