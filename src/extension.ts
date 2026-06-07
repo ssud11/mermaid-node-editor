@@ -57,7 +57,7 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('mermaid-node-editor.open', async () => {
-      await vscode.commands.executeCommand('mermaidNodeEditor.focus');
+      await vscode.commands.executeCommand('mermaidNodeEditorPanel.focus');
       provider.refreshFromActiveEditor();
     }),
     vscode.commands.registerCommand('mermaid-node-editor.refresh', () => {

@@ -50,7 +50,7 @@ interface BlockView {
 }
 
 export class MermaidEditorProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'mermaidNodeEditor';
+  public static readonly viewType = 'mermaidNodeEditorPanel';
 
   private view?: vscode.WebviewView;
   private currentUri?: vscode.Uri;

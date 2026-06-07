@@ -49,17 +49,17 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "mermaid-node-editor",
+          "id": "mermaidNodeEditorContainer",
           "title": "Mermaid Node Editor",
           "icon": "media/icon-activitybar.svg"
         }
       ]
     },
     "views": {
-      "mermaid-node-editor": [
+      "mermaidNodeEditorContainer": [
         {
           "type": "webview",
-          "id": "mermaidNodeEditor",
+          "id": "mermaidNodeEditorPanel",
           "name": "Node Editor"
         }
       ]
