@@ -18,17 +18,27 @@ let selectedKind = null; // 'node' | 'subgraph'
 window.addEventListener('message', (event) => {
   const msg = event.data;
   switch (msg.type) {
-    case 'update':
+    case 'update': {
       hideError();
+      const passive = msg.focusedId === undefined || msg.focusedId === null;
+      const editing = isDetailInputFocused();
       current = msg.block;
-      if (msg.focusedId !== undefined && msg.focusedId !== null) {
+      if (!passive) {
         selectId(msg.focusedId);
       } else {
         ensureSelectionValid();
       }
+      // A passive refresh (e.g. an external edit to the document) must not tear
+      // down a field the user is mid-edit in — render() rebuilds #root and would
+      // drop the uncommitted value before its change event fires. Keep their edit;
+      // the next commit/selection refreshes the panel.
+      if (passive && editing) {
+        break;
+      }
       render();
       scrollSelectedIntoView();
       break;
+    }
     case 'clear':
       current = null;
       selectedId = null;
@@ -108,6 +118,15 @@ function send(type, id, value) {
 function warningFor(id) {
   const w = (current && current.warnings ? current.warnings : []).find((x) => x.id === id);
   return w ? w.message : null;
+}
+
+// True when the user is actively editing a DETAIL field (id/label), so a passive
+// refresh shouldn't rebuild the DOM and drop their uncommitted value. The filter
+// box is intentionally excluded — re-rendering it only loses focus, not data, and
+// a genuine block change (e.g. to an unsupported diagram) must still render.
+function isDetailInputFocused() {
+  const a = document.activeElement;
+  return !!a && a.tagName === 'INPUT' && !!a.closest('.row-detail');
 }
 
 function render() {
