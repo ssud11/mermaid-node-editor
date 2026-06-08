@@ -35,6 +35,31 @@ test('buildDiagramSource: no config: key in frontmatter -> source unchanged', ()
   assert.equal(src, 'graph TD\nA --> B');
 });
 
+test('buildDiagramSource: a fence whose first line is blank then --- is NOT treated as frontmatter (inject still happens)', () => {
+  // mermaid only honors `---` at byte 0; a leading blank line invalidates it, so
+  // the page-level config:layout:elk must still be lifted in (regression: the old
+  // /^\s*---/ guard matched the leading \n and wrongly suppressed injection).
+  const md = [
+    '---',
+    'config:',
+    '  layout: elk',
+    '---',
+    '```mermaid',
+    '', // blank first content line inside the fence
+    '---',
+    'config:',
+    '  theme: dark',
+    '---',
+    'graph TD',
+    'A --> B',
+    '```',
+  ].join('\n');
+  // fence opens at line 4, closes at line 12; content is lines 5..11
+  const src = buildDiagramSource(md, false, 4, 12);
+  assert.ok(src.startsWith('---\nconfig:\n  layout: elk\n---\n'), 'page-level elk config is injected at byte 0');
+  assert.ok(src.includes('theme: dark'), 'the original (mispositioned) block frontmatter is preserved as content');
+});
+
 test('buildDiagramSource: does not double-inject when the fenced block already has its own frontmatter', () => {
   const md = [
     '---',
