@@ -106,7 +106,10 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
         }
       }, 200);
     }),
-    { dispose: clearPreviewTimer }
+    { dispose: clearPreviewTimer },
+    // Re-render the preview when the VS Code color theme changes so the diagram
+    // re-reads the theme variables and re-matches.
+    vscode.window.onDidChangeActiveColorTheme(() => MermaidPreviewPanel.notifyThemeChange())
   );
 
   // Tag navigation: Go to Definition (F12 / right-click) + Find References (Shift+F12)
