@@ -67,6 +67,10 @@ export class MermaidPreviewPanel {
   static notifyDocChange(doc: vscode.TextDocument): void {
     MermaidPreviewPanel.current?.onDocChange(doc);
   }
+  /** VS Code theme changed → re-render so the diagram picks up the new colors. */
+  static notifyThemeChange(): void {
+    MermaidPreviewPanel.current?.rerenderTracked();
+  }
 
   private constructor(private readonly panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel.webview.html = this.getHtml(this.panel.webview, extensionUri);
@@ -146,6 +150,22 @@ export class MermaidPreviewPanel {
       this.renderBlock(doc, block);
     } else {
       this.showUnsupported(block);
+    }
+  }
+
+  /** Re-render the block we're currently previewing (e.g. after a theme change). */
+  private rerenderTracked(): void {
+    if (!this.sourceUri) {
+      return;
+    }
+    const uriStr = this.sourceUri.toString();
+    const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uriStr);
+    if (!doc) {
+      return;
+    }
+    const block = getBlockAtLine(doc, this.sourceBlockStart);
+    if (block && block.supported) {
+      this.renderBlock(doc, block);
     }
   }
 

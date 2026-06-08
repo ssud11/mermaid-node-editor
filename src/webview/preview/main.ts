@@ -23,17 +23,51 @@ const vscode =
 const host = () => document.getElementById('preview');
 const stateEl = () => document.getElementById('state');
 
-let currentTheme = null;
-function ensureInit(theme) {
-  const t = theme === 'light' ? 'default' : 'dark';
-  if (currentTheme === t) return;
+// Map VS Code theme colors -> mermaid `base` theme variables so the diagram
+// blends with the editor (any theme, not just dark/light). Read fresh on each
+// render — VS Code updates these CSS vars in place when the theme changes.
+function readThemeVars() {
+  const s = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => {
+    const got = s.getPropertyValue(name).trim();
+    return got || fallback;
+  };
+  const fg = v('--vscode-foreground', '#cccccc');
+  const bg = v('--vscode-editor-background', '#1e1e1e');
+  const nodeBg = v('--vscode-editorWidget-background', v('--vscode-input-background', '#252526'));
+  const border = v('--vscode-panel-border', v('--vscode-input-border', '#3c3c3c'));
+  const clusterBg = v('--vscode-sideBar-background', bg);
+  const line = v('--vscode-descriptionForeground', fg);
+  const font = v('--vscode-font-family', 'sans-serif');
+  return {
+    darkMode: undefined, // let mermaid infer contrast from the colors we set
+    background: bg,
+    primaryColor: nodeBg,
+    mainBkg: nodeBg,
+    primaryBorderColor: border,
+    nodeBorder: border,
+    primaryTextColor: fg,
+    nodeTextColor: fg,
+    textColor: fg,
+    titleColor: fg,
+    lineColor: line,
+    secondaryColor: clusterBg,
+    tertiaryColor: clusterBg,
+    clusterBkg: clusterBg,
+    clusterBorder: border,
+    edgeLabelBackground: bg,
+    fontFamily: font,
+  };
+}
+
+function initMermaid() {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict', // trusted-local content; strict sanitizes labels
-    theme: t,
+    theme: 'base',
+    themeVariables: readThemeVars(),
     flowchart: { htmlLabels: true },
   });
-  currentTheme = t;
 }
 
 // A monotonic fallback id: mermaid.render() injects a <style> keyed by id, so a
@@ -55,8 +89,8 @@ function clearState() {
   if (s) s.classList.add('hidden');
 }
 
-async function render(code, id, theme) {
-  ensureInit(theme);
+async function render(code, id) {
+  initMermaid(); // re-read theme vars each render so a VS Code theme switch applies
   clearState();
   const h = host();
   const renderId = id || 'm' + ++seq;
@@ -89,7 +123,7 @@ window.addEventListener('message', (e) => {
   if (!msg || typeof msg !== 'object') return;
   if (msg.type === 'render') {
     if (stateEl()) stateEl().classList.remove('err');
-    render(String(msg.code), msg.id, msg.theme);
+    render(String(msg.code), msg.id);
   } else if (msg.type === 'state') {
     if (stateEl()) stateEl().classList.remove('err');
     showState(String(msg.text || ''));
