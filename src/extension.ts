@@ -3,6 +3,7 @@
 
 import * as vscode from 'vscode';
 import { MermaidEditorProvider, isSupportedDoc, isMmd } from './webview/panel';
+import { MermaidPreviewPanel } from './webview/previewPanel';
 import { findMermaidBlocks } from './parser';
 import { findDuplicateDeclarations } from './analysis';
 import { MermaidDefinitionProvider, MermaidReferenceProvider, MermaidRenameProvider } from './providers';
@@ -62,6 +63,9 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
     }),
     vscode.commands.registerCommand('mermaid-node-editor.refresh', () => {
       provider.refreshFromActiveEditor();
+    }),
+    vscode.commands.registerCommand('mermaid-node-editor.preview', () => {
+      MermaidPreviewPanel.createOrShow(context.extensionUri);
     })
   );
 
@@ -70,12 +74,14 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
       // Only react to the focused editor — not background / peek / split editors.
       if (e.textEditor === vscode.window.activeTextEditor) {
         provider.onSelection(e.textEditor);
+        MermaidPreviewPanel.notifySelection(e.textEditor);
       }
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) {
         provider.onSelection(editor);
       }
+      MermaidPreviewPanel.notifyActiveEditor(editor);
     }),
     vscode.workspace.onDidChangeTextDocument((e) => provider.onDocChange(e.document))
   );

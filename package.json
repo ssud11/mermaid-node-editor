@@ -72,8 +72,29 @@
       {
         "command": "mermaid-node-editor.refresh",
         "title": "Mermaid: Refresh Node Editor"
+      },
+      {
+        "command": "mermaid-node-editor.preview",
+        "title": "Open Preview to the Side",
+        "category": "Mermaid",
+        "icon": "$(open-preview)"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "mermaid-node-editor.preview",
+          "when": "resourceLangId == markdown || resourceExtname == .mmd || resourceExtname == .mermaid",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mermaid-node-editor.preview",
+          "when": "resourceLangId == markdown || resourceExtname == .mmd || resourceExtname == .mermaid"
+        }
+      ]
+    }
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
