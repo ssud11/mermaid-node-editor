@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { MermaidBlock } from '../parser';
-import { isMmd, isSupportedDoc, getBlockAtLine } from './panel';
+import { isMmd, isSupportedDoc, getBlockAtLine, getBlocks } from './panel';
 import { buildDiagramSource } from '../preview-source';
 
 type RenderMsg =
@@ -102,11 +102,7 @@ export class MermaidPreviewPanel {
         ? getBlockAtLine(editor.document, editor.selection.active.line)
         : undefined;
     if (editor && block) {
-      if (block.supported) {
-        this.renderBlock(editor.document, block);
-      } else {
-        this.showUnsupported(block);
-      }
+      this.showBlock(editor.document, block);
     } else {
       this.send({
         type: 'state',
@@ -130,11 +126,7 @@ export class MermaidPreviewPanel {
     if (!block) {
       return; // cursor is outside any block — keep showing the current diagram
     }
-    if (block.supported) {
-      this.renderBlock(doc, block);
-    } else {
-      this.showUnsupported(block);
-    }
+    this.showBlock(doc, block);
   }
 
   /** A document changed; re-render if it's the one we're previewing. */
@@ -142,15 +134,11 @@ export class MermaidPreviewPanel {
     if (!this.sourceUri || doc.uri.toString() !== this.sourceUri.toString()) {
       return;
     }
-    const block = getBlockAtLine(doc, this.sourceBlockStart);
+    const block = this.findTrackedBlock(doc);
     if (!block) {
       return; // the block was (temporarily) deleted mid-edit — keep the last good render
     }
-    if (block.supported) {
-      this.renderBlock(doc, block);
-    } else {
-      this.showUnsupported(block);
-    }
+    this.showBlock(doc, block);
   }
 
   /** Re-render the block we're currently previewing (e.g. after a theme change). */
@@ -163,9 +151,46 @@ export class MermaidPreviewPanel {
     if (!doc) {
       return;
     }
-    const block = getBlockAtLine(doc, this.sourceBlockStart);
+    const block = this.findTrackedBlock(doc);
     if (block && block.supported) {
       this.renderBlock(doc, block);
+    }
+  }
+
+  /**
+   * Locate the block we're tracking in a (re-parsed) document. Prefers the block
+   * spanning sourceBlockStart; if edits above the fence shifted it out of range,
+   * recover by re-pinning to the block nearest the last known start line — so an
+   * edit above the diagram doesn't freeze the live preview.
+   */
+  private findTrackedBlock(doc: vscode.TextDocument): MermaidBlock | undefined {
+    const direct = getBlockAtLine(doc, this.sourceBlockStart);
+    if (direct) {
+      return direct;
+    }
+    const blocks = getBlocks(doc);
+    if (blocks.length === 0) {
+      return undefined;
+    }
+    return blocks.reduce((best, b) =>
+      Math.abs(b.startLine - this.sourceBlockStart) < Math.abs(best.startLine - this.sourceBlockStart) ? b : best
+    );
+  }
+
+  /** Show a block: render it if supported, else the unsupported notice. Either
+   *  way, TRACK it (uri + start line) so a later live edit re-targets the right
+   *  block and an unsupported block isn't overwritten by a stale supported one. */
+  private showBlock(doc: vscode.TextDocument, block: MermaidBlock): void {
+    this.sourceUri = doc.uri;
+    this.sourceBlockStart = block.startLine;
+    if (block.supported) {
+      this.renderBlock(doc, block);
+    } else {
+      this.send({
+        type: 'state',
+        kind: 'unsupported',
+        text: `Preview supports flowcharts (graph / flowchart). “${block.diagramType}” isn't supported in v1.`,
+      });
     }
   }
 
@@ -178,14 +203,6 @@ export class MermaidPreviewPanel {
     // live-edit re-render but fits fresh when you switch to a different block.
     const key = `${doc.uri.toString()}#${block.startLine}`;
     this.send({ type: 'render', code, id: 'm' + ++this.renderSeq, key });
-  }
-
-  private showUnsupported(block: MermaidBlock): void {
-    this.send({
-      type: 'state',
-      kind: 'unsupported',
-      text: `Preview supports flowcharts (graph / flowchart). “${block.diagramType}” isn't supported in v1.`,
-    });
   }
 
   private send(msg: RenderMsg): void {
