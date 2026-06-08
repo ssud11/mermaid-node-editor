@@ -9,6 +9,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { MermaidBlock } from '../parser';
 import { isMmd, isSupportedDoc, getBlockAtLine } from './panel';
 import { buildDiagramSource } from '../preview-source';
 
@@ -24,6 +25,10 @@ export class MermaidPreviewPanel {
   private ready = false;
   private queued?: RenderMsg; // latest intent posted before the webview booted
   private renderSeq = 0;
+  // The block currently being previewed — so a live edit re-renders the right
+  // one even when the cursor has wandered into surrounding prose.
+  private sourceUri?: vscode.Uri;
+  private sourceBlockStart = -1;
 
   /** Open the preview beside the active editor, or reveal the existing one. */
   static createOrShow(extensionUri: vscode.Uri): void {
@@ -58,6 +63,10 @@ export class MermaidPreviewPanel {
       MermaidPreviewPanel.current?.updateFromEditor(editor);
     }
   }
+  /** Live edit → re-render the tracked block (debounced by the caller). */
+  static notifyDocChange(doc: vscode.TextDocument): void {
+    MermaidPreviewPanel.current?.onDocChange(doc);
+  }
 
   private constructor(private readonly panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel.webview.html = this.getHtml(this.panel.webview, extensionUri);
@@ -81,45 +90,79 @@ export class MermaidPreviewPanel {
     this.updateFromActiveEditor();
   }
 
+  /** First render on open: show the diagram at the cursor, else a hint. */
   private updateFromActiveEditor(): void {
     const editor = vscode.window.activeTextEditor;
-    if (editor) {
-      this.updateFromEditor(editor);
+    const block =
+      editor && isSupportedDoc(editor.document)
+        ? getBlockAtLine(editor.document, editor.selection.active.line)
+        : undefined;
+    if (editor && block) {
+      if (block.supported) {
+        this.renderBlock(editor.document, block);
+      } else {
+        this.showUnsupported(block);
+      }
     } else {
-      this.send({ type: 'state', kind: 'empty', text: 'Open a Mermaid diagram to preview it.' });
-    }
-  }
-
-  private updateFromEditor(editor: vscode.TextEditor): void {
-    const doc = editor.document;
-    if (!isSupportedDoc(doc)) {
       this.send({
         type: 'state',
         kind: 'empty',
         text: 'Place your cursor inside a Mermaid diagram (a ```mermaid block or a .mmd file) to preview it.',
       });
+    }
+  }
+
+  /**
+   * Cursor / active-editor moved. Switch the preview when the cursor enters a
+   * (supported or unsupported) Mermaid block; otherwise keep the current diagram
+   * up — so editing the prose around a diagram doesn't blank the preview.
+   */
+  private updateFromEditor(editor: vscode.TextEditor): void {
+    const doc = editor.document;
+    if (!isSupportedDoc(doc)) {
       return;
     }
     const block = getBlockAtLine(doc, editor.selection.active.line);
     if (!block) {
-      this.send({
-        type: 'state',
-        kind: 'empty',
-        text: 'No Mermaid diagram at the cursor — move into a ```mermaid block to preview it.',
-      });
+      return; // cursor is outside any block — keep showing the current diagram
+    }
+    if (block.supported) {
+      this.renderBlock(doc, block);
+    } else {
+      this.showUnsupported(block);
+    }
+  }
+
+  /** A document changed; re-render if it's the one we're previewing. */
+  private onDocChange(doc: vscode.TextDocument): void {
+    if (!this.sourceUri || doc.uri.toString() !== this.sourceUri.toString()) {
       return;
     }
-    if (!block.supported) {
-      this.send({
-        type: 'state',
-        kind: 'unsupported',
-        text: `Preview supports flowcharts (graph / flowchart). “${block.diagramType}” isn't supported in v1.`,
-      });
-      return;
+    const block = getBlockAtLine(doc, this.sourceBlockStart);
+    if (!block) {
+      return; // the block was (temporarily) deleted mid-edit — keep the last good render
     }
+    if (block.supported) {
+      this.renderBlock(doc, block);
+    } else {
+      this.showUnsupported(block);
+    }
+  }
+
+  private renderBlock(doc: vscode.TextDocument, block: MermaidBlock): void {
+    this.sourceUri = doc.uri;
+    this.sourceBlockStart = block.startLine;
     this.panel.title = `Preview ${doc.uri.path.split('/').pop() ?? ''}`;
     const code = buildDiagramSource(doc.getText(), isMmd(doc), block.startLine, block.endLine);
     this.send({ type: 'render', code, id: 'm' + ++this.renderSeq, theme: currentTheme() });
+  }
+
+  private showUnsupported(block: MermaidBlock): void {
+    this.send({
+      type: 'state',
+      kind: 'unsupported',
+      text: `Preview supports flowcharts (graph / flowchart). “${block.diagramType}” isn't supported in v1.`,
+    });
   }
 
   private send(msg: RenderMsg): void {
