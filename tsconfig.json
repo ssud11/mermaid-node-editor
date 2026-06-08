@@ -16,5 +16,5 @@
     "noImplicitReturns": true
   },
   "include": ["src", "test"],
-  "exclude": ["node_modules", "dist", "out"]
+  "exclude": ["node_modules", "dist", "out", "src/webview/preview"]
 }

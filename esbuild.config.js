@@ -18,14 +18,35 @@ const options = {
   logLevel: 'info',
 };
 
+// Phase B (v1.2): the live-preview webview bundle — the real `mermaid` library +
+// ELK layout, compiled to a single browser/IIFE file loaded by the preview panel.
+// Separate target (browser, not node) and separate output tree (dist/webview/).
+/** @type {import('esbuild').BuildOptions} */
+const previewOptions = {
+  entryPoints: ['src/webview/preview/main.ts'],
+  bundle: true,
+  outfile: 'dist/webview/preview.js',
+  format: 'iife',
+  platform: 'browser',
+  target: 'es2020',
+  sourcemap: watch,
+  minify: !watch,
+  // mermaid/its deps probe these globals; pin them for the browser bundle.
+  define: { 'process.env.NODE_ENV': '"production"' },
+  logLevel: 'info',
+};
+
 async function main() {
   if (watch) {
     const ctx = await esbuild.context(options);
+    const previewCtx = await esbuild.context(previewOptions);
     await ctx.watch();
+    await previewCtx.watch();
     console.log('[esbuild] watching for changes...');
   } else {
     await esbuild.build(options);
-    console.log('[esbuild] build complete -> dist/extension.js');
+    await esbuild.build(previewOptions);
+    console.log('[esbuild] build complete -> dist/extension.js + dist/webview/preview.js');
   }
 }
 
