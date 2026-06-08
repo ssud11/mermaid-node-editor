@@ -86,6 +86,29 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
     vscode.workspace.onDidChangeTextDocument((e) => provider.onDocChange(e.document))
   );
 
+  // Live preview re-render on edit — debounced so a mermaid render doesn't run
+  // on every keystroke (it's heavier than the sidebar's data refresh above).
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearPreviewTimer = () => {
+    if (previewTimer) {
+      clearTimeout(previewTimer);
+      previewTimer = undefined;
+    }
+  };
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      const doc = e.document;
+      clearPreviewTimer();
+      previewTimer = setTimeout(() => {
+        previewTimer = undefined;
+        if (!doc.isClosed) {
+          MermaidPreviewPanel.notifyDocChange(doc);
+        }
+      }, 200);
+    }),
+    { dispose: clearPreviewTimer }
+  );
+
   // Tag navigation: Go to Definition (F12 / right-click) + Find References (Shift+F12)
   // + native F2 Rename (reuses the edge-propagating computeIdRename engine).
   context.subscriptions.push(
