@@ -14,7 +14,7 @@ import { isMmd, isSupportedDoc, getBlockAtLine } from './panel';
 import { buildDiagramSource } from '../preview-source';
 
 type RenderMsg =
-  | { type: 'render'; code: string; id: string; theme: 'dark' | 'light' }
+  | { type: 'render'; code: string; id: string; key: string }
   | { type: 'state'; kind: 'empty' | 'unsupported'; text: string };
 
 export class MermaidPreviewPanel {
@@ -174,7 +174,10 @@ export class MermaidPreviewPanel {
     this.sourceBlockStart = block.startLine;
     this.panel.title = `Preview ${doc.uri.path.split('/').pop() ?? ''}`;
     const code = buildDiagramSource(doc.getText(), isMmd(doc), block.startLine, block.endLine);
-    this.send({ type: 'render', code, id: 'm' + ++this.renderSeq, theme: currentTheme() });
+    // key identifies "the same diagram" so the webview keeps zoom/pan across a
+    // live-edit re-render but fits fresh when you switch to a different block.
+    const key = `${doc.uri.toString()}#${block.startLine}`;
+    this.send({ type: 'render', code, id: 'm' + ++this.renderSeq, key });
   }
 
   private showUnsupported(block: MermaidBlock): void {
@@ -212,11 +215,4 @@ export class MermaidPreviewPanel {
       this.disposables.pop()?.dispose();
     }
   }
-}
-
-function currentTheme(): 'dark' | 'light' {
-  const k = vscode.window.activeColorTheme.kind;
-  return k === vscode.ColorThemeKind.Light || k === vscode.ColorThemeKind.HighContrastLight
-    ? 'light'
-    : 'dark';
 }
