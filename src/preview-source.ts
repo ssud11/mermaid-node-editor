@@ -26,7 +26,11 @@ export function buildDiagramSource(
 ): string {
   const lines = fullText.split(/\r?\n/);
   let src = isMmd ? fullText : lines.slice(blockStartLine + 1, blockEndLine).join('\n');
-  if (!isMmd && !/^\s*---\r?\n/.test(src)) {
+  // Suppress injection only when the fenced source GENUINELY begins with its own
+  // `---` frontmatter. Anchor at position 0 (no leading whitespace): mermaid only
+  // recognises `---` as frontmatter at byte 0, so a fence that starts with a blank
+  // line then `---` is NOT mermaid frontmatter and still needs the page config.
+  if (!isMmd && !/^---\n/.test(src)) {
     const cfg = extractMdFrontmatterConfig(lines);
     if (cfg) {
       src = `---\n${cfg}\n---\n${src}`;

@@ -168,6 +168,10 @@ function setupInteraction() {
 // ---------------------------------------------------------------- render -----
 let seq = 0;
 let lastKey = null;
+// Monotonic render generation: renders are async (esp. ELK layout), so a newer
+// render must be able to discard an older one's late completion — otherwise a
+// slow earlier diagram can overwrite the diagram that's actually current.
+let renderGen = 0;
 
 function showState(text, isError) {
   const s = $('state');
@@ -188,6 +192,7 @@ function clearState() {
 }
 
 async function render(code, id, key) {
+  const gen = ++renderGen;
   initMermaid(); // re-read theme vars each render so a VS Code theme switch applies
   clearState();
   const st = $('stage');
@@ -196,6 +201,7 @@ async function render(code, id, key) {
   try {
     await mermaid.parse(code); // validate first — never half-render a bad diagram
     const { svg, bindFunctions } = await mermaid.render(renderId, code);
+    if (gen !== renderGen) return; // a newer render started while we awaited — drop this stale result
     st.innerHTML = svg;
     const svgEl = st.querySelector('svg');
     if (svgEl) {
@@ -218,6 +224,7 @@ async function render(code, id, key) {
     lastKey = key || null;
     post({ type: 'rendered', ok: true, ms: Math.round(performance.now() - t0), hasSvg: !!svgEl });
   } catch (err) {
+    if (gen !== renderGen) return; // a newer render superseded this one — drop the stale error
     const message = err && err.message ? err.message : String(err);
     showState(message, true);
     post({ type: 'rendered', ok: false, ms: Math.round(performance.now() - t0), error: message });
@@ -237,8 +244,13 @@ window.addEventListener('message', (e) => {
   if (msg.type === 'render') {
     render(String(msg.code), msg.id, msg.key);
   } else if (msg.type === 'state') {
+    // A state message supersedes any in-flight render (e.g. unsupported notice).
+    renderGen++;
     showState(String(msg.text || ''), false);
-    lastKey = null; // next diagram should fit fresh
+    // Only a genuine context change ('empty' — cursor left all diagrams) should
+    // refit the next diagram. An 'unsupported' glance keeps the tracked diagram's
+    // sticky key so returning to it preserves the user's zoom/pan.
+    if (msg.kind === 'empty') lastKey = null;
     post({ type: 'rendered', ok: true, ms: 0, state: msg.kind });
   }
 });
