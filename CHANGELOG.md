@@ -2,6 +2,30 @@
 
 All notable changes to Mermaid Node Editor are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-06-10
+
+"Live preview" — see your diagram render beside the source as you edit it.
+
+### Added
+
+- **Live preview pane** — **Mermaid: Open Preview to the Side** (or the preview icon in the editor title bar) opens a rendered diagram beside your `.mmd` / ` ```mermaid ` source, using the real Mermaid library.
+  - **Updates as you type** (debounced) and **follows your cursor** between diagrams.
+  - **Theme-matched** — the diagram's colors track your VS Code color theme, live.
+  - **Cursor-centered zoom, drag-to-pan, and fit-to-view**, with a small toolbar; your zoom/pan is kept across edits and resets when you switch diagrams.
+  - **ELK layout** for diagrams configured with `layout: elk`, including the page-level `config:` in a Markdown file's frontmatter.
+  - Graceful states for no diagram at the cursor, an unsupported diagram type, or a parse error.
+
+### Fixed
+
+- Preview node labels wrap inside their boxes instead of clipping.
+- Closing the source file clears the preview and the node-editor panel.
+- Reloading the window re-renders the preview instead of restoring a stale panel.
+- The node-editor sidebar title no longer shows a redundant "Node Editor".
+
+### Note
+
+- The preview bundles the Mermaid rendering library (and ELK layout), so the extension now ships a larger package than the dependency-free editor core.
+
 ## [1.1.0] - 2026-06-07
 
 "Editing intelligence" — navigation, linting, and a redesigned panel for working on large diagrams.
@@ -45,6 +69,7 @@ Initial release. Flowcharts only (`graph` / `flowchart`).
 - Node shapes `[]` `()` `([])` `[[]]` `[()]` `(())` `{}` `{{}}` `>]`, with the shape and quoting preserved on write-back.
 - An "unsupported" notice for non-flowchart diagrams.
 
+[1.2.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.1.0
 [1.0.1]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.0.1
 [1.0.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.0.0

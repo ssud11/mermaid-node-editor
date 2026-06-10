@@ -8,6 +8,7 @@ A sidebar editor for Mermaid flowchart nodes. Click into a diagram and a searcha
 
 ## Features
 
+- **Live preview** — render the diagram beside your source with the real Mermaid engine; it updates as you type, matches your theme, and has cursor-centered zoom / pan / fit
 - A dedicated **Activity Bar** panel: a searchable, master-detail node list that scales to large diagrams
 - Edit node labels and IDs; renaming an ID updates all of its edges
 - **Rename from the editor too** — `F2` / Rename Symbol on a tag (same edge propagation)
@@ -19,6 +20,16 @@ A sidebar editor for Mermaid flowchart nodes. Click into a diagram and a searcha
 - Follows your VS Code theme
 
 Flowcharts only (`graph` / `flowchart`). Other diagram types show an "unsupported" notice.
+
+## Live preview
+
+See your diagram rendered beside the source — it re-renders as you edit, matches your VS Code theme, and gives you cursor-centered zoom, drag-to-pan, and fit-to-view.
+
+<p align="center">
+  <img src="images/preview-dark.png" alt="Live Mermaid preview rendered beside the source, with zoom controls" width="760">
+</p>
+
+Run **Mermaid: Open Preview to the Side** — or the preview icon in the editor title bar — on any `.mmd` file or ` ```mermaid ` block. It renders with the real Mermaid library, supports **ELK layout** (`config: layout: elk`, including a Markdown file's page-level frontmatter), follows your cursor between diagrams, and shows a clear notice for an unsupported diagram type or a parse error.
 
 ## Install
 
