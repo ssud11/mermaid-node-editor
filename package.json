@@ -60,7 +60,7 @@
         {
           "type": "webview",
           "id": "mermaidNodeEditorPanel",
-          "name": "Node Editor"
+          "name": ""
         }
       ]
     },
