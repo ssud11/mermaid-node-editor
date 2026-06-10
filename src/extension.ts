@@ -66,7 +66,9 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
     }),
     vscode.commands.registerCommand('mermaid-node-editor.preview', () => {
       MermaidPreviewPanel.createOrShow(context.extensionUri);
-    })
+    }),
+    // Restore the preview properly on window reload (else it shows a stale panel).
+    MermaidPreviewPanel.register(context.extensionUri)
   );
 
   context.subscriptions.push(
@@ -83,7 +85,12 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
       }
       MermaidPreviewPanel.notifyActiveEditor(editor);
     }),
-    vscode.workspace.onDidChangeTextDocument((e) => provider.onDocChange(e.document))
+    vscode.workspace.onDidChangeTextDocument((e) => provider.onDocChange(e.document)),
+    // Closing the previewed/edited file clears both the node editor and the preview.
+    vscode.workspace.onDidCloseTextDocument((doc) => {
+      provider.onDocClose(doc);
+      MermaidPreviewPanel.notifyDocClose(doc);
+    })
   );
 
   // Live preview re-render on edit — debounced so a mermaid render doesn't run

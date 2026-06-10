@@ -114,6 +114,13 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** The doc we're showing was closed → clear the panel. */
+  onDocClose(doc: vscode.TextDocument): void {
+    if (this.currentUri && doc.uri.toString() === this.currentUri.toString()) {
+      this.clear();
+    }
+  }
+
   private clear(): void {
     this.currentUri = undefined;
     this.currentBlockStart = -1;
