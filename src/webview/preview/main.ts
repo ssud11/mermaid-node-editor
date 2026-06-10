@@ -66,7 +66,12 @@ function initMermaid() {
     securityLevel: 'strict', // trusted-local content; strict sanitizes labels
     theme: 'base',
     themeVariables: readThemeVars(),
-    flowchart: { htmlLabels: true },
+    // htmlLabels:false (TOP-LEVEL — the flowchart.* key alone was ignored) → labels
+    // become native SVG <text> that mermaid measures and wraps itself, instead of
+    // HTML <foreignObject> whose wrapping silently failed in the VS Code webview
+    // (it works in headless chromium — an environment-specific foreignObject quirk).
+    htmlLabels: false,
+    flowchart: { htmlLabels: false, wrappingWidth: 200 },
   });
 }
 
@@ -200,6 +205,12 @@ async function render(code, id, key) {
   const t0 = performance.now();
   try {
     await mermaid.parse(code); // validate first — never half-render a bad diagram
+    // Fix attempt: mermaid measures text to size nodes; if the webview font isn't
+    // loaded yet, measurement is too small and labels overflow/clip. Wait first.
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+      if (gen !== renderGen) return;
+    }
     const { svg, bindFunctions } = await mermaid.render(renderId, code);
     if (gen !== renderGen) return; // a newer render started while we awaited — drop this stale result
     st.innerHTML = svg;

@@ -30,6 +30,16 @@ export class MermaidPreviewPanel {
   private sourceUri?: vscode.Uri;
   private sourceBlockStart = -1;
 
+  private static webviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
+    return {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(extensionUri, 'dist', 'webview'),
+        vscode.Uri.joinPath(extensionUri, 'src', 'webview', 'preview'),
+      ],
+    };
+  }
+
   /** Open the preview beside the active editor, or reveal the existing one. */
   static createOrShow(extensionUri: vscode.Uri): void {
     const column = vscode.window.activeTextEditor ? vscode.ViewColumn.Beside : vscode.ViewColumn.One;
@@ -42,16 +52,20 @@ export class MermaidPreviewPanel {
       MermaidPreviewPanel.viewType,
       'Mermaid Preview',
       { viewColumn: column, preserveFocus: true },
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, 'dist', 'webview'),
-          vscode.Uri.joinPath(extensionUri, 'src', 'webview', 'preview'),
-        ],
-      }
+      { retainContextWhenHidden: true, ...MermaidPreviewPanel.webviewOptions(extensionUri) }
     );
     MermaidPreviewPanel.current = new MermaidPreviewPanel(panel, extensionUri);
+  }
+
+  /** Restore the preview on window reload (without this, a reloaded panel shows a
+   *  stale cached webview instead of re-rendering). */
+  static register(extensionUri: vscode.Uri): vscode.Disposable {
+    return vscode.window.registerWebviewPanelSerializer(MermaidPreviewPanel.viewType, {
+      async deserializeWebviewPanel(panel: vscode.WebviewPanel): Promise<void> {
+        panel.webview.options = MermaidPreviewPanel.webviewOptions(extensionUri);
+        MermaidPreviewPanel.current = new MermaidPreviewPanel(panel, extensionUri);
+      },
+    });
   }
 
   /** Source → preview sync, driven by the extension's editor listeners. */
@@ -70,6 +84,10 @@ export class MermaidPreviewPanel {
   /** VS Code theme changed → re-render so the diagram picks up the new colors. */
   static notifyThemeChange(): void {
     MermaidPreviewPanel.current?.rerenderTracked();
+  }
+  /** A document was closed → clear the preview if it's the one we were showing. */
+  static notifyDocClose(doc: vscode.TextDocument): void {
+    MermaidPreviewPanel.current?.onDocClose(doc);
   }
 
   private constructor(private readonly panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
@@ -127,6 +145,19 @@ export class MermaidPreviewPanel {
       return; // cursor is outside any block — keep showing the current diagram
     }
     this.showBlock(doc, block);
+  }
+
+  /** The previewed source file was closed → reset tracking and show the hint. */
+  private onDocClose(doc: vscode.TextDocument): void {
+    if (this.sourceUri && doc.uri.toString() === this.sourceUri.toString()) {
+      this.sourceUri = undefined;
+      this.sourceBlockStart = -1;
+      this.send({
+        type: 'state',
+        kind: 'empty',
+        text: 'The source file was closed. Open a Mermaid diagram to preview it.',
+      });
+    }
   }
 
   /** A document changed; re-render if it's the one we're previewing. */
