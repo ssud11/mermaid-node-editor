@@ -2,7 +2,7 @@
 
 All notable changes to Mermaid Node Editor are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [1.2.0] - 2026-06-10
+## [1.2.0] - 2026-06-12
 
 "Live preview" — see your diagram render beside the source as you edit it.
 
