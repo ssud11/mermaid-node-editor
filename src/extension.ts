@@ -16,6 +16,9 @@ const MERMAID_SELECTOR: vscode.DocumentSelector = [{ language: 'mermaid' }, { la
 // uses ext.exports.provider to drive the provider end-to-end.
 export interface MermaidEditorApi {
   provider: MermaidEditorProvider;
+  /** Test hook: the preview-panel class, so integration tests can drive the
+   *  preview's reveal path (its members are reached via bracket access). */
+  preview: typeof MermaidPreviewPanel;
 }
 
 /**
@@ -55,6 +58,10 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
   // sidebar rename/relabel re-points the preview highlight at the new id.
   MermaidPreviewPanel.onDidReveal = (editor) => provider.onSelection(editor);
   provider.onFocusedTagEdited = (id) => MermaidPreviewPanel.notifyFocusedTag(id);
+  provider.revealGuard = {
+    begin: () => MermaidPreviewPanel.beginReveal(),
+    end: () => MermaidPreviewPanel.endReveal(),
+  };
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MermaidEditorProvider.viewType, provider, {
@@ -168,7 +175,7 @@ export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
     refreshDiagnostics(doc);
   }
 
-  return { provider };
+  return { provider, preview: MermaidPreviewPanel };
 }
 
 export function deactivate(): void {

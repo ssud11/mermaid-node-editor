@@ -56,22 +56,36 @@ interface BlockView {
  * group is active, e.g. the preview's own column).
  */
 export function tabColumnForUri(uriStr: string): vscode.ViewColumn | undefined {
+  // Tie-break when the uri has tabs in several groups (an intentional split, or
+  // a stale duplicate): a group where it is the ACTIVE tab wins outright, else
+  // the lowest column — deterministic, and steers away from the preview's
+  // (typically rightmost) column. tabGroups.all has no guaranteed ordering.
+  let best: vscode.ViewColumn | undefined;
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
       if (tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === uriStr) {
-        return group.viewColumn;
+        if (tab.isActive) {
+          return group.viewColumn;
+        }
+        if (best === undefined || group.viewColumn < best) {
+          best = group.viewColumn;
+        }
       }
     }
   }
-  return undefined;
+  return best;
 }
 
 export class MermaidEditorProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'mermaidNodeEditorPanel';
 
   /** Wired in activate(): tells the preview the focused tag changed after a
-   *  sidebar edit (rename/relabel), without importing the preview here. */
+   *  sidebar edit (rename/relabel) or a sidebar reveal, without importing the
+   *  preview here. */
   onFocusedTagEdited?: (id: string | undefined) => void;
+  /** Wired in activate(): brackets a sidebar reveal so the preview suppresses
+   *  the editor-sync events the reveal itself fires (see preview revealTag). */
+  revealGuard?: { begin(): void; end(): void };
 
   private view?: vscode.WebviewView;
   private currentUri?: vscode.Uri;
@@ -272,38 +286,57 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
     if (!this.currentUri) {
       return;
     }
-    const uriStr = this.currentUri.toString();
-    // Reuse an editor already showing this document. Calling showTextDocument when
-    // the doc is open in a NON-active column opens a duplicate copy in the active
-    // column (the split-view bug) — so only open one if none is currently visible.
-    let editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uriStr);
-    let doc: vscode.TextDocument;
-    if (editor) {
-      doc = editor.document;
-    } else {
-      try {
-        doc = await vscode.workspace.openTextDocument(this.currentUri);
-      } catch {
+    // Suppress the preview's editor-sync while we drive the editor: opening a
+    // non-visible doc fires an active-editor event at cursor (0,0), which would
+    // clear the preview highlight with no restore (the selection-change guard
+    // blocks the normal sync under preserveFocus).
+    this.revealGuard?.begin();
+    try {
+      const uriStr = this.currentUri.toString();
+      // Reuse an editor already showing this document. Calling showTextDocument when
+      // the doc is open in a NON-active column opens a duplicate copy in the active
+      // column (the split-view bug) — so only open one if none is currently visible.
+      let editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uriStr);
+      let doc: vscode.TextDocument;
+      if (editor) {
+        doc = editor.document;
+      } else {
+        // The doc is usually still loaded while its (hidden) tab exists — prefer
+        // it over openTextDocument, which can't re-open untitled documents by uri.
+        const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uriStr);
+        if (open) {
+          doc = open;
+        } else {
+          try {
+            doc = await vscode.workspace.openTextDocument(this.currentUri);
+          } catch {
+            return;
+          }
+        }
+        // Reveal in the group that already holds the doc's (possibly hidden) tab;
+        // if it's not open anywhere, the first editor group — never wherever the
+        // webview click happened to put focus.
+        const column = tabColumnForUri(uriStr) ?? vscode.window.tabGroups.all[0]?.viewColumn ?? vscode.ViewColumn.One;
+        editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false, viewColumn: column });
+      }
+      const block = getBlockAtLine(doc, this.currentBlockStart);
+      if (!block) {
         return;
       }
-      // Reveal in the group that already holds the doc's (possibly hidden) tab;
-      // if it's not open anywhere, the first editor group — never wherever the
-      // webview click happened to put focus.
-      const column = tabColumnForUri(uriStr) ?? vscode.window.tabGroups.all[0]?.viewColumn ?? vscode.ViewColumn.One;
-      editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false, viewColumn: column });
+      const decl = findDeclaration(block, id);
+      if (!decl) {
+        return;
+      }
+      const start = new vscode.Position(decl.line, decl.startChar);
+      const end = new vscode.Position(decl.line, decl.endChar);
+      editor.selection = new vscode.Selection(start, start);
+      editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      // Re-point the preview highlight at the clicked tag (the suppressed sync
+      // would otherwise leave it stale/cleared).
+      this.onFocusedTagEdited?.(id);
+    } finally {
+      this.revealGuard?.end();
     }
-    const block = getBlockAtLine(doc, this.currentBlockStart);
-    if (!block) {
-      return;
-    }
-    const decl = findDeclaration(block, id);
-    if (!decl) {
-      return;
-    }
-    const start = new vscode.Position(decl.line, decl.startChar);
-    const end = new vscode.Position(decl.line, decl.endChar);
-    editor.selection = new vscode.Selection(start, start);
-    editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   }
 
   private async applyEdits(uri: vscode.Uri, edits: TextEditDesc[]): Promise<void> {
