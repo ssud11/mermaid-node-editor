@@ -26,7 +26,7 @@ Flowcharts only (`graph` / `flowchart`). Other diagram types show an "unsupporte
 
 See your diagram rendered beside the source — it re-renders as you edit, matches your VS Code theme, and gives you cursor-centered zoom, drag-to-pan, and fit-to-view.
 
-The preview is **editing-aware**: put your cursor on a tag in the source and its node lights up with a soft theme-colored outline; click any node or subgraph in the preview to jump to its declaration in the source and select it in the node-editor panel (a drag still pans — only a clean click navigates). Toggle the highlight with the ◉ toolbar button or the `mermaid-node-editor.preview.highlightOnSelect` setting; click-to-navigate works either way.
+The preview is **editing-aware**: put your cursor on a tag in the source and its node lights up with a soft theme-colored outline; click any node or subgraph in the preview to jump to its declaration in the source and select it in the node-editor panel (a drag still pans — only a clean click navigates). Toggle the highlight with the ◉ toolbar button or the `mermaid-node-editor.preview.highlightOnSelect` setting; click-to-navigate works either way. (The subtle box around the tag word in the source editor itself is VS Code's own occurrence highlighting — `editor.occurrencesHighlight` — not part of this toggle.)
 
 <p align="center">
   <img src="images/preview-dark.png" alt="Live Mermaid preview rendered beside the source, with zoom controls" width="760">

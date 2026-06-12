@@ -240,7 +240,10 @@ function setupInteraction() {
     // B3: a press that barely moved is a click — if it landed on a node or
     // cluster, ask the extension to reveal it in the source. Click-reveal is
     // independent of the highlight toggle (an explicit click is navigation).
-    if (!cancelled && moved < 5 && target && typeof target.closest === 'function') {
+    // 10px threshold (not the usual ~5): over remote desktop (xrdp/RDP) pointer
+    // jitter between press and release regularly exceeds 5px on a sincere click,
+    // which silently classified clicks as pans (operator-reproduced 2026-06-12).
+    if (!cancelled && moved < 10 && target && typeof target.closest === 'function') {
       const g = target.closest('g.node, g.cluster');
       if (g) {
         const id = tagFromElement(g);
