@@ -26,7 +26,10 @@ const EXEC =
   path.join(process.env.HOME, '.local/share/playwright-chromium-current');
 const NONCE = 'b3TestNonce0x1';
 
-// Test diagram: 4 nodes of different shapes, 1 subgraph with id+title, edges.
+// Test diagram: 4 nodes of different shapes, 2 subgraphs with id+title, edges.
+// grp_1 is a REGRESSION probe: a subgraph id ending in _<digits> must survive
+// tagFromElement verbatim (deep-review 2026-06-12 HIGH: a leftover _N-suffix
+// strip truncated it to "grp", silently breaking focus + click-reveal).
 const TEST_DIAGRAM = `flowchart TD
     A[Input] --> B{Decision}
     B -->|yes| C([Process])
@@ -34,11 +37,15 @@ const TEST_DIAGRAM = `flowchart TD
     subgraph core [Core pipeline]
         C --> D
     end
-    C --> E((Done))`;
+    subgraph grp_1 [Suffixed group]
+        E((Done))
+    end
+    C --> E`;
 
 // The tag ids we'll probe in checks.
 const NODE_TAG = 'A';     // a simple rect node
 const CLUSTER_TAG = 'core'; // the subgraph id
+const SUFFIX_CLUSTER_TAG = 'grp_1'; // subgraph id ending in _<digits> (regression)
 
 // ---- harness html built from the real index.html template ------------------
 const template = fs.readFileSync(path.join(ROOT, 'src/webview/preview/index.html'), 'utf8');
@@ -296,6 +303,23 @@ function fail(name, detail) {
     fail('focus-cluster', `focusCount=${fc4}, focusedId="${fi4}", actualClusterId="${actualClusterId}"`);
   }
   await page.screenshot({ path: path.join(OUT, 'b3-04-focus-cluster.png') });
+
+  // ------------------------------------------- check 4b: _N-suffixed cluster id (regression)
+  // A subgraph id ending in _<digits> must focus correctly — a trailing-_N strip
+  // in tagFromElement once truncated "grp_1" → "grp" (deep-review 2026-06-12 #1).
+  console.log('\n[4b] focus on suffixed subgraph id → its cluster gets mne-focus');
+  await postMsg(page, { type: 'focus', id: SUFFIX_CLUSTER_TAG });
+  await page.waitForTimeout(80);
+  const fc4b = await focusCount(page);
+  const fi4b = await page.evaluate(() => {
+    const el = document.querySelector('.mne-focus');
+    return el ? el.id : null;
+  });
+  if (fc4b === 1 && fi4b && fi4b.endsWith('-' + SUFFIX_CLUSTER_TAG)) {
+    pass('focus-cluster-suffix', `exactly 1 mne-focus on id="${fi4b}" (tag "${SUFFIX_CLUSTER_TAG}" survives verbatim)`);
+  } else {
+    fail('focus-cluster-suffix', `expected 1 mne-focus on "<renderId>-${SUFFIX_CLUSTER_TAG}"; got count=${fc4b}, id="${fi4b}" — trailing _N strip regression?`);
+  }
 
   // ----------------------------------------------------------------- check 5: config highlightOnSelect
   // The real path end-to-end: focus a tag, then config:false must clear the
