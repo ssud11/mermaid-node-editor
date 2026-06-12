@@ -49,6 +49,23 @@ interface BlockView {
   warnings: Array<{ id: string; message: string }>; // duplicate-tag lint, keyed by id
 }
 
+/**
+ * The editor group already holding a tab for this uri — even when that tab is
+ * HIDDEN behind another tab in its group (visibleTextEditors misses those, and
+ * showTextDocument without a column would then open a DUPLICATE in whatever
+ * group is active, e.g. the preview's own column).
+ */
+export function tabColumnForUri(uriStr: string): vscode.ViewColumn | undefined {
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === uriStr) {
+        return group.viewColumn;
+      }
+    }
+  }
+  return undefined;
+}
+
 export class MermaidEditorProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'mermaidNodeEditorPanel';
 
@@ -269,7 +286,11 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
       } catch {
         return;
       }
-      editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
+      // Reveal in the group that already holds the doc's (possibly hidden) tab;
+      // if it's not open anywhere, the first editor group — never wherever the
+      // webview click happened to put focus.
+      const column = tabColumnForUri(uriStr) ?? vscode.window.tabGroups.all[0]?.viewColumn ?? vscode.ViewColumn.One;
+      editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false, viewColumn: column });
     }
     const block = getBlockAtLine(doc, this.currentBlockStart);
     if (!block) {
