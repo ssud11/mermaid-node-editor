@@ -2,6 +2,16 @@
 
 All notable changes to Mermaid Node Editor are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-06-12
+
+"Editing-aware preview" — the preview now talks back to your source.
+
+### Added
+
+- **Source → preview highlight** — the node (or subgraph) under your source cursor lights up in the preview with a soft outline in your theme's focus color. It follows renames live.
+- **Click to navigate** — click a node or subgraph in the preview to jump to its declaration in the source and select it in the node-editor panel. A drag still pans; only a clean click navigates.
+- **Highlight toggle** — the ◉ button in the preview toolbar, or the `mermaid-node-editor.preview.highlightOnSelect` setting (they stay in sync). Click-to-navigate stays active either way.
+
 ## [1.2.0] - 2026-06-12
 
 "Live preview" — see your diagram render beside the source as you edit it.
@@ -69,6 +79,7 @@ Initial release. Flowcharts only (`graph` / `flowchart`).
 - Node shapes `[]` `()` `([])` `[[]]` `[()]` `(())` `{}` `{{}}` `>]`, with the shape and quoting preserved on write-back.
 - An "unsupported" notice for non-flowchart diagrams.
 
+[1.3.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.3.0
 [1.2.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.1.0
 [1.0.1]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.0.1
