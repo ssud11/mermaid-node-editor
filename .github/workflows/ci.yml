@@ -1,6 +1,6 @@
 name: CI
 
-# Test + build only. Publishing is operator-only — this workflow NEVER runs `vsce publish`.
+# Test + build only. Publishing is maintainer-only — this workflow NEVER runs `vsce publish`.
 # Actions are SHA-pinned per the CI security baseline (tags can be force-pushed; SHAs cannot).
 
 on:
