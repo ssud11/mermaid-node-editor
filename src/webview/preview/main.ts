@@ -100,8 +100,8 @@ function tagFromElement(el) {
   if (lastRenderId && raw.startsWith(lastRenderId + '-')) raw = raw.slice(lastRenderId.length + 1);
   const m = /^flowchart-(.+)-\d+$/.exec(raw);
   if (m) return m[1];
-  const c = /^(.+?)_\d+$/.exec(raw);
-  if (c && el.classList.contains('cluster')) return c[1];
+  // Clusters: after the prefix strip, raw IS the verbatim subgraph id — no
+  // further parsing (a trailing-_N strip here would corrupt ids like "grp_1").
   return raw || null;
 }
 
@@ -117,10 +117,23 @@ function findElForTag(id) {
 function applyFocus() {
   const st = $('stage');
   if (!st) return;
-  for (const el of st.querySelectorAll('.mne-focus')) el.classList.remove('mne-focus');
-  if (!highlightOn || !focusId) return;
-  const el = findElForTag(focusId);
-  if (el) el.classList.add('mne-focus');
+  const current = st.querySelectorAll('.mne-focus');
+  if (highlightOn && focusId) {
+    const el = findElForTag(focusId);
+    if (!el && current.length) {
+      // No match for the (new) focus id in the CURRENT svg — e.g. a rename just
+      // re-pointed the focus but the debounced re-render hasn't landed yet, so
+      // the svg still carries the old id. Keep the existing highlight; the
+      // post-render applyFocus() re-resolves against the fresh svg. (Focus ids
+      // are validated against the block extension-side, so a no-match is always
+      // this transient state, never a genuinely wrong tag.)
+      return;
+    }
+    for (const c of current) c.classList.remove('mne-focus');
+    if (el) el.classList.add('mne-focus');
+    return;
+  }
+  for (const c of current) c.classList.remove('mne-focus');
 }
 
 function updateHlButton() {
