@@ -117,7 +117,7 @@
     "typecheck": "tsc -p ./tsconfig.json --noEmit",
     "vscode:prepublish": "npm run compile",
     "package": "npx @vscode/vsce package",
-    "visual:b3": "node ./test/visual/preview-b3.js"
+    "visual:preview": "node ./test/visual/preview-b3.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

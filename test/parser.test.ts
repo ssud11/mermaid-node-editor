@@ -194,7 +194,7 @@ test('blockAtLine (.mmd): always the single block', () => {
   assert.equal(blockAtLine(blocks, 99, true), blocks[0]);
 });
 
-// --- deep-review regressions: fence boundaries + inline edge labels ---
+// --- regressions: fence boundaries + inline edge labels ---
 
 test('review#1: an unterminated mermaid fence is not a block (no prose capture)', () => {
   const text = ['# Doc', '', '```mermaid', 'graph TD', 'A[x] --> B[y]', '', 'Plain prose with an A in it.'].join('\n');

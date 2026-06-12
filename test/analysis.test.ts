@@ -191,7 +191,7 @@ test('sweep#6: findReferences ignores an id inside an unquoted subgraph title', 
   assert.deepEqual(findReferences(block, lines, 'N').map((r) => r.line).sort((a, b) => a - b), [1, 4]);
 });
 
-// deep-review #2: an id rename must not rewrite an id-word inside a glued inline
+// regression: an id rename must not rewrite an id-word inside a glued inline
 // edge label (label abuts the arrow with no inner space).
 test('review#2: rename does not corrupt a glued inline edge label', () => {
   const lines = ['graph LR', 'A[a] --send--> B[b]', 'send[real] --> C[c]'];
@@ -202,7 +202,7 @@ test('review#2: rename does not corrupt a glued inline edge label', () => {
   assert.ok(res.edits.find((e) => e.line === 2)?.newText.includes('xfer[real]'), 'the real node send -> xfer');
 });
 
-// deep-review #3: an id rename must not corrupt a CSS value inside a style line.
+// regression: an id rename must not corrupt a CSS value inside a style line.
 test('review#3: rename does not corrupt a style statement value', () => {
   const lines = ['graph LR', 'red[Node] --> B[b]', 'style B fill:red'];
   const block = findMermaidBlocks(lines.join('\n'), true)[0];

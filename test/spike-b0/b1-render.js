@@ -60,7 +60,7 @@ async function lastResult(page) {
   assert.ok(await page.locator('#state').evaluate((e) => e.classList.contains('hidden')), '1) state hidden on success');
   await page.screenshot({ path: path.join(OUT, 'b1-1-flowchart.png') });
 
-  // 2) ELK-via-frontmatter renders (the operator's order-lifecycle case)
+  // 2) ELK-via-frontmatter renders (the order-lifecycle example case)
   await send(page, { type: 'render', code: elk, id: 'm2', theme: 'dark' });
   r = await lastResult(page);
   assert.ok(r.ok && r.hasSvg, '2) elk diagram should render');
