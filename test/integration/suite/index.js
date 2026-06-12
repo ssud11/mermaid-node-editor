@@ -283,6 +283,59 @@ async function run() {
     `reveal must not duplicate the doc into another column (before=${beforeReveal}, after=${afterReveal})`
   );
   console.log('reveal PASS: split-view reveal reuses the existing editor (no duplicate)');
+
+  // 12. Hidden-tab reveal (PREVIEW path): the doc's tab exists but is COVERED by
+  //     another tab in its group, and focus sits in a DIFFERENT group. A preview
+  //     node-click reveal must flip the doc's OWN group back to it — not open a
+  //     duplicate in the focused group (the v1.3.0 dogfood bug). The sidebar
+  //     path is not reachable in this state (unsupported-doc focus clears it),
+  //     so this drives the preview panel's revealTag via the api.preview hook.
+  const hiddenDoc = await vscode.workspace.openTextDocument({
+    language: 'mermaid',
+    content: 'graph TD\n  A[Start] --> B[Mid]\n  B --> C[End]\n',
+  });
+  const hiddenEd = await vscode.window.showTextDocument(hiddenDoc, { viewColumn: vscode.ViewColumn.One, preview: false });
+  hiddenEd.selection = new vscode.Selection(1, 3, 1, 3); // cursor inside the block
+  await vscode.commands.executeCommand('mermaid-node-editor.preview'); // opens Beside, tracks hiddenDoc
+  await new Promise((r) => setTimeout(r, 400));
+  const previewPanel = api.preview && api.preview['current'];
+  assert.ok(previewPanel, 'the preview panel should exist and be exposed via api.preview');
+  const coverDoc = await vscode.workspace.openTextDocument({
+    language: 'plaintext',
+    content: 'cover tab — hides the mermaid doc in group One\n',
+  });
+  await vscode.window.showTextDocument(coverDoc, { viewColumn: vscode.ViewColumn.One, preview: false });
+  const decoyDoc = await vscode.workspace.openTextDocument({
+    language: 'plaintext',
+    content: 'decoy — focus lives here, beside the preview\n',
+  });
+  await vscode.window.showTextDocument(decoyDoc, { viewColumn: vscode.ViewColumn.Two, preview: false });
+  const hiddenUri = hiddenDoc.uri.toString();
+  assert.ok(
+    !vscode.window.visibleTextEditors.some((e) => e.document.uri.toString() === hiddenUri),
+    'precondition: the mermaid doc must be hidden behind the cover tab'
+  );
+  const tabsFor = (uri) =>
+    vscode.window.tabGroups.all.flatMap((g) =>
+      g.tabs.filter((t) => t.input instanceof vscode.TabInputText && t.input.uri.toString() === uri)
+    );
+  assert.strictEqual(tabsFor(hiddenUri).length, 1, 'precondition: exactly one tab holds the hidden doc');
+  await previewPanel['revealTag']('C'); // = a nodeClicked message from the preview webview
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(
+    tabsFor(hiddenUri).length,
+    1,
+    'reveal must not spawn a second tab for the doc in another group'
+  );
+  const revealedEd = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === hiddenUri);
+  assert.ok(revealedEd, 'the doc should be visible again after the reveal');
+  assert.strictEqual(
+    revealedEd.viewColumn,
+    vscode.ViewColumn.One,
+    `reveal must surface the doc in its OWN group (got column ${revealedEd.viewColumn})`
+  );
+  assert.strictEqual(revealedEd.selection.active.line, 2, 'the clicked tag C should be selected on line 2');
+  console.log('reveal PASS: hidden-tab preview reveal flips the doc’s own group, no duplicate');
 }
 
 module.exports = { run };
