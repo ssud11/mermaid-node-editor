@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <!--
-      Locked CSP (B0 spike): script-src stays nonce-strict (no unsafe-eval);
+      Locked CSP: script-src stays nonce-strict (no unsafe-eval);
       style-src needs 'unsafe-inline' — mermaid injects a <style> block plus
       inline style= attributes that a nonce cannot cover. img/font allow data:.
     -->
@@ -103,7 +103,7 @@
       #hl-toggle.off {
         opacity: 0.4;
       }
-      /* B3: focus highlight — a subtle theme-colored outline + soft glow on the
+      /* Focus highlight — a subtle theme-colored outline + soft glow on the
          node matching the source cursor's tag. !important because mermaid's own
          injected stylesheet sets stroke on the shape with higher specificity. */
       #stage .mne-focus > rect,
