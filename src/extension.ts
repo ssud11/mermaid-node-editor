@@ -50,6 +50,12 @@ export function computeMermaidDiagnostics(doc: vscode.TextDocument): vscode.Diag
 export function activate(context: vscode.ExtensionContext): MermaidEditorApi {
   const provider = new MermaidEditorProvider(context.extensionUri);
 
+  // B3 glue (both directions, wired here to avoid a panel↔preview import cycle):
+  // a click in the preview reveals in source AND selects in the sidebar; a
+  // sidebar rename/relabel re-points the preview highlight at the new id.
+  MermaidPreviewPanel.onDidReveal = (editor) => provider.onSelection(editor);
+  provider.onFocusedTagEdited = (id) => MermaidPreviewPanel.notifyFocusedTag(id);
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MermaidEditorProvider.viewType, provider, {
       webviewOptions: { retainContextWhenHidden: true },

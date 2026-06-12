@@ -94,6 +94,16 @@
           "when": "resourceLangId == markdown || resourceExtname == .mmd || resourceExtname == .mermaid"
         }
       ]
+    },
+    "configuration": {
+      "title": "Mermaid Node Editor",
+      "properties": {
+        "mermaid-node-editor.preview.highlightOnSelect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight the node under the source cursor in the live preview (soft theme-colored outline). Also togglable from the preview toolbar."
+        }
+      }
     }
   },
   "scripts": {
