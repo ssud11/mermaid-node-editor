@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { MermaidBlock } from '../parser';
-import { isMmd, isSupportedDoc, getBlockAtLine, getBlocks } from './panel';
+import { isMmd, isSupportedDoc, getBlockAtLine, getBlocks, tabColumnForUri } from './panel';
 import { findTagAtPosition, findDeclaration } from '../analysis';
 import { buildDiagramSource } from '../preview-source';
 
@@ -271,7 +271,13 @@ export class MermaidPreviewPanel {
         } catch {
           return;
         }
-        editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
+        // The doc's tab may exist but be hidden behind another tab in its group
+        // (visibleTextEditors misses it) — reveal it in ITS group, not the
+        // preview's own (active) column, which duplicated the editor there. If
+        // the file isn't open anywhere, open it in the first editor group —
+        // click-to-open-when-closed is deliberate.
+        const column = tabColumnForUri(uriStr) ?? vscode.window.tabGroups.all[0]?.viewColumn ?? vscode.ViewColumn.One;
+        editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false, viewColumn: column });
       }
       const block = this.findTrackedBlock(doc);
       if (!block || !block.supported) {
