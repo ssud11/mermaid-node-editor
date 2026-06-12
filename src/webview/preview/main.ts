@@ -86,12 +86,18 @@ function initMermaid() {
 let focusId = null;
 let highlightOn = true;
 
-// Map an SVG group's id back to our tag id. Mermaid v11 flowchart renders node
-// groups as id="flowchart-<tagId>-<n>"; clusters keep the subgraph id (sometimes
-// suffixed "_<n>"). Parsing the element id (instead of querySelector with an
-// interpolated id) sidesteps CSS-escaping of arbitrary tag ids.
+// The renderId of the SVG currently in the DOM — mermaid v11 prepends it to
+// every group id (empirically: nodes "<renderId>-flowchart-<tagId>-<n>",
+// clusters "<renderId>-<subgraphId>"; confirmed by test/visual/preview-b3.js).
+let lastRenderId = '';
+
+// Map an SVG group's id back to our tag id: strip the exact renderId prefix we
+// passed to mermaid.render(), then parse. Parsing the element id (instead of
+// querySelector with an interpolated id) sidesteps CSS-escaping of arbitrary
+// tag ids.
 function tagFromElement(el) {
-  const raw = el.id || '';
+  let raw = el.id || '';
+  if (lastRenderId && raw.startsWith(lastRenderId + '-')) raw = raw.slice(lastRenderId.length + 1);
   const m = /^flowchart-(.+)-\d+$/.exec(raw);
   if (m) return m[1];
   const c = /^(.+?)_\d+$/.exec(raw);
@@ -292,6 +298,7 @@ async function render(code, id, key) {
     const { svg, bindFunctions } = await mermaid.render(renderId, code);
     if (gen !== renderGen) return; // a newer render started while we awaited — drop this stale result
     st.innerHTML = svg;
+    lastRenderId = renderId; // the ids in THIS svg carry this prefix (set post-gen-guard)
     const svgEl = st.querySelector('svg');
     if (svgEl) {
       // render at intrinsic px size so the zoom math is 1:1 with screen pixels

@@ -40,6 +40,9 @@ export class MermaidPreviewPanel {
   // so it can be re-sent when the webview boots; the webview re-applies it after
   // every render (the SVG is replaced wholesale).
   private focusedTag?: string;
+  // True while revealTag drives the editor — editor-sync events it causes
+  // (active-editor change at cursor (0,0)) must not clear the highlight.
+  private revealing = false;
 
   private static webviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
     return {
@@ -132,9 +135,18 @@ export class MermaidPreviewPanel {
         } else if (msg.type === 'setHighlight') {
           // Toolbar toggle → persist as the real setting; the config-change
           // listener below echoes it back so the setting stays the source of truth.
-          void vscode.workspace
-            .getConfiguration()
-            .update(HIGHLIGHT_SETTING, !!msg.value, vscode.ConfigurationTarget.Global);
+          // Write to the scope that currently holds an effective value — writing
+          // Global under a workspace override would be silently shadowed and the
+          // echo would flip the button straight back.
+          const cfg = vscode.workspace.getConfiguration();
+          const info = cfg.inspect<boolean>(HIGHLIGHT_SETTING);
+          const target =
+            info?.workspaceFolderValue !== undefined
+              ? vscode.ConfigurationTarget.WorkspaceFolder
+              : info?.workspaceValue !== undefined
+                ? vscode.ConfigurationTarget.Workspace
+                : vscode.ConfigurationTarget.Global;
+          void cfg.update(HIGHLIGHT_SETTING, !!msg.value, target);
         }
       },
       null,
@@ -214,6 +226,9 @@ export class MermaidPreviewPanel {
    * up — so editing the prose around a diagram doesn't blank the preview.
    */
   private updateFromEditor(editor: vscode.TextEditor): void {
+    if (this.revealing) {
+      return; // our own revealTag triggered this event — don't fight the highlight
+    }
     const doc = editor.document;
     if (!isSupportedDoc(doc)) {
       return;
@@ -237,35 +252,45 @@ export class MermaidPreviewPanel {
     if (!this.sourceUri) {
       return;
     }
-    const uriStr = this.sourceUri.toString();
-    let editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uriStr);
-    let doc: vscode.TextDocument;
-    if (editor) {
-      doc = editor.document;
-    } else {
-      try {
-        doc = await vscode.workspace.openTextDocument(this.sourceUri);
-      } catch {
+    // Suppress the editor-sync listeners while revealing: showTextDocument fires
+    // onDidChangeActiveTextEditor with the cursor still at (0,0) — the directive
+    // line — which would clear the focus highlight for a frame before the real
+    // selection lands below.
+    this.revealing = true;
+    try {
+      const uriStr = this.sourceUri.toString();
+      let editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uriStr);
+      let doc: vscode.TextDocument;
+      if (editor) {
+        doc = editor.document;
+      } else {
+        try {
+          doc = await vscode.workspace.openTextDocument(this.sourceUri);
+        } catch {
+          return;
+        }
+        editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
+      }
+      const block = this.findTrackedBlock(doc);
+      if (!block || !block.supported) {
         return;
       }
-      editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
+      const decl = findDeclaration(block, id);
+      if (!decl) {
+        return; // clicked element didn't map to a declared tag (e.g. a bare edge ref mermaid rendered anyway)
+      }
+      const start = new vscode.Position(decl.line, decl.startChar);
+      const end = new vscode.Position(decl.line, decl.endChar);
+      editor.selection = new vscode.Selection(start, start);
+      editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      // preserveFocus keeps keyboard focus on the preview, so the selection-change
+      // guard (e.textEditor === activeTextEditor) blocks the normal sync path —
+      // sync the highlight and the sidebar explicitly instead.
+      this.setFocusedTag(id);
+      MermaidPreviewPanel.onDidReveal?.(editor);
+    } finally {
+      this.revealing = false;
     }
-    const block = this.findTrackedBlock(doc);
-    if (!block || !block.supported) {
-      return;
-    }
-    const decl = findDeclaration(block, id);
-    if (!decl) {
-      return; // clicked element didn't map to a declared tag (shouldn't happen)
-    }
-    const start = new vscode.Position(decl.line, decl.startChar);
-    const end = new vscode.Position(decl.line, decl.endChar);
-    editor.selection = new vscode.Selection(start, start);
-    editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-    // Selection was set with preserveFocus, so the extension's active-editor guard
-    // won't fire — sync the highlight and the sidebar explicitly.
-    this.setFocusedTag(id);
-    MermaidPreviewPanel.onDidReveal?.(editor);
   }
 
   /** The previewed source file was closed → reset tracking and show the hint. */
