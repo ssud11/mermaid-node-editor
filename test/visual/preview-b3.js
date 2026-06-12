@@ -8,7 +8,7 @@
 //  4. focus on subgraph id → cluster group gets mne-focus
 //  5. config highlightOnSelect:false removes mne-focus; true restores it
 //  6. focus null → no mne-focus
-//  7. click (<5px movement) on a node → nodeClicked; drag (50px) → no nodeClicked
+//  7. click (<10px movement) on a node → nodeClicked; drag (50px) → no nodeClicked
 //  8. #hl-toggle click → highlight toggled; screenshot b3-highlight.png
 //
 // Exits 0 on full pass, 1 on any failure. Console summary with PASS/FAIL per check.
@@ -356,14 +356,14 @@ function fail(name, detail) {
     fail('focus-null', `focusCount=${fc6} — expected 0`);
   }
 
-  // ----------------------------------------------------------------- check 7a: click (<5px) → nodeClicked
+  // ----------------------------------------------------------------- check 7a: click (<10px) → nodeClicked
   // NOTE: tagFromElement in production code does NOT handle the renderId prefix.
   // For a node with id="b3r1-flowchart-A-0", production tagFromElement():
   //   - /^flowchart-(.+)-\d+$/ fails (there's a "b3r1-" prefix)
   //   - /^(.+?)_\d+$/ fails (no underscore+digits suffix)
   //   - falls through to `return raw || null` → returns "b3r1-flowchart-A-0"
   // So nodeClicked IS posted, but with a wrong id. We check for either outcome.
-  console.log('\n[7a] click (<5px movement) on node "' + NODE_TAG + '" → nodeClicked');
+  console.log('\n[7a] click (<10px movement) on node "' + NODE_TAG + '" → nodeClicked');
   await clearResult(page);
   const bbox = await getBBoxForTag(page, NODE_TAG);
   if (!bbox) {
