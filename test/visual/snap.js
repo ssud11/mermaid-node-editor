@@ -2,9 +2,9 @@
 // chromium via playwright-core, feeds sample data, screenshots light + dark, and
 // asserts the DOM renders correctly (incl. no markup injection from labels/ids).
 //
-// Reuses this box's already-installed chromium (no download). Per gotcha-bank
-// Gotcha 30 (xrdp iGPU): run headless with --disable-gpu and LIBGL_ALWAYS_SOFTWARE=1.
-// Output PNGs -> artifacts/ (gitignored), for the operator's gate review.
+// Reuses an already-installed chromium (no download). Headless on Linux needs
+// --disable-gpu and LIBGL_ALWAYS_SOFTWARE=1 (software GL on iGPU/remote boxes).
+// Output PNGs -> artifacts/ (gitignored), for visual review.
 const path = require('path');
 const fs = require('fs');
 const assert = require('assert');
@@ -183,7 +183,7 @@ async function shot(page, theme, name, message) {
   await page.waitForTimeout(80);
   assert.ok(!(await page.locator('#error').isVisible()), 'a successful update should clear the error');
 
-  // --- deep-review #6: a passive refresh must NOT tear down a detail field the
+  // --- regression: a passive refresh must NOT tear down a detail field the
   //     user is mid-edit in (it would drop the uncommitted value). ---
   await page.goto(HARNESS);
   await setTheme(page, DARK);

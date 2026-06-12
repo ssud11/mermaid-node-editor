@@ -14,7 +14,7 @@
 // Exits 0 on full pass, 1 on any failure. Console summary with PASS/FAIL per check.
 // Screenshots -> artifacts/b3-*.png
 //
-// Per box gotcha: headless chromium needs --disable-gpu + LIBGL_ALWAYS_SOFTWARE=1.
+// Headless chromium on Linux needs --disable-gpu + LIBGL_ALWAYS_SOFTWARE=1.
 const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright-core');
@@ -28,8 +28,8 @@ const NONCE = 'b3TestNonce0x1';
 
 // Test diagram: 4 nodes of different shapes, 2 subgraphs with id+title, edges.
 // grp_1 is a REGRESSION probe: a subgraph id ending in _<digits> must survive
-// tagFromElement verbatim (deep-review 2026-06-12 HIGH: a leftover _N-suffix
-// strip truncated it to "grp", silently breaking focus + click-reveal).
+// tagFromElement verbatim (a leftover _N-suffix strip once truncated it to
+// "grp", silently breaking focus + click-reveal for such clusters).
 const TEST_DIAGRAM = `flowchart TD
     A[Input] --> B{Decision}
     B -->|yes| C([Process])
@@ -113,14 +113,13 @@ async function focusedId(page) {
   });
 }
 
-// The ACTUAL tagFromElement logic as mermaid v11 REALLY renders ids:
+// How mermaid v11 really renders group ids (the production tagFromElement in
+// main.ts strips the exact renderId prefix it passed to mermaid.render):
 //   node groups:    "<renderId>-flowchart-<tagId>-<n>"   → tagId
 //   cluster groups: "<renderId>-<subgraphId>"            → subgraphId
-//   (the production code in main.ts was written for the incorrect assumption that
-//    there is no renderId prefix — checks 3/4 will report this as a FINDING)
 //
-// For the harness's OWN lookups (getBBoxForTag, check 7), we use the correct
-// pattern so we can at least measure bounding boxes and drive click tests.
+// The harness's OWN lookups (getBBoxForTag, check 7) resolve independently with
+// the same pattern, so a production mapping regression shows up as a mismatch.
 function resolveTagFromId(raw, classes) {
   // Pattern: "<prefix>-flowchart-<tagId>-<n>" (n is digits)
   const m = /^.+-flowchart-(.+)-\d+$/.exec(raw);
@@ -306,7 +305,7 @@ function fail(name, detail) {
 
   // ------------------------------------------- check 4b: _N-suffixed cluster id (regression)
   // A subgraph id ending in _<digits> must focus correctly — a trailing-_N strip
-  // in tagFromElement once truncated "grp_1" → "grp" (deep-review 2026-06-12 #1).
+  // in tagFromElement once truncated "grp_1" → "grp".
   console.log('\n[4b] focus on suffixed subgraph id → its cluster gets mne-focus');
   await postMsg(page, { type: 'focus', id: SUFFIX_CLUSTER_TAG });
   await page.waitForTimeout(80);
@@ -408,7 +407,7 @@ function fail(name, detail) {
     fail('drag-no-nodeClicked', `drag unexpectedly produced nodeClicked with id="${r7b.id}"`);
   }
   // Drag-pan must not double as a text-selection gesture (labels are native SVG
-  // text; #preview has user-select:none — operator-reported selection sheet).
+  // text; #preview has user-select:none keeps a pan from selecting them).
   const dragSelection = await page.evaluate(() => String(window.getSelection()));
   if (dragSelection === '') {
     pass('drag-no-selection', 'drag left no text selection (user-select:none holds)');
@@ -417,7 +416,7 @@ function fail(name, detail) {
   }
 
   // -------------------------------------- check 7c: rename → re-render → click (regression)
-  // Mirrors the production sidebar-rename sequence (operator bug report 2026-06-12):
+  // Mirrors the production rename sequence (rename-then-click regression):
   // 1. focus re-points to the NEW id while the svg still carries the old one,
   // 2. the debounced re-render arrives (NEW renderId, SAME sticky key),
   // 3. a click on the renamed node must still post nodeClicked with the new id.

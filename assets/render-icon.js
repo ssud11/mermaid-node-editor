@@ -1,4 +1,4 @@
-// Rasterize assets/icon.svg -> icon.png (128x128) using the box's chromium via
+// Rasterize assets/icon.svg -> icon.png (128x128) using a locally installed chromium via
 // playwright-core (no extra tooling). Re-run after editing icon.svg.
 //   LIBGL_ALWAYS_SOFTWARE=1 node assets/render-icon.js
 const path = require('path');
