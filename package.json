@@ -116,7 +116,8 @@
     "visual": "node ./test/visual/snap.js",
     "typecheck": "tsc -p ./tsconfig.json --noEmit",
     "vscode:prepublish": "npm run compile",
-    "package": "npx @vscode/vsce package"
+    "package": "npx @vscode/vsce package",
+    "visual:b3": "node ./test/visual/preview-b3.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
