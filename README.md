@@ -9,6 +9,7 @@ A sidebar editor for Mermaid flowchart nodes. Click into a diagram and a searcha
 ## Features
 
 - **Live preview** — render the diagram beside your source with the real Mermaid engine; it updates as you type, matches your theme, and has cursor-centered zoom / pan / fit
+- **Preview ↔ source sync** — the node under your source cursor lights up in the preview; click a node in the preview to jump to it in the source and the panel
 - A dedicated **Activity Bar** panel: a searchable, master-detail node list that scales to large diagrams
 - Edit node labels and IDs; renaming an ID updates all of its edges
 - **Rename from the editor too** — `F2` / Rename Symbol on a tag (same edge propagation)
@@ -24,6 +25,8 @@ Flowcharts only (`graph` / `flowchart`). Other diagram types show an "unsupporte
 ## Live preview
 
 See your diagram rendered beside the source — it re-renders as you edit, matches your VS Code theme, and gives you cursor-centered zoom, drag-to-pan, and fit-to-view.
+
+The preview is **editing-aware**: put your cursor on a tag in the source and its node lights up with a soft theme-colored outline; click any node or subgraph in the preview to jump to its declaration in the source and select it in the node-editor panel (a drag still pans — only a clean click navigates). Toggle the highlight with the ◉ toolbar button or the `mermaid-node-editor.preview.highlightOnSelect` setting; click-to-navigate works either way.
 
 <p align="center">
   <img src="images/preview-dark.png" alt="Live Mermaid preview rendered beside the source, with zoom controls" width="760">
