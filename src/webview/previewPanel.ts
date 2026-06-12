@@ -40,9 +40,11 @@ export class MermaidPreviewPanel {
   // so it can be re-sent when the webview boots; the webview re-applies it after
   // every render (the SVG is replaced wholesale).
   private focusedTag?: string;
-  // True while revealTag drives the editor — editor-sync events it causes
-  // (active-editor change at cursor (0,0)) must not clear the highlight.
-  private revealing = false;
+  // >0 while revealTag drives the editor — editor-sync events it causes
+  // (active-editor change at cursor (0,0)) must not clear the highlight. A
+  // COUNTER, not a boolean: rapid double-clicks overlap two async reveals, and
+  // the first one finishing must not unguard the second mid-flight.
+  private revealing = 0;
 
   private static webviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
     return {
@@ -226,8 +228,8 @@ export class MermaidPreviewPanel {
    * up — so editing the prose around a diagram doesn't blank the preview.
    */
   private updateFromEditor(editor: vscode.TextEditor): void {
-    if (this.revealing) {
-      return; // our own revealTag triggered this event — don't fight the highlight
+    if (this.revealing > 0) {
+      return; // our own revealTag(s) triggered this event — don't fight the highlight
     }
     const doc = editor.document;
     if (!isSupportedDoc(doc)) {
@@ -256,7 +258,7 @@ export class MermaidPreviewPanel {
     // onDidChangeActiveTextEditor with the cursor still at (0,0) — the directive
     // line — which would clear the focus highlight for a frame before the real
     // selection lands below.
-    this.revealing = true;
+    this.revealing++;
     try {
       const uriStr = this.sourceUri.toString();
       let editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uriStr);
@@ -289,7 +291,7 @@ export class MermaidPreviewPanel {
       this.setFocusedTag(id);
       MermaidPreviewPanel.onDidReveal?.(editor);
     } finally {
-      this.revealing = false;
+      this.revealing--;
     }
   }
 
