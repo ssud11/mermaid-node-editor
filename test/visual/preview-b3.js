@@ -408,6 +408,46 @@ function fail(name, detail) {
     fail('drag-no-nodeClicked', `drag unexpectedly produced nodeClicked with id="${r7b.id}"`);
   }
 
+  // -------------------------------------- check 7c: rename → re-render → click (regression)
+  // Mirrors the production sidebar-rename sequence (operator bug report 2026-06-12):
+  // 1. focus re-points to the NEW id while the svg still carries the old one,
+  // 2. the debounced re-render arrives (NEW renderId, SAME sticky key),
+  // 3. a click on the renamed node must still post nodeClicked with the new id.
+  console.log('\n[7c] rename A→AX, re-render (same key, new renderId), click AX → nodeClicked');
+  await postMsg(page, { type: 'config', highlightOnSelect: true });
+  await postMsg(page, { type: 'focus', id: 'AX' }); // re-point BEFORE re-render (keep-path)
+  await page.waitForTimeout(50);
+  const RENAMED = TEST_DIAGRAM.replace('A[Input] --> B{Decision}', 'AX[Input] --> B{Decision}');
+  const r7c = await renderDiagram(page, RENAMED);
+  if (!r7c || !r7c.ok) {
+    fail('rename-click', `renamed diagram failed to render: ${JSON.stringify(r7c)}`);
+  } else {
+    const focusedAfter = await page.evaluate(() => {
+      const el = document.querySelector('.mne-focus');
+      return el ? el.id : null;
+    });
+    await clearResult(page);
+    const bbox7c = await getBBoxForTag(page, 'AX');
+    if (!bbox7c) {
+      fail('rename-click', `renamed node "AX" not found in the re-rendered svg`);
+    } else {
+      await page.mouse.move(bbox7c.x, bbox7c.y);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+      const res7c = await page.evaluate(() => window.__lastResult);
+      if (res7c && res7c.type === 'nodeClicked' && res7c.id === 'AX') {
+        pass('rename-click', `after rename+re-render, click posts nodeClicked id="AX" (focus re-applied to "${focusedAfter}")`);
+      } else {
+        fail('rename-click', `after rename+re-render, expected nodeClicked id="AX"; got ${JSON.stringify(res7c)} (focused="${focusedAfter}")`);
+      }
+    }
+  }
+  // Restore the original diagram for check 8.
+  await renderDiagram(page, TEST_DIAGRAM);
+  await postMsg(page, { type: 'focus', id: 'A' });
+  await page.waitForTimeout(50);
+
   // ----------------------------------------------------------------- check 8: #hl-toggle
   // The toggle button must (a) post setHighlight and (b) toggle the off CSS class,
   // clearing the live highlight — driven through the real focus path.
