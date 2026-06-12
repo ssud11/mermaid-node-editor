@@ -8,8 +8,12 @@
 // Contract (extension <-> webview):
 //   in : { type:'render', code, id, key }   render a mermaid block
 //        { type:'state',  kind, text }       show empty / unsupported notice
+//        { type:'focus',  id }               highlight a tag's node (null = none)
+//        { type:'config', highlightOnSelect } apply the highlight setting
 //   out: { type:'preview-ready' }            bundle loaded + ELK registered
 //        { type:'rendered', ok, ms, error? } render result + timing
+//        { type:'nodeClicked', id }          a node/cluster was clicked (B3)
+//        { type:'setHighlight', value }      toolbar toggle → persist the setting
 //
 // Pan/zoom is hand-rolled (zero dep, CSP-clean) per the B0 research: cursor-
 // centered wheel zoom + drag-pan + fit/reset + sticky across re-render. One CSS
@@ -73,6 +77,58 @@ function initMermaid() {
     htmlLabels: false,
     flowchart: { htmlLabels: false, wrappingWidth: 200 },
   });
+}
+
+// ------------------------------------------------------------- highlight -----
+// B3: source→preview focus. The extension sends the tag id under the source
+// cursor; we find its SVG group and toggle .mne-focus. State lives here so it
+// re-applies after every render (the SVG is replaced wholesale each time).
+let focusId = null;
+let highlightOn = true;
+
+// Map an SVG group's id back to our tag id. Mermaid v11 flowchart renders node
+// groups as id="flowchart-<tagId>-<n>"; clusters keep the subgraph id (sometimes
+// suffixed "_<n>"). Parsing the element id (instead of querySelector with an
+// interpolated id) sidesteps CSS-escaping of arbitrary tag ids.
+function tagFromElement(el) {
+  const raw = el.id || '';
+  const m = /^flowchart-(.+)-\d+$/.exec(raw);
+  if (m) return m[1];
+  const c = /^(.+?)_\d+$/.exec(raw);
+  if (c && el.classList.contains('cluster')) return c[1];
+  return raw || null;
+}
+
+function findElForTag(id) {
+  const st = $('stage');
+  if (!st) return null;
+  for (const el of st.querySelectorAll('g.node[id], g.cluster[id]')) {
+    if (tagFromElement(el) === id) return el;
+  }
+  return null;
+}
+
+function applyFocus() {
+  const st = $('stage');
+  if (!st) return;
+  for (const el of st.querySelectorAll('.mne-focus')) el.classList.remove('mne-focus');
+  if (!highlightOn || !focusId) return;
+  const el = findElForTag(focusId);
+  if (el) el.classList.add('mne-focus');
+}
+
+function updateHlButton() {
+  const b = $('hl-toggle');
+  if (!b) return;
+  b.classList.toggle('off', !highlightOn);
+  b.setAttribute('aria-pressed', String(highlightOn));
+  b.title = highlightOn ? 'Highlight selected node: on' : 'Highlight selected node: off';
+}
+
+function setHighlightOn(value) {
+  highlightOn = value;
+  updateHlButton();
+  applyFocus();
 }
 
 // -------------------------------------------------------------- pan/zoom -----
@@ -140,7 +196,10 @@ function setupInteraction() {
   );
 
   vp.addEventListener('pointerdown', (e) => {
-    drag = { x: e.clientX - tx, y: e.clientY - ty };
+    // Record the pre-capture target: pointer capture retargets every later event
+    // (including click) to #preview, so this is the only reliable "what was
+    // under the pointer" for the click-vs-drag decision in endDrag.
+    drag = { x: e.clientX - tx, y: e.clientY - ty, sx: e.clientX, sy: e.clientY, target: e.target };
     vp.setPointerCapture(e.pointerId);
     vp.classList.add('grabbing');
   });
@@ -150,16 +209,28 @@ function setupInteraction() {
     ty = e.clientY - drag.y;
     applyTransform();
   });
-  const endDrag = (e) => {
+  const endDrag = (e, cancelled) => {
     if (!drag) return;
+    const moved = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy);
+    const target = drag.target;
     drag = null;
     vp.classList.remove('grabbing');
     try {
       vp.releasePointerCapture(e.pointerId);
     } catch {}
+    // B3: a press that barely moved is a click — if it landed on a node or
+    // cluster, ask the extension to reveal it in the source. Click-reveal is
+    // independent of the highlight toggle (an explicit click is navigation).
+    if (!cancelled && moved < 5 && target && typeof target.closest === 'function') {
+      const g = target.closest('g.node, g.cluster');
+      if (g) {
+        const id = tagFromElement(g);
+        if (id) post({ type: 'nodeClicked', id });
+      }
+    }
   };
-  vp.addEventListener('pointerup', endDrag);
-  vp.addEventListener('pointercancel', endDrag);
+  vp.addEventListener('pointerup', (e) => endDrag(e, false));
+  vp.addEventListener('pointercancel', (e) => endDrag(e, true));
 
   const center = (factor) => {
     const r = vp.getBoundingClientRect();
@@ -168,6 +239,13 @@ function setupInteraction() {
   $('zoom-in').addEventListener('click', () => center(STEP));
   $('zoom-out').addEventListener('click', () => center(1 / STEP));
   $('fit').addEventListener('click', fit);
+  // Highlight toggle: flip locally for instant feedback, then persist through the
+  // extension (the setting echoes back via a 'config' message — idempotent). The
+  // local flip also keeps the button live in the vscode-less test harness.
+  $('hl-toggle').addEventListener('click', () => {
+    setHighlightOn(!highlightOn);
+    post({ type: 'setHighlight', value: highlightOn });
+  });
 }
 
 // ---------------------------------------------------------------- render -----
@@ -233,6 +311,7 @@ async function render(code, id, key) {
       fit();
     }
     lastKey = key || null;
+    applyFocus(); // the render replaced the SVG — re-apply the focus highlight
     post({ type: 'rendered', ok: true, ms: Math.round(performance.now() - t0), hasSvg: !!svgEl });
   } catch (err) {
     if (gen !== renderGen) return; // a newer render superseded this one — drop the stale error
@@ -254,6 +333,11 @@ window.addEventListener('message', (e) => {
   if (!msg || typeof msg !== 'object') return;
   if (msg.type === 'render') {
     render(String(msg.code), msg.id, msg.key);
+  } else if (msg.type === 'focus') {
+    focusId = msg.id || null;
+    applyFocus();
+  } else if (msg.type === 'config') {
+    setHighlightOn(msg.highlightOnSelect !== false);
   } else if (msg.type === 'state') {
     // A state message supersedes any in-flight render (e.g. unsupported notice).
     renderGen++;

@@ -52,6 +52,10 @@ interface BlockView {
 export class MermaidEditorProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'mermaidNodeEditorPanel';
 
+  /** Wired in activate(): tells the preview the focused tag changed after a
+   *  sidebar edit (rename/relabel), without importing the preview here. */
+  onFocusedTagEdited?: (id: string | undefined) => void;
+
   private view?: vscode.WebviewView;
   private currentUri?: vscode.Uri;
   private currentBlockStart = -1;
@@ -240,6 +244,9 @@ export class MermaidEditorProvider implements vscode.WebviewViewProvider {
       // Keep the just-edited tag selected — the new id after a rename, else the same id.
       const focusedId = msg.type === 'nodeIdChanged' ? value : msg.id;
       this.post({ type: 'update', block: this.toView(refreshed, fresh), focusedId });
+      // B3: re-point the preview highlight too (a rename changes the tag id, so the
+      // preview's stored focus would otherwise go stale). Wired in activate().
+      this.onFocusedTagEdited?.(focusedId);
     }
   }
 
