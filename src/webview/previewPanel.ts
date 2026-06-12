@@ -11,15 +11,22 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { MermaidBlock } from '../parser';
 import { isMmd, isSupportedDoc, getBlockAtLine, getBlocks } from './panel';
+import { findTagAtPosition, findDeclaration } from '../analysis';
 import { buildDiagramSource } from '../preview-source';
 
 type RenderMsg =
   | { type: 'render'; code: string; id: string; key: string }
   | { type: 'state'; kind: 'empty' | 'unsupported'; text: string };
 
+const HIGHLIGHT_SETTING = 'mermaid-node-editor.preview.highlightOnSelect';
+
 export class MermaidPreviewPanel {
   public static readonly viewType = 'mermaidNodeEditorPreview';
   private static current?: MermaidPreviewPanel;
+
+  /** Wired in activate(): lets a preview click-reveal also sync the node-editor
+   *  sidebar without importing the provider here (avoids a panel↔preview cycle). */
+  static onDidReveal?: (editor: vscode.TextEditor) => void;
 
   private readonly disposables: vscode.Disposable[] = [];
   private ready = false;
@@ -29,6 +36,10 @@ export class MermaidPreviewPanel {
   // one even when the cursor has wandered into surrounding prose.
   private sourceUri?: vscode.Uri;
   private sourceBlockStart = -1;
+  // B3: the tag highlighted in the preview (follows the source cursor). Kept here
+  // so it can be re-sent when the webview boots; the webview re-applies it after
+  // every render (the SVG is replaced wholesale).
+  private focusedTag?: string;
 
   private static webviewOptions(extensionUri: vscode.Uri): vscode.WebviewOptions {
     return {
@@ -89,27 +100,93 @@ export class MermaidPreviewPanel {
   static notifyDocClose(doc: vscode.TextDocument): void {
     MermaidPreviewPanel.current?.onDocClose(doc);
   }
+  /** The sidebar renamed/relabeled the focused tag → re-point the highlight at the
+   *  (possibly new) id; the debounced re-render then re-applies it in the webview. */
+  static notifyFocusedTag(id: string | undefined): void {
+    MermaidPreviewPanel.current?.setFocusedTag(id);
+  }
 
   private constructor(private readonly panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel.webview.html = this.getHtml(this.panel.webview, extensionUri);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.panel.webview.onDidReceiveMessage(
       (msg) => {
+        if (!msg || typeof msg.type !== 'string') {
+          return;
+        }
         // The webview signals it has booted (bundle parsed + ELK registered);
         // flush whatever we wanted to show. The first post can otherwise race
         // ahead of the script being ready and get dropped.
-        if (msg && msg.type === 'preview-ready') {
+        if (msg.type === 'preview-ready') {
           this.ready = true;
           if (this.queued) {
             this.panel.webview.postMessage(this.queued);
             this.queued = undefined;
           }
+          // Config + focus ride separately from the render queue (which keeps
+          // only ONE message — a queued focus must never clobber a queued render).
+          this.postConfig();
+          this.postFocus();
+        } else if (msg.type === 'nodeClicked' && typeof msg.id === 'string') {
+          void this.revealTag(msg.id);
+        } else if (msg.type === 'setHighlight') {
+          // Toolbar toggle → persist as the real setting; the config-change
+          // listener below echoes it back so the setting stays the source of truth.
+          void vscode.workspace
+            .getConfiguration()
+            .update(HIGHLIGHT_SETTING, !!msg.value, vscode.ConfigurationTarget.Global);
+        }
+      },
+      null,
+      this.disposables
+    );
+    vscode.workspace.onDidChangeConfiguration(
+      (e) => {
+        if (e.affectsConfiguration(HIGHLIGHT_SETTING)) {
+          this.postConfig();
         }
       },
       null,
       this.disposables
     );
     this.updateFromActiveEditor();
+  }
+
+  private highlightEnabled(): boolean {
+    return vscode.workspace.getConfiguration().get<boolean>(HIGHLIGHT_SETTING, true);
+  }
+
+  private postConfig(): void {
+    if (this.ready) {
+      this.panel.webview.postMessage({ type: 'config', highlightOnSelect: this.highlightEnabled() });
+    }
+  }
+
+  private postFocus(): void {
+    if (this.ready) {
+      this.panel.webview.postMessage({ type: 'focus', id: this.focusedTag ?? null });
+    }
+  }
+
+  private setFocusedTag(id: string | undefined): void {
+    if (id === this.focusedTag) {
+      return;
+    }
+    this.focusedTag = id;
+    this.postFocus();
+  }
+
+  /** B3: the tag under the source cursor (a declared node or subgraph id), for the
+   *  preview highlight. Mirrors the sidebar's focusedId logic in panel.onSelection. */
+  private syncFocusFromCursor(editor: vscode.TextEditor, doc: vscode.TextDocument, block: MermaidBlock): void {
+    const pos = editor.selection.active;
+    const lines = doc.getText().split(/\r?\n/);
+    const tag = findTagAtPosition(block, lines, pos.line, pos.character);
+    const focused =
+      tag && (block.nodes.some((n) => n.id === tag.id) || block.subgraphs.some((s) => s.id === tag.id))
+        ? tag.id
+        : undefined;
+    this.setFocusedTag(focused);
   }
 
   /** First render on open: show the diagram at the cursor, else a hint. */
@@ -121,6 +198,7 @@ export class MermaidPreviewPanel {
         : undefined;
     if (editor && block) {
       this.showBlock(editor.document, block);
+      this.syncFocusFromCursor(editor, editor.document, block);
     } else {
       this.send({
         type: 'state',
@@ -142,9 +220,52 @@ export class MermaidPreviewPanel {
     }
     const block = getBlockAtLine(doc, editor.selection.active.line);
     if (!block) {
-      return; // cursor is outside any block — keep showing the current diagram
+      this.setFocusedTag(undefined); // no tag under a cursor outside any block
+      return; // …but keep showing the current diagram
     }
     this.showBlock(doc, block);
+    this.syncFocusFromCursor(editor, doc, block);
+  }
+
+  /**
+   * B3: a node was clicked in the preview → reveal + select its declaration in the
+   * source (mirrors the sidebar's reveal), then let the extension sync the
+   * node-editor panel via onDidReveal. Click-reveal stays active even with the
+   * highlight toggled off — an explicit click is navigation, not passive noise.
+   */
+  private async revealTag(id: string): Promise<void> {
+    if (!this.sourceUri) {
+      return;
+    }
+    const uriStr = this.sourceUri.toString();
+    let editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uriStr);
+    let doc: vscode.TextDocument;
+    if (editor) {
+      doc = editor.document;
+    } else {
+      try {
+        doc = await vscode.workspace.openTextDocument(this.sourceUri);
+      } catch {
+        return;
+      }
+      editor = await vscode.window.showTextDocument(doc, { preserveFocus: true, preview: false });
+    }
+    const block = this.findTrackedBlock(doc);
+    if (!block || !block.supported) {
+      return;
+    }
+    const decl = findDeclaration(block, id);
+    if (!decl) {
+      return; // clicked element didn't map to a declared tag (shouldn't happen)
+    }
+    const start = new vscode.Position(decl.line, decl.startChar);
+    const end = new vscode.Position(decl.line, decl.endChar);
+    editor.selection = new vscode.Selection(start, start);
+    editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    // Selection was set with preserveFocus, so the extension's active-editor guard
+    // won't fire — sync the highlight and the sidebar explicitly.
+    this.setFocusedTag(id);
+    MermaidPreviewPanel.onDidReveal?.(editor);
   }
 
   /** The previewed source file was closed → reset tracking and show the hint. */

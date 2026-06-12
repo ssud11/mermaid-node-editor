@@ -100,6 +100,24 @@
         font-size: 11px;
         color: var(--vscode-descriptionForeground);
       }
+      #hl-toggle.off {
+        opacity: 0.4;
+      }
+      /* B3: focus highlight — a subtle theme-colored outline + soft glow on the
+         node matching the source cursor's tag. !important because mermaid's own
+         injected stylesheet sets stroke on the shape with higher specificity. */
+      #stage .mne-focus > rect,
+      #stage .mne-focus > polygon,
+      #stage .mne-focus > circle,
+      #stage .mne-focus > ellipse,
+      #stage .mne-focus > path,
+      #stage .mne-focus .label-container {
+        stroke: var(--vscode-focusBorder, #007fd4) !important;
+        stroke-width: 2px !important;
+      }
+      #stage .mne-focus {
+        filter: drop-shadow(0 0 3px var(--vscode-focusBorder, #007fd4));
+      }
     </style>
   </head>
   <body>
@@ -110,6 +128,7 @@
       <span id="zoom-pct">100%</span>
       <button id="zoom-in" title="Zoom in">+</button>
       <button id="fit" title="Fit to view">⤢</button>
+      <button id="hl-toggle" title="Highlight selected node: on" aria-pressed="true">◉</button>
     </div>
     <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
   </body>
