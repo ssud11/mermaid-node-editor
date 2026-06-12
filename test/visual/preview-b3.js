@@ -407,6 +407,14 @@ function fail(name, detail) {
   } else {
     fail('drag-no-nodeClicked', `drag unexpectedly produced nodeClicked with id="${r7b.id}"`);
   }
+  // Drag-pan must not double as a text-selection gesture (labels are native SVG
+  // text; #preview has user-select:none — operator-reported selection sheet).
+  const dragSelection = await page.evaluate(() => String(window.getSelection()));
+  if (dragSelection === '') {
+    pass('drag-no-selection', 'drag left no text selection (user-select:none holds)');
+  } else {
+    fail('drag-no-selection', `drag selected text: "${dragSelection.slice(0, 80)}"`);
+  }
 
   // -------------------------------------- check 7c: rename → re-render → click (regression)
   // Mirrors the production sidebar-rename sequence (operator bug report 2026-06-12):
