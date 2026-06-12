@@ -110,6 +110,23 @@ export class MermaidPreviewPanel {
   static notifyFocusedTag(id: string | undefined): void {
     MermaidPreviewPanel.current?.setFocusedTag(id);
   }
+  /** The SIDEBAR is driving a reveal (row click) — suppress this panel's
+   *  editor-sync for its duration, exactly like the panel's own revealTag does
+   *  (showTextDocument's transient (0,0) active-editor event would otherwise
+   *  clear the highlight with no restore). Clamped: a panel recreated mid-reveal
+   *  must not go negative on the unpaired end. */
+  static beginReveal(): void {
+    const p = MermaidPreviewPanel.current;
+    if (p) {
+      p.revealing++;
+    }
+  }
+  static endReveal(): void {
+    const p = MermaidPreviewPanel.current;
+    if (p) {
+      p.revealing = Math.max(0, p.revealing - 1);
+    }
+  }
 
   private constructor(private readonly panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel.webview.html = this.getHtml(this.panel.webview, extensionUri);
@@ -266,10 +283,17 @@ export class MermaidPreviewPanel {
       if (editor) {
         doc = editor.document;
       } else {
-        try {
-          doc = await vscode.workspace.openTextDocument(this.sourceUri);
-        } catch {
-          return;
+        // The doc is usually still loaded while its (hidden) tab exists — prefer
+        // it over openTextDocument, which can't re-open untitled documents by uri.
+        const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uriStr);
+        if (open) {
+          doc = open;
+        } else {
+          try {
+            doc = await vscode.workspace.openTextDocument(this.sourceUri);
+          } catch {
+            return;
+          }
         }
         // The doc's tab may exist but be hidden behind another tab in its group
         // (visibleTextEditors misses it) — reveal it in ITS group, not the
