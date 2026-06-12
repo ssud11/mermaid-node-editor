@@ -25,13 +25,17 @@
         font-family: var(--vscode-font-family);
         font-size: var(--vscode-font-size, 13px);
       }
-      /* The viewport: clips the pannable stage. */
+      /* The viewport: clips the pannable stage. user-select off: the labels are
+         native SVG text (selectable), so a drag-pan would otherwise double as a
+         text-selection gesture and paint a selection sheet across the diagram. */
       #preview {
         position: relative;
         width: 100%;
         height: 100vh;
         overflow: hidden;
         cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
       }
       #preview.grabbing {
         cursor: grabbing;
