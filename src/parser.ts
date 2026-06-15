@@ -31,12 +31,24 @@ export interface MermaidSubgraph {
   quote: Quote;
   idStart: number; // start column of the id/title token on the line
   idEnd: number; // end column (exclusive) of the id/title token
+  members: string[]; // ids (nodes + nested subgraphs) declared directly inside this subgraph, in document order
+}
+
+export type EdgeStroke = 'solid' | 'dotted' | 'thick';
+export type EdgeHead = 'arrow' | 'open' | 'circle' | 'cross';
+
+export interface EdgeKind {
+  stroke: EdgeStroke; // line style: `--` solid, `-.-` dotted, `==` thick
+  head: EdgeHead; // arrowhead at the `to` end: `>` arrow, none `open`, `o` circle, `x` cross
+  bidirectional: boolean; // a matching head at the `from` end too (`<-->`, `o--o`, `x--x`)
 }
 
 export interface MermaidEdge {
   from: string;
   to: string;
   line: number;
+  label?: string; // edge label — pipe `-->|x|` or inline `-- x -->`, trimmed; undefined if none
+  kind: EdgeKind;
 }
 
 export interface MermaidBlock {
@@ -182,23 +194,24 @@ function parseSubgraph(line: string, lineNumber: number): MermaidSubgraph | unde
       quote: inner.quote,
       idStart: cs,
       idEnd: cs + withBracket[1].length,
+      members: [],
     };
   }
 
   // `subgraph "Title"` / `subgraph 'Title'`
   if ((rest.startsWith('"') && rest.endsWith('"')) || (rest.startsWith("'") && rest.endsWith("'"))) {
     const inner = stripQuotes(rest);
-    return { id: inner.value, label: inner.value, line: lineNumber, indent, raw: line, hasId: false, quote: inner.quote, idStart: cs, idEnd: cs + rest.length };
+    return { id: inner.value, label: inner.value, line: lineNumber, indent, raw: line, hasId: false, quote: inner.quote, idStart: cs, idEnd: cs + rest.length, members: [] };
   }
 
   // `subgraph plainId`
   if (ID_TOKEN.test(rest)) {
-    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: true, quote: '', idStart: cs, idEnd: cs + rest.length };
+    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: true, quote: '', idStart: cs, idEnd: cs + rest.length, members: [] };
   }
 
   // `subgraph Some free text title`
   if (rest.length > 0) {
-    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: false, quote: '', idStart: cs, idEnd: cs + rest.length };
+    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: false, quote: '', idStart: cs, idEnd: cs + rest.length, members: [] };
   }
 
   return undefined;
@@ -217,30 +230,173 @@ function edgeSkeleton(line: string, nodes: MermaidNode[]): string {
   return out;
 }
 
-const ARROW_SPLIT = /\s*[<xo]?[-.=]{2,}[->xo]?\s*/;
+// One Mermaid link operator, with an optional inline label and/or trailing pipe
+// label. Two alternatives, inline tried first: the inline-label form
+// (`-- text -->`, `== t ==>`, `-. t .->`, glued `--text-->`) whose opening
+// operator is NOT itself an arrowhead (`(?![>xo])`), and the plain/arrow form
+// (`-->`, `---`, `--x`, `<-->`, `==>`, `-.->`). Group 1 = the operator (incl. any
+// inline label); group 2 = a trailing `|pipe label|`.
+const LINK_RE =
+  /([<xo]?[-.=]{2,}(?![>xo])\s*.+?\s*[-.=]{2,}[>xo]?|[<xo]?[-.=]{2,}[>xo]?)(?:\s*\|([^|]*)\|)?/g;
+
+// Split a line into Mermaid statements on `;`, but NOT on a `;` inside a `|pipe
+// label|` (toggling on each `|`). `;` separates statements (`A-->B; C-->D`);
+// without per-statement parsing a trailing `;` drops the edge and two statements
+// synthesize a spurious cross-edge.
+function splitStatements(s: string): string[] {
+  const out: string[] = [];
+  let inPipe = false;
+  let cur = '';
+  for (const ch of s) {
+    if (ch === '|') {
+      inPipe = !inPipe;
+    }
+    if (ch === ';' && !inPipe) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+const headOf = (c: string): EdgeHead | undefined =>
+  c === '>' ? 'arrow' : c === 'o' ? 'circle' : c === 'x' ? 'cross' : undefined;
+
+// Decode one link operator into its kind (stroke/head/bidirectional) + label.
+function decodeLink(op: string, pipe: string | undefined): { kind: EdgeKind; label?: string } {
+  const stroke: EdgeStroke = op.includes('=') ? 'thick' : op.includes('.') ? 'dotted' : 'solid';
+  const tailHead = headOf(op[op.length - 1]); // arrowhead at the `to` end
+  const leadHead =
+    op[0] === '<' ? 'arrow' : op[0] === 'o' ? 'circle' : op[0] === 'x' ? 'cross' : undefined;
+  const head: EdgeHead = tailHead ?? 'open';
+  // Bidirectional connectors exist only in SOLID form (`<-->`, `o--o`, `x--x`).
+  // `<==>` / `o..o` etc. are not valid Mermaid — don't report them as bidirectional.
+  const bidirectional = !!leadHead && !!tailHead && stroke === 'solid';
+
+  // Label: prefer the pipe form; else pull an inline `<op> text <op>` label out of
+  // the operator. (A plain `-->` has no inner text, so the inline match fails.)
+  let label = pipe?.trim();
+  if (label === undefined) {
+    const inline = /^[<xo]?[-.=]{2,}\s*(.+?)\s*[-.=]{2,}[>xo]?$/.exec(op);
+    // Require a real (non-operator) character in the candidate: a length-variant
+    // dotted/thick arrow like `-...->` otherwise false-matches and yields a phantom
+    // `.` label (the dot count only changes arrow length, it is not a label).
+    if (inline && /[^-.=<>xo\s]/.test(inline[1])) {
+      label = inline[1].trim();
+    }
+  }
+  // Mermaid strips a surrounding quote pair from an edge label, but ONLY when the
+  // whole label is one quoted run (`"hello world"`). A label like `"a" "b"` or
+  // `a "b" c` keeps its quotes.
+  if (label !== undefined) {
+    const q = /^"([^"]*)"$/.exec(label) || /^'([^']*)'$/.exec(label);
+    if (q) {
+      label = q[1];
+    }
+  }
+  return { kind: { stroke, head, bidirectional }, label: label || undefined };
+}
 
 function parseEdges(line: string, lineNumber: number, nodes: MermaidNode[]): MermaidEdge[] {
-  let skeleton = edgeSkeleton(line, nodes);
-  skeleton = skeleton.replace(/\|[^|]*\|/g, ' '); // drop |edge labels|
-  // Drop inline edge labels (`A -- text --> B`, glued `A --text--> B`, dotted/thick
-  // forms) so the label prose isn't split out as a phantom node endpoint. The
-  // opening operator must NOT be an arrowhead (the `(?![>xo])` lookahead) so a
-  // chained edge `A --> B --> C` keeps B as a real node.
-  skeleton = skeleton.replace(/(?<=^|\s)[<xo]?[-.=]{2,}(?![>xo])\s*.+?\s*[-.=]{2,}[>xo]?(?=\s|$)/g, ' --> ');
+  const skeleton = edgeSkeleton(line, nodes); // node defs collapsed to their ids; labels kept
   const edges: MermaidEdge[] = [];
-  // `;` terminates/separates Mermaid statements (`A-->B; C-->D`). Parse each
-  // statement independently: otherwise a trailing `;` drops the edge (`B;` fails
-  // the id test) and two statements on one line synthesize a spurious cross-edge.
-  for (const stmt of skeleton.split(';')) {
-    const ids = stmt
-      .split(ARROW_SPLIT)
-      .map((p) => p.trim())
-      .filter((p) => ID_TOKEN.test(p));
-    for (let k = 0; k < ids.length - 1; k++) {
-      edges.push({ from: ids[k], to: ids[k + 1], line: lineNumber });
+  const idOrNone = (seg: string): string | undefined => {
+    const t = seg.trim();
+    return ID_TOKEN.test(t) ? t : undefined;
+  };
+  for (const stmt of splitStatements(skeleton)) {
+    LINK_RE.lastIndex = 0;
+    const links: { op: string; pipe: string | undefined; start: number; end: number }[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = LINK_RE.exec(stmt)) !== null) {
+      if (m[0] === '') {
+        LINK_RE.lastIndex++; // never advance on a zero-width match
+        continue;
+      }
+      links.push({ op: m[1], pipe: m[2], start: m.index, end: m.index + m[0].length });
+    }
+    // The ids are the gaps around the links: ids[0] before the first link, the
+    // segment between links[i-1] and links[i] is shared as link[i-1].to / link[i].from
+    // (so `A --> B --> C` chains correctly), ids[last] after the final link.
+    for (let i = 0; i < links.length; i++) {
+      const fromSeg = stmt.slice(i === 0 ? 0 : links[i - 1].end, links[i].start);
+      const toSeg = stmt.slice(links[i].end, i === links.length - 1 ? undefined : links[i + 1].start);
+      const from = idOrNone(fromSeg);
+      const to = idOrNone(toSeg);
+      if (from && to) {
+        const { kind, label } = decodeLink(links[i].op, links[i].pipe);
+        edges.push({ from, to, line: lineNumber, label, kind });
+      }
     }
   }
   return edges;
+}
+
+// The inner spans of edge labels on a line — pipe `|text|` and inline `-- text -->`
+// — so node scanning can ignore node-shape syntax that appears INSIDE a label
+// (`-->|check(x)|` must not register `check` as a node).
+function edgeLabelRanges(line: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let m: RegExpExecArray | null;
+  const pipeRe = /\|([^|]*)\|/g;
+  while ((m = pipeRe.exec(line)) !== null) {
+    const innerStart = m.index + 1;
+    ranges.push([innerStart, innerStart + m[1].length]);
+  }
+  const inlineRe = /(?<=^|\s)([<xo]?[-.=]{2,}(?![>xo])\s*)(.+?)(\s*[-.=]{2,}[>xo]?)(?=\s|$)/g;
+  while ((m = inlineRe.exec(line)) !== null) {
+    const innerStart = m.index + m[1].length;
+    ranges.push([innerStart, innerStart + m[2].length]);
+  }
+  return ranges;
+}
+
+// Mermaid keywords that are NOT node ids — so a bare keyword line isn't mistaken
+// for a bare-node declaration.
+const RESERVED = new Set([
+  'graph',
+  'flowchart',
+  'subgraph',
+  'end',
+  'direction',
+  'click',
+  'class',
+  'classDef',
+  'style',
+  'linkStyle',
+  'default',
+]);
+
+// Strip an inline `%% ...` comment, but ONLY at a `%%` that is OUTSIDE every node
+// label / quoted string / pipe label — so a `%%` *inside* a label (`A["x %% y"]`,
+// `-->|a %% b|`) is left intact. (Mermaid officially allows only own-line comments;
+// this stays lenient for a trailing inline `%%` without corrupting label text.)
+function stripComment(line: string): string {
+  const protectedSpans: Array<[number, number]> = [];
+  for (const n of scanNodes(line, 0)) {
+    protectedSpans.push([n.labelStart, n.labelEnd]);
+  }
+  let m: RegExpExecArray | null;
+  const quoteRe = /"[^"]*"|'[^']*'/g;
+  while ((m = quoteRe.exec(line)) !== null) {
+    protectedSpans.push([m.index, m.index + m[0].length]);
+  }
+  // Edge-label inner spans — pipe `|..|` AND inline `-- .. -->` — so a `%%` inside
+  // any edge label is never treated as a comment start.
+  for (const span of edgeLabelRanges(line)) {
+    protectedSpans.push(span);
+  }
+  const ccRe = /%%/g;
+  while ((m = ccRe.exec(line)) !== null) {
+    const at = m.index;
+    if (!protectedSpans.some(([s, e]) => at >= s && at < e)) {
+      return line.slice(0, at).replace(/\s+$/, '');
+    }
+  }
+  return line;
 }
 
 function buildBlock(
@@ -301,6 +457,22 @@ function buildBlock(
   }
 
   const nodesById = new Map<string, MermaidNode>();
+  // Subgraph membership: a stack of currently-open subgraphs (innermost last) and
+  // a block-wide set of ids already "seen". An id belongs to the subgraph where it
+  // FIRST appears (Mermaid's ownership rule), so each id is added to the innermost
+  // open subgraph's `members` only on its first occurrence.
+  const open: MermaidSubgraph[] = [];
+  const seen = new Set<string>();
+  const claim = (id: string): void => {
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    if (open.length > 0) {
+      open[open.length - 1].members.push(id);
+    }
+  };
+
   for (let i = block.contentStart; i < contentEnd; i++) {
     const raw = lines[i];
     const trimmed = raw.trim();
@@ -308,22 +480,80 @@ function buildBlock(
       continue;
     }
     if (/^end\b/.test(trimmed)) {
+      open.pop(); // close the innermost subgraph
       continue;
     }
 
     const sg = parseSubgraph(raw, i);
     if (sg) {
+      claim(sg.id); // the subgraph itself is a member of its parent (first appearance)
       block.subgraphs.push(sg);
+      open.push(sg);
       continue; // don't treat a subgraph title as nodes/edges
     }
 
-    const lineNodes = scanNodes(raw, i);
+    // Directive lines (`style`/`click`/`classDef`/`linkStyle`/`direction`/…) are
+    // their own Mermaid grammar productions, never node/edge declarations — skip
+    // them BEFORE node scanning so bracket-like values (`rgb(255,0,0)`,
+    // `myFunc(arg)`) aren't mis-parsed as nodes. (The diagram-type line is skipped
+    // here too; it carries no nodes/edges.)
+    const firstToken = /^\s*([A-Za-z0-9_]+)/.exec(raw);
+    if (firstToken && RESERVED.has(firstToken[1])) {
+      continue;
+    }
+
+    // Strip an inline `%% ...` comment (Mermaid begins a comment at `%%` and runs
+    // to end of line) so a trailing comment doesn't break id extraction / drop the edge.
+    const parseLine = stripComment(raw);
+
+    // A node "definition" that falls INSIDE an edge label (`-->|check(x)|`,
+    // `-- a[b] -->`) is label text, not a node — drop it.
+    const labelRanges = edgeLabelRanges(parseLine);
+    const lineNodes = scanNodes(parseLine, i).filter(
+      (n) => !labelRanges.some(([s, e]) => n.startChar >= s && n.startChar < e)
+    );
     for (const n of lineNodes) {
       if (!nodesById.has(n.id)) {
         nodesById.set(n.id, n);
       }
     }
-    block.edges.push(...parseEdges(raw, i, lineNodes));
+    const lineEdges = parseEdges(parseLine, i, lineNodes);
+    block.edges.push(...lineEdges);
+    // Claim membership for every id that first appears on this line, in document
+    // order: node definitions first, then edge endpoints (bare refs).
+    for (const n of lineNodes) {
+      claim(n.id);
+    }
+    for (const e of lineEdges) {
+      claim(e.from);
+      claim(e.to);
+    }
+
+    // A bare identifier alone on a line (`A`) is a valid Mermaid node declaration
+    // even without a bracketed shape — capture it for the node list + membership.
+    if (lineNodes.length === 0 && lineEdges.length === 0) {
+      const bare = /^(\s*)([A-Za-z0-9_]+)\s*$/.exec(parseLine);
+      if (bare && !RESERVED.has(bare[2])) {
+        const id = bare[2];
+        const startChar = bare[1].length;
+        if (!nodesById.has(id)) {
+          nodesById.set(id, {
+            id,
+            label: id,
+            line: i,
+            startChar,
+            endChar: startChar + id.length,
+            labelStart: startChar,
+            labelEnd: startChar + id.length,
+            raw: id,
+            open: '',
+            close: '',
+            quote: '',
+          });
+        }
+        claim(id);
+      }
+    }
   }
 
   block.nodes = [...nodesById.values()];
