@@ -33,8 +33,9 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/node": "^20.19.0",
     "esbuild": "^0.28.1",
-    "typescript": "^5.6.0",
-    "@types/node": "^20.19.0"
+    "fast-check": "^4.8.0",
+    "typescript": "^5.6.0"
   }
 }

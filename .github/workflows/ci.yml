@@ -29,6 +29,15 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: MCP — install (clean)
+        run: npm ci
+        working-directory: mcp
+      - name: MCP — typecheck
+        run: npm run typecheck
+        working-directory: mcp
+      - name: MCP — tests (tools + cross-surface differential harness)
+        run: npm test
+        working-directory: mcp
       - name: Package (.vsix build verification)
         run: npx @vscode/vsce package
       # IT-2: an integration job (xvfb-run + @vscode/test-electron) gets added here.
