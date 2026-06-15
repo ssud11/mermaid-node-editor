@@ -22,9 +22,9 @@ const harnessHtml = template
 const harnessFile = path.join(__dirname, 'b1-harness.html');
 
 const demo = fs.readFileSync(path.join(ROOT, 'examples/demo.mmd'), 'utf8');
-const ff = fs.readFileSync(path.join(ROOT, 'examples/order-lifecycle.md'), 'utf8');
-const ffBlock = ff.match(/```mermaid\s*\n([\s\S]*?)\n```/)[1];
-const elk = '---\nconfig:\n  layout: elk\n---\n' + ffBlock; // mirrors buildDiagramSource's injection
+const ol = fs.readFileSync(path.join(ROOT, 'examples/order-lifecycle.md'), 'utf8');
+const olBlock = ol.match(/```mermaid\s*\n([\s\S]*?)\n```/)[1];
+const elk = '---\nconfig:\n  layout: elk\n---\n' + olBlock; // mirrors buildDiagramSource's injection
 
 async function send(page, msg) {
   await page.evaluate((m) => window.dispatchEvent(new MessageEvent('message', { data: m })), msg);

@@ -4,7 +4,7 @@
 // chromium via playwright-core, under several Content-Security-Policy variants,
 // and measures: (a) does it render an <svg>? (b) does ELK layout resolve? (c)
 // what CSP does mermaid actually need (which directives get violated)? (d) render
-// time on a baseline (dagre) diagram and the gnarly order-lifecycle (elk) one.
+// time on a baseline (dagre) diagram and the larger order-lifecycle (elk) one.
 //
 // Output: a verdict table on stdout + screenshots -> artifacts/b0-*.png.
 const path = require('path');
@@ -24,10 +24,10 @@ const NONCE = 'spikeNonce0xB0';
 const demo = fs.readFileSync(path.join(ROOT, 'examples/demo.mmd'), 'utf8'); // dagre baseline
 
 // Pull the ```mermaid block out of order-lifecycle.md and force ELK on it (the
-// real big diagram). The .md frontmatter `layout: elk` lives outside the fence,
+// larger diagram). The .md frontmatter `layout: elk` lives outside the fence,
 // so we prepend mermaid-native frontmatter to exercise the ELK code path.
-const ff = fs.readFileSync(path.join(ROOT, 'examples/order-lifecycle.md'), 'utf8');
-const block = ff.match(/```mermaid\s*\n([\s\S]*?)\n```/);
+const ol = fs.readFileSync(path.join(ROOT, 'examples/order-lifecycle.md'), 'utf8');
+const block = ol.match(/```mermaid\s*\n([\s\S]*?)\n```/);
 const elkDiagram = '---\nconfig:\n  layout: elk\n---\n' + (block ? block[1] : 'graph LR\nA-->B');
 
 // --- CSP variants (the question B0 must answer) ------------------------------
