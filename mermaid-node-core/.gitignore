@@ -1,0 +1,3 @@
+# Build output — regenerated from grammar/flowchart.peggy by `npm run build`.
+src/generated-parser.js
+node_modules/

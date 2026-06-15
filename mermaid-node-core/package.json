@@ -1,0 +1,45 @@
+{
+  "name": "mermaid-node-core",
+  "version": "0.1.0",
+  "description": "A positioned Mermaid flowchart language frontend: parse a flowchart to a typed model where every node, edge, subgraph and label carries its real source span. Browser-ESM, zero runtime dependencies. The reusable read core for editing/refactoring tooling (rename-id-with-edge-propagation, go-to-definition, validation).",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./parser": "./dist/parser.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "grammar",
+    "README.md"
+  ],
+  "scripts": {
+    "build:parser": "node scripts/build-parser.mjs",
+    "build": "npm run build:parser",
+    "test": "npm run build:parser && node --test test/*.test.mjs",
+    "corpus": "npm run build:parser && node test/run-corpus.mjs",
+    "differential": "npm run build:parser && node test/differential-oracle.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mermaid",
+    "flowchart",
+    "parser",
+    "peg",
+    "peggy",
+    "positions",
+    "ast",
+    "language-tooling",
+    "diagram"
+  ],
+  "devDependencies": {
+    "markdown-it": "^14.2.0",
+    "mermaid": "^11.15.0",
+    "peggy": "^5.1.0"
+  }
+}
