@@ -10,7 +10,7 @@
  * If a markdown file's leading YAML frontmatter sets a mermaid `config:` (e.g.
  * `layout: elk`) and the fenced source has no frontmatter of its own, that
  * config is lifted in so the preview matches how the `.md` actually renders
- * (Obsidian-style ELK files like order-lifecycle put `layout: elk` in the page
+ * (Obsidian-style ELK files put `layout: elk` in the page
  * frontmatter, outside the fence).
  *
  * @param fullText       the whole document text

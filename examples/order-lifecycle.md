@@ -1,0 +1,81 @@
+---
+cssclasses: show-line-numbers
+config:
+  layout: elk
+---
+
+## Order lifecycle
+```mermaid
+graph LR
+
+A --> B[order processing] --> C[fulfillment] --> D[post-sale support]
+
+subgraph A["checkout"]
+    direction TD
+     AA1[Cart review] --> AA2[Shipping address] --> AA3[Shipping rates] --> AA4["Promo code (if entered)"] --> AA5[Payment details]
+
+end
+
+
+subgraph AR1["AA3: shipping rates"]
+    direction LR
+    RA1[Cached zone rate] --> RA2[Live carrier quote]
+end
+
+A --> AR1
+subgraph AR2["AA5: payment details"]
+        direction LR
+        RC1["Saved payment methods"] --> RC2["Gateway retry on decline"]
+    end
+subgraph BR1["Account & store policies"]
+    direction TD
+    BRR1["Terms of service"] --> BRR2["Store policies"]--> BRR3["Fraud monitoring"] --> BRR4["Known-issues FAQ"]
+
+end
+
+subgraph C1["Refund approval"]
+    direction TD
+    BB2["Triggered by a dispute or chargeback"]
+    BB3["Flagged by the payment gateway"]
+end
+subgraph RBB2["Order documents"]
+    direction TD
+    BBB4["Invoice"]
+    BBB5["Receipt"]
+end
+
+subgraph RBB3["Account history"]
+
+    BBB7["Order history"]
+    BBB8["Payment history"]
+end
+
+subgraph BR2
+    direction LR
+    ARR1["Order ID (e.g. #10234)"]
+    ARR2["Tracking number"]
+end
+
+subgraph BR3
+    direction TD
+    CCC1["Pack items"] -->
+    CCC2["Carrier pickup"]
+end
+
+subgraph DR1["Delivery"]
+
+    DDR1["Out for delivery"]
+    DDR2["Delivered"]
+end
+
+A --> AR2
+AR1 --> AB["rates loaded"] --> BR1 --> C1 --> BBB1["refund approved"]--> RBB2 --> D1["Returns & refunds"]
+D1 --> A
+DDR1 --> BBB7
+DDR2 --> BBB8
+AR2 --> BR3 --> BR2 --> DR1 --> CC1["delivery confirmed"] --> RBB3 --> A
+
+
+
+
+```
