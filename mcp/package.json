@@ -1,0 +1,40 @@
+{
+  "name": "mermaid-node-editor-flows",
+  "version": "0.1.0",
+  "description": "MCP server for Mermaid flowcharts: extract nodes/edges/subgraphs as typed JSON, query a node's neighborhood, validate, and safely rename/relabel with edge-reference propagation. The agent-facing read+edit layer for the mermaid-node-editor toolchain.",
+  "bin": {
+    "mermaid-node-editor-flows": "dist/server.js"
+  },
+  "main": "dist/server.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:tests": "tsc -p tsconfig.test.json",
+    "test": "npm run build:tests && node --test out/mcp/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mermaid",
+    "flowchart",
+    "diagram",
+    "agent",
+    "model-context-protocol"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "typescript": "^5.6.0",
+    "@types/node": "^20.19.0"
+  }
+}

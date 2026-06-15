@@ -4,6 +4,7 @@ examples/**
 out/**
 node_modules/**
 test/**
+mcp/**
 src/**/*.ts
 **/*.map
 **/tsconfig.json
