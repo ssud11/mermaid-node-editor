@@ -6,14 +6,23 @@ import type { TextEditDesc } from '../../src/editor';
 /**
  * Apply edits to `text` and return the new text. Edits are per-line
  * {line, startChar, endChar (exclusive), newText}; within a line they are applied
- * right-to-left so earlier offsets stay valid. The dominant EOL is preserved.
+ * right-to-left so earlier offsets stay valid. Each line keeps its ORIGINAL
+ * terminator, so a mixed-EOL file is never silently normalized — only edited
+ * spans change. Line indexing matches the parser's /\r?\n/ split (a lone \r is
+ * line content, not a break).
  */
 export function applyEdits(text: string, edits: TextEditDesc[]): string {
   if (edits.length === 0) {
     return text;
   }
-  const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const lines = text.split(/\r?\n/);
+  // Split keeping separators: parts = [content, eol, content, eol, …, content].
+  const parts = text.split(/(\r\n|\n)/);
+  const lines: string[] = [];
+  const eols: string[] = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    lines.push(parts[i]);
+    eols.push(parts[i + 1] ?? '');
+  }
   const byLine = new Map<number, TextEditDesc[]>();
   for (const e of edits) {
     const arr = byLine.get(e.line) ?? [];
@@ -31,5 +40,9 @@ export function applyEdits(text: string, edits: TextEditDesc[]): string {
     }
     lines[lineNo] = line;
   }
-  return lines.join(eol);
+  let out = '';
+  for (let i = 0; i < lines.length; i++) {
+    out += lines[i] + eols[i];
+  }
+  return out;
 }

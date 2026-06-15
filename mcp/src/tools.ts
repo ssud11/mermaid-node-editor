@@ -23,14 +23,17 @@ export function flowOverview(src: FlowSource) {
       const froms = new Set(b.edges.map((e) => e.from));
       const tos = new Set(b.edges.map((e) => e.to));
       const allIds = collectIds(b);
+      // Subgraph ids are grouping containers, not flow nodes — they're never an
+      // edge endpoint, so without this they'd land in BOTH entry and exit lists.
+      const sgIds = new Set(b.subgraphs.map((s) => s.id));
       return {
         index,
         diagramType: b.diagramType,
         supported: b.supported,
         lineRange: [b.startLine, b.endLine] as [number, number],
         counts: { nodes: b.nodes.length, edges: b.edges.length, subgraphs: b.subgraphs.length },
-        entryNodes: b.supported ? [...allIds].filter((id) => !tos.has(id)) : [],
-        exitNodes: b.supported ? [...allIds].filter((id) => !froms.has(id)) : [],
+        entryNodes: b.supported ? [...allIds].filter((id) => !tos.has(id) && !sgIds.has(id)) : [],
+        exitNodes: b.supported ? [...allIds].filter((id) => !froms.has(id) && !sgIds.has(id)) : [],
         subgraphs: b.subgraphs.map((s) => ({ id: s.id, title: s.label, members: s.members })),
       };
     }),
@@ -130,18 +133,24 @@ export function flowValidate(src: FlowSource) {
       }
     }
     // Unreachable: a declared node that appears in no edge, when the block has edges.
+    // Subgraph containers AND their declared members are intentionally grouped,
+    // not orphaned — exclude both so they don't false-positive as unreachable.
     if (b.edges.length > 0) {
       const inEdges = new Set(b.edges.flatMap((e) => [e.from, e.to]));
       const sgIds = new Set(b.subgraphs.map((s) => s.id));
+      const sgMembers = new Set(b.subgraphs.flatMap((s) => s.members));
       for (const n of b.nodes) {
-        if (!inEdges.has(n.id) && !sgIds.has(n.id)) {
+        if (!inEdges.has(n.id) && !sgIds.has(n.id) && !sgMembers.has(n.id)) {
           issues.push({ severity: 'info', code: 'unreachable', message: `node "${n.id}" is declared but not connected by any edge`, line: n.line });
         }
       }
     }
     return { index, supported: true, issues };
   });
-  const ok = reports.every((br) => !br.issues.some((i) => i.severity === 'error'));
+  // `ok` = there is at least one processable flowchart AND no error-severity issue.
+  // A file of only unsupported diagrams (all blocks supported:false) is NOT ok —
+  // mirroring the zero-block path so the flag never green-lights an unusable file.
+  const ok = reports.some((br) => br.supported) && reports.every((br) => !br.issues.some((i) => i.severity === 'error'));
   return { ok, blocks: reports };
 }
 

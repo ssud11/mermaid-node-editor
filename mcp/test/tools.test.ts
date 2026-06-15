@@ -123,3 +123,47 @@ test('flow_relabel: changes label, preserves shape, auto-quotes when needed', ()
   assert.equal(r.ok, true);
   assert.match(r.newText, /A\[New Label\]/);
 });
+
+// ---- regression: edge-case findings (subgraph topology, validate gating, mixed EOL) ----
+
+// A subgraph container id is a grouping, not a flow node — it must not be reported
+// as an entry OR exit node (it would otherwise appear in BOTH, since it's never an
+// edge endpoint).
+test('flow_overview: subgraph container id is not an entry or exit node', () => {
+  const o = flowOverview({ text: 'graph TD\nsubgraph PROC [Processing]\nX --> Y\nend' });
+  const b = o.blocks[0];
+  assert.ok(!b.entryNodes.includes('PROC'));
+  assert.ok(!b.exitNodes.includes('PROC'));
+  assert.deepEqual(b.entryNodes, ['X']);
+  assert.deepEqual(b.exitNodes, ['Y']);
+});
+
+// A node declared inside a subgraph is intentionally grouped, not orphaned — it
+// must not false-positive as unreachable. A genuine top-level orphan still does.
+test('flow_validate: a subgraph member is not flagged unreachable, but a real orphan is', () => {
+  const v = flowValidate({ text: 'graph TD\nsubgraph CHECKOUT [Checkout]\npayment[Pay]\nend\nA --> B' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'unreachable' && i.message.includes('payment')), false);
+  const v2 = flowValidate({ text: 'graph TD\nA --> B\nORPHAN[x]' });
+  assert.equal(v2.blocks[0].issues.some((i) => i.code === 'unreachable' && i.message.includes('ORPHAN')), true);
+});
+
+// `ok` must not green-light a file with no processable flowchart.
+test('flow_validate: ok is false when every block is an unsupported diagram type', () => {
+  const v = flowValidate({ text: 'sequenceDiagram\nAlice->>Bob: hi' });
+  assert.equal(v.ok, false);
+  assert.equal(v.blocks[0].supported, false);
+});
+
+// …but ok stays true when at least one block is a clean, supported flowchart.
+test('flow_validate: ok stays true when a supported flowchart is present alongside an unsupported block', () => {
+  const md = '```mermaid\ngraph TD\nA --> B\n```\n\n```mermaid\nsequenceDiagram\nA->>B: x\n```';
+  assert.equal(flowValidate({ text: md }).ok, true);
+});
+
+// A mixed-EOL file must keep each line's original terminator — only the edited
+// span changes (no silent CRLF/LF normalization on untouched lines).
+test('applyEdits: preserves each line\'s original EOL on a mixed-ending file', () => {
+  const input = 'graph TD\r\nA[hello] --> B\nB[world]\r\n';
+  const out = applyEdits(input, [{ line: 1, startChar: 0, endChar: 1, newText: 'X' }]);
+  assert.equal(out, 'graph TD\r\nX[hello] --> B\nB[world]\r\n');
+});
