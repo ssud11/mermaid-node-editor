@@ -17,5 +17,5 @@
     "../src/editor.ts",
     "../src/analysis.ts"
   ],
-  "exclude": ["src/server.ts"]
+  "exclude": ["src/server.ts", "src/cli.ts"]
 }

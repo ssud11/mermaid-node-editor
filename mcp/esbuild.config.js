@@ -6,7 +6,7 @@ const { chmodSync } = require('node:fs');
 
 esbuild
   .build({
-    entryPoints: ['src/server.ts'],
+    entryPoints: ['src/cli.ts'],
     outfile: 'dist/server.js',
     bundle: true,
     platform: 'node',

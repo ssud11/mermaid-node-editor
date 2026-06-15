@@ -3,7 +3,6 @@
 //   read:  flow_overview, flow_extract, flow_query, flow_validate
 //   write: flow_rename, flow_relabel  (default RETURN edited text; opt-in disk write)
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import {
   flowOverview,
@@ -40,6 +39,10 @@ function safe<A>(fn: (a: A) => unknown) {
   };
 }
 
+// Build the server (register all tools) WITHOUT binding a transport, so it can
+// be driven in-process by the contract tests over InMemoryTransport. main()
+// constructs it and connects stdio; nothing here writes to stdout.
+export function createServer(): McpServer {
 const server = new McpServer(
   { name: 'mermaid-node-editor-flows', version: '0.1.0' },
   {
@@ -144,13 +147,5 @@ server.registerTool(
   )
 );
 
-async function main(): Promise<void> {
-  await server.connect(new StdioServerTransport());
-  // stdio server: stay alive on the transport; logging to stderr only (stdout is the protocol).
-  process.stderr.write('mermaid-node-editor-flows MCP server running on stdio\n');
+  return server;
 }
-
-main().catch((e) => {
-  process.stderr.write(`fatal: ${e instanceof Error ? e.stack : String(e)}\n`);
-  process.exit(1);
-});
