@@ -55,6 +55,12 @@ export function buildNodeRaw(
 
 /** Change a node's label, preserving its id and bracket shape. */
 export function computeLabelEdit(block: MermaidBlock, nodeId: string, newLabel: string): EditResult {
+  // Harden the pure API for direct (untyped JS) callers — needsQuoting/buildNodeRaw
+  // call .trim()/.replace() on newLabel and throw on null/undefined. (Unreachable via
+  // the MCP server [Zod] or the webview panel [coercion], which already guard this.)
+  if (typeof (newLabel as unknown) !== 'string') {
+    return { ok: false, edits: [], error: 'Label must be a string.' };
+  }
   const node = block.nodes.find((n) => n.id === nodeId);
   if (!node) {
     // The id may be referenced only by edges (a bare endpoint, never bracket-declared)
@@ -247,6 +253,18 @@ export function computeIdRename(
       }
       continue;
     }
+    // `class <id-list> <className>` assigns nodes to a CSS class. The leading
+    // comma-separated ids are node refs (rename them); the trailing class name is a
+    // classDef ref, NOT a node — renaming it would orphan it from its classDef. (The
+    // bare `class` line is not in the skip-list above precisely so we handle it here.)
+    const classDirective = /^(\s*class\s+)([A-Za-z0-9_,]+)(\s.*)?$/i.exec(original);
+    if (classDirective) {
+      const ids = classDirective[2].split(',').map((s) => (s === oldId ? newId : s)).join(',');
+      if (ids !== classDirective[2]) {
+        edits.push({ line: ln, startChar: 0, endChar: original.length, newText: `${classDirective[1]}${ids}${classDirective[3] ?? ''}` });
+      }
+      continue;
+    }
     const replaced = renameIdInLine(original, oldId, newId);
     if (replaced !== original) {
       edits.push({ line: ln, startChar: 0, endChar: original.length, newText: replaced });
@@ -266,6 +284,9 @@ export function computeSubgraphLabelEdit(
   subgraphId: string,
   newLabel: string
 ): EditResult {
+  if (typeof (newLabel as unknown) !== 'string') {
+    return { ok: false, edits: [], error: 'Subgraph title must be a string.' };
+  }
   const sg = block.subgraphs.find((s) => s.id === subgraphId);
   if (!sg) {
     return { ok: false, edits: [], error: `Subgraph "${subgraphId}" not found.` };

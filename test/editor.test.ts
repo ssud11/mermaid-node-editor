@@ -294,3 +294,35 @@ test('computeLabelEdit: a bare edge-ref id gets a "give it a shape" message, not
   assert.equal(r.ok, false);
   assert.match(r.error || '', /referenced by edges|give it a shape/i);
 });
+
+// --- regression: /qa-explore dogfood round 6 (2026-06-16) ---
+
+test('computeIdRename: renames node refs in a `class` directive but not the class name', () => {
+  // `class A B` assigns node A to class B. Renaming A->Z updates the leading id-list;
+  // the trailing class name B (a classDef ref) is left alone.
+  const text = ['graph TD', 'A[x] --> C[y]', 'classDef B fill:#eee', 'class A B'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Z');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[3], 'class Z B'); // id renamed in the id-list; class name B untouched
+});
+
+test('computeIdRename: does not clobber a class NAME equal to a renamed node id', () => {
+  // classDef named B + `class A B`; renaming node B must not rewrite the class name B
+  // in the class directive (different namespace) — the deferred R2-5/R6-2 case.
+  const text = ['graph TD', 'A[x] --> B[y]', 'classDef B fill:#eee', 'class A B'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'B', 'Z');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[3], 'class A B'); // class name B preserved (only the id-list is touched)
+});
+
+test('computeLabelEdit: a non-string newLabel returns ok:false (no throw)', () => {
+  const r = computeLabelEdit(block('graph TD\nA[x]').block, 'A', null as unknown as string);
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /must be a string/);
+});
