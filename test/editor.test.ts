@@ -240,3 +240,37 @@ test('computeIdRename: classDef / linkStyle lines are still left alone', () => {
   assert.equal(out[2], 'classDef A fill:#eee'); // class name untouched
   assert.equal(out[3], 'linkStyle 0 stroke:#333'); // untouched
 });
+
+// --- regression: /qa-explore dogfood round 3 (2026-06-16) ---
+
+test('computeIdRename: rejects an id that exists only in a %% comment (no false green)', () => {
+  // `ghost` is named only in a comment, never in the graph — renaming it must FAIL,
+  // not "succeed" by rewriting comment prose (which reported ok:true, editCount:1).
+  const { block: b, lines } = block('graph TD\n%% TODO rename ghost later\nA[x] --> B[y]');
+  const r = computeIdRename(b, lines, 'ghost', 'real');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /not found/);
+});
+
+test('computeIdRename: does not rewrite a real id mentioned inside a %% comment', () => {
+  const { block: b, lines } = block('graph TD\n%% note: A is the start\nA[x] --> B[y]');
+  const r = computeIdRename(b, lines, 'A', 'Start');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[1], '%% note: A is the start'); // comment prose untouched
+  assert.equal(out[2], 'Start[x] --> B[y]'); // real node renamed
+});
+
+test('computeIdRename: rejects an empty oldId instead of hanging the process', () => {
+  // oldId='' reached renameIdInLine where `\b\b` is a zero-width match that never
+  // advances lastIndex → an infinite loop (which hung the MCP server). Reject cleanly.
+  const { block: b, lines } = block('graph TD\nA[Alpha] --> B[Beta]');
+  const r = computeIdRename(b, lines, '', 'NewId');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /Invalid id/);
+});
+
+test('renameIdInLine: an empty oldId is a no-op (no zero-width infinite loop)', () => {
+  assert.equal(renameIdInLine('A --> B', '', 'Z'), 'A --> B');
+});

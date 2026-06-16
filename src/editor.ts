@@ -121,6 +121,12 @@ export function protectedRanges(line: string): Range[] {
  * This covers the node definition itself plus all edge references.
  */
 export function renameIdInLine(line: string, oldId: string, newId: string): string {
+  // Defense-in-depth: an empty oldId makes `\b\b` a zero-width match whose lastIndex
+  // never advances → infinite loop. Nothing to rename anyway. (computeIdRename also
+  // guards this, but renameIdInLine is exported and called directly elsewhere.)
+  if (oldId === '') {
+    return line;
+  }
   const ranges = protectedRanges(line);
   const re = new RegExp(`\\b${escapeRegExp(oldId)}\\b`, 'g');
   let out = '';
@@ -152,6 +158,13 @@ export function computeIdRename(
   if (newId === oldId) {
     return { ok: true, edits: [] };
   }
+  // oldId must be a valid id too. An empty/invalid oldId reaches renameIdInLine,
+  // where `\b${oldId}\b` collapses to the zero-width `/\b\b/g` that matches without
+  // ever advancing lastIndex → an infinite loop. server.ts's safe() wrapper only
+  // catches throws, so that loop HANGS the MCP server. Reject oldId symmetrically.
+  if (!ID_RE.test(oldId)) {
+    return { ok: false, edits: [], error: `Invalid id "${oldId}". Use letters, digits and underscores only.` };
+  }
   if (!ID_RE.test(newId)) {
     return { ok: false, edits: [], error: `Invalid id "${newId}". Use letters, digits and underscores only.` };
   }
@@ -177,6 +190,14 @@ export function computeIdRename(
     usedIds.add(e.from);
     usedIds.add(e.to);
   }
+  // oldId must actually be a STRUCTURAL id (a node, subgraph, or edge endpoint).
+  // If it appears only inside a %% comment (or nowhere), there is nothing to rename —
+  // reject rather than "succeed" by rewriting comment prose, which reports a false
+  // green to the caller (the rename never touched the graph). The parser already
+  // excludes %% lines from nodes/edges, so a comment-only id is absent from usedIds.
+  if (!usedIds.has(oldId)) {
+    return { ok: false, edits: [], error: `Id "${oldId}" not found in this diagram.` };
+  }
   usedIds.delete(oldId);
   if (usedIds.has(newId)) {
     return { ok: false, edits: [], error: `Id "${newId}" already exists in this diagram.` };
@@ -197,6 +218,10 @@ export function computeIdRename(
       /^(graph|flowchart)\b/i.test(trimmed) ||
       /^direction\b/i.test(trimmed) ||
       /^subgraph\b/i.test(trimmed) ||
+      // %% lines are Mermaid comments — prose, not node refs. Skip them so a real
+      // id mentioned in a comment isn't rewritten (and the comment-only case above
+      // is already rejected).
+      /^%%/.test(trimmed) ||
       // classDef / linkStyle statements carry class names + CSS values (not node
       // refs we own) — never rewrite ids inside them.
       /^(classDef|linkStyle)\b/i.test(trimmed)
