@@ -175,3 +175,33 @@ test('applyEdits: preserves each line\'s original EOL on a mixed-ending file', (
   const out = applyEdits(input, [{ line: 1, startChar: 0, endChar: 1, newText: 'X' }]);
   assert.equal(out, 'graph TD\r\nX[hello] --> B\nB[world]\r\n');
 });
+
+// ---- regression: /qa-explore dogfood round 2 (2026-06-16) ----
+
+// flow_relabel on a SUBGRAPH id must retitle it (dispatch to computeSubgraphLabelEdit),
+// not return a misleading "Node not found" — subgraph titles are a supported edit.
+test('flow_relabel: retitles a subgraph when the id is a subgraph (not "node not found")', () => {
+  const r = flowRelabel({ text: 'graph TD\nsubgraph S [Phase]\nA[x] --> B[y]\nend' }, 'S', 'New Phase') as { ok: boolean; newText: string };
+  assert.equal(r.ok, true);
+  assert.match(r.newText, /subgraph S \[New Phase\]/);
+  assert.match(r.newText, /A\[x\] --> B\[y\]/); // body untouched
+});
+
+// The literal ```mermaid string INSIDE a node label must NOT flip a raw flowchart
+// into markdown mode (which yielded zero blocks). A real leading fence still does.
+test('resolveSource: a fence string inside a label stays raw .mmd; a real leading fence is markdown', () => {
+  const inLabel = 'graph TD\n' + 'A["see ' + '```' + 'mermaid"] --> B';
+  assert.equal(resolveSource({ text: inLabel }).isMmd, true);
+  assert.equal(flowValidate({ text: inLabel }).blocks.length, 1); // parses as one flowchart, not zero blocks
+  const realFence = '# doc\n\n' + '```' + 'mermaid\ngraph TD\nA --> B\n' + '```';
+  assert.equal(resolveSource({ text: realFence }).isMmd, false);
+});
+
+// flow_validate returns a consistent {ok, issues, blocks} shape across all branches:
+// file-level problems in top-level `issues`, per-block problems in `blocks[].issues`.
+test('flow_validate: always returns a top-level issues array (consistent shape)', () => {
+  const good = flowValidate({ text: 'graph TD\nA[x] --> B[y]' });
+  assert.ok(Array.isArray(good.issues) && Array.isArray(good.blocks));
+  const unsupported = flowValidate({ text: 'sequenceDiagram\nA->>B: x' });
+  assert.ok(Array.isArray(unsupported.issues) && Array.isArray(unsupported.blocks));
+});

@@ -97,7 +97,8 @@ server.registerTool(
   {
     description:
       'Lint a flowchart: structured issues with line numbers — duplicate tags (one tag = one element), ' +
-      'empty labels, unreachable (unconnected) nodes, and unsupported diagram types. Returns {ok, blocks:[{issues}]}.',
+      'empty labels, unreachable (unconnected) nodes, and unsupported diagram types. Returns {ok, issues, blocks:[{issues}]} ' +
+      '— top-level `issues` are file-level (e.g. no Mermaid block found); per-block problems are in `blocks[].issues`.',
     inputSchema: sourceShape,
   },
   safe((a: { text?: string; path?: string }) => flowValidate(a))
@@ -133,10 +134,11 @@ server.registerTool(
   {
     description:
       "Change a node's label text, preserving its bracket shape and quoting (auto-quotes if the new label " +
-      'needs it). Returns the edited text by default; writes the file only with write:true on a `path`.',
+      'needs it). Also retitles a SUBGRAPH when the id is a subgraph. Returns the edited text by default; ' +
+      'writes the file only with write:true on a `path`.',
     inputSchema: {
       ...sourceShape,
-      id: z.string().describe('The node id to relabel.'),
+      id: z.string().describe('The node id to relabel (or a subgraph id to retitle).'),
       newLabel: z.string().describe('The new label text.'),
       write: writeOpt,
       block: blockOpt,

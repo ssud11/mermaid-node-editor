@@ -26,8 +26,10 @@ export function resolveSource(src: FlowSource): ResolvedSource {
   }
   if (src.text != null) {
     // Inline: a fenced ```mermaid block ⇒ treat as Markdown; otherwise the text
-    // is a raw diagram (whole-text = one block).
-    const isMmd = !/```\s*mermaid/i.test(src.text);
+    // is a raw diagram (whole-text = one block). The fence must START a line (up to
+    // 3 spaces of indent per CommonMark) — anchored so the literal `` ```mermaid ``
+    // appearing INSIDE a node label can't misflip a real flowchart into markdown mode.
+    const isMmd = !/^ {0,3}`{3,}[ \t]*mermaid\b/im.test(src.text);
     return { text: src.text, isMmd };
   }
   throw new Error('provide either `text` (inline) or `path` (a file to read)');

@@ -3,7 +3,7 @@
 // analysis layer — no logic is duplicated here.
 import { writeFileSync } from 'node:fs';
 import type { MermaidBlock } from '../../src/parser';
-import { computeIdRename, computeLabelEdit, type EditResult } from '../../src/editor';
+import { computeIdRename, computeLabelEdit, computeSubgraphLabelEdit, type EditResult } from '../../src/editor';
 import { collectIds, findDeclaration, findDuplicateDeclarations } from '../../src/analysis';
 import { resolveSource, getBlocks, pickBlock, type FlowSource, type ResolvedSource } from './resolve';
 import { applyEdits } from './apply-edits';
@@ -155,7 +155,10 @@ export function flowValidate(src: FlowSource) {
   // A file of only unsupported diagrams (all blocks supported:false) is NOT ok —
   // mirroring the zero-block path so the flag never green-lights an unusable file.
   const ok = reports.some((br) => br.supported) && reports.every((br) => !br.issues.some((i) => i.severity === 'error'));
-  return { ok, blocks: reports };
+  // Always return a top-level `issues` array (file-level problems; empty here since
+  // every issue in this branch is per-block) so the response shape is identical to
+  // the zero-block branch — a client can always read both `issues` and `blocks`.
+  return { ok, issues: [] as Issue[], blocks: reports };
 }
 
 // ---- write tools -----------------------------------------------------------
@@ -207,7 +210,14 @@ export function flowRelabel(src: FlowSource, id: string, newLabel: string, opts?
   if (!picked.block.supported) {
     return { ok: false, error: `block ${picked.index} is not a supported flowchart` };
   }
-  const result = computeLabelEdit(picked.block, id, newLabel);
+  // A subgraph TITLE is editable too (the sidebar exposes it, and CLAUDE.md lists it
+  // as supported). computeLabelEdit only searches nodes, so dispatch a subgraph id to
+  // the subgraph-title editor — otherwise relabelling a subgraph returns a misleading
+  // "Node not found".
+  const isSubgraph = picked.block.subgraphs.some((s) => s.id === id);
+  const result = isSubgraph
+    ? computeSubgraphLabelEdit(picked.block, splitLines(r.text), id, newLabel)
+    : computeLabelEdit(picked.block, id, newLabel);
   if (!result.ok) {
     return { ok: false, error: result.error ?? 'relabel failed' };
   }
