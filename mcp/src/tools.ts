@@ -82,11 +82,15 @@ export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
     .filter((e) => e.from === id)
     .map((e) => ({ to: e.to, label: e.label ?? null, kind: e.kind, line: e.line }));
   const subgraph = block.subgraphs.find((s) => s.members.includes(id))?.id ?? null;
+  // The node's OWN label (declared nodes only; a bare/undeclared edge ref has none).
+  // Lets a flow-walk read a node's label from this one call instead of a flow_extract pre-pass.
+  const label = block.nodes.find((n) => n.id === id)?.label ?? null;
   const dups = findDuplicateDeclarations(block, lines).filter((d) => d.id === id);
   return {
     id,
     found: known,
     blockIndex: index,
+    label,
     declaration: decl ? { line: decl.line, kind: decl.kind } : null,
     incoming,
     outgoing,

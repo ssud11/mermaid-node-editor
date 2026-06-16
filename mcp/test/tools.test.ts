@@ -85,6 +85,14 @@ test('flow_query: duplicate-tag warning surfaces', () => {
   assert.ok(q.duplicateWarnings!.length >= 1);
 });
 
+test("flow_query: returns the queried node's own label", () => {
+  assert.equal((flowQuery({ text: FLOW }, 'B') as { label: string | null }).label, 'Check');
+  assert.equal((flowQuery({ text: FLOW }, 'A') as { label: string | null }).label, 'Start');
+  assert.equal((flowQuery({ text: FLOW }, 'D') as { label: string | null }).label, 'Inside');
+  // an unknown id has no own label
+  assert.equal((flowQuery({ text: FLOW }, 'ZZZ') as { label: string | null }).label, null);
+});
+
 // ---- flow_validate ----
 test('flow_validate: duplicate + empty-label + unsupported', () => {
   assert.equal(flowValidate({ text: 'graph TD\nX[a]\nX[b]' }).blocks[0].issues.some((i) => i.code === 'duplicate-node'), true);
