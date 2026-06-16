@@ -71,6 +71,27 @@ function hasUnterminatedQuotedLabel(line: string): boolean {
   return false;
 }
 
+// True when a line has an unmatched CLOSING bracket (more closers than openers,
+// outside quotes) — e.g. a stray `]` inside an unquoted label closes the node early,
+// so the rest of the line (its edge) is silently dropped. Runs on the RAW line because
+// structuralPart() blanks every bracket and can't see the imbalance.
+function hasPrematureBracketClose(line: string): boolean {
+  let depth = 0;
+  let quote = '';
+  for (const c of line) {
+    if (quote) {
+      if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === '[' || c === '(' || c === '{') {
+      depth++;
+    } else if ((c === ']' || c === ')' || c === '}') && --depth < 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ---- read tools ------------------------------------------------------------
 
 export function flowOverview(src: FlowSource) {
@@ -246,6 +267,11 @@ export function flowValidate(src: FlowSource) {
       // its edges on this line are dropped (v1 labels are single-line; use <br/>).
       if (hasUnterminatedQuotedLabel(line)) {
         issues.push({ severity: 'warning', code: 'multiline-label', message: 'a node label appears to span multiple lines (an unclosed quote); the node and its edges on this line are not parsed in v1 — keep the label on one line (use <br/> for a visual break)', line: ln });
+      }
+      // An unmatched closing bracket (e.g. a `]` inside an unquoted label) closes the
+      // node early, dropping the rest of the line and its edge.
+      if (hasPrematureBracketClose(line)) {
+        issues.push({ severity: 'warning', code: 'unbalanced-bracket', message: 'an unmatched closing bracket (likely `]`/`)`/`}` inside an unquoted label) closes a node early — the rest of the line and its edge are dropped; quote the label or balance the brackets', line: ln });
       }
     }
     return { index, supported: true, issues };

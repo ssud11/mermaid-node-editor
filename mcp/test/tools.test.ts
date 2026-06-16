@@ -278,3 +278,16 @@ test('flow_query: a subgraph id reports its title, not null', () => {
   assert.equal(q.found, true);
   assert.equal(q.label, 'Core flow');
 });
+
+// ---- regression: /qa-explore dogfood round 6 (2026-06-16) ----
+// A stray closing bracket inside an unquoted label closes the node early and drops
+// the edge — structuralPart() blanks brackets, so this probe runs on the raw line.
+test('flow_validate: warns on an unmatched closing bracket (premature node close)', () => {
+  const v = flowValidate({ text: 'graph TD\nA[lab]el] --> B[ok]' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'unbalanced-bracket'));
+});
+
+test('flow_validate: a balanced nested-quote label is not flagged unbalanced', () => {
+  const v = flowValidate({ text: 'graph TD\nA["a]b"] --> B[ok]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'unbalanced-bracket'), false);
+});

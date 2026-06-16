@@ -11,7 +11,10 @@ import { spawn, execSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const SERVER = join(process.cwd(), 'dist', 'server.js');
+// Anchor paths to THIS test file (compiled to out/mcp/test/), not process.cwd(), so
+// the suite passes regardless of the directory it is launched from. mcp root is 3 up.
+const MCP_ROOT = join(__dirname, '..', '..', '..');
+const SERVER = join(MCP_ROOT, 'dist', 'server.js');
 
 /** Spawn the server, send all messages on stdin, return id→response map. */
 function converse(messages: unknown[]): Promise<Map<number, any>> {
@@ -46,7 +49,7 @@ let res: Map<number, any>;
 
 before(async () => {
   // Ensure the bundle is current (CI runs `npm test`, not `npm run build`).
-  execSync('node esbuild.config.js', { cwd: process.cwd(), stdio: 'ignore' });
+  execSync('node esbuild.config.js', { cwd: MCP_ROOT, stdio: 'ignore' });
   res = await converse([
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'contract', version: '0' } } },
     { jsonrpc: '2.0', method: 'notifications/initialized' },
@@ -107,7 +110,7 @@ test('contract: an unsupported diagram → supported:false over the wire (no err
 });
 
 test('stdio hygiene: no src file writes to stdout (stdout is the JSON-RPC channel)', () => {
-  const dir = join(process.cwd(), 'src');
+  const dir = join(MCP_ROOT, 'src');
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.ts'))) {
     const src = readFileSync(join(dir, f), 'utf8');
     assert.ok(!/console\.log\(/.test(src), `${f}: must not console.log (corrupts stdio framing)`);
