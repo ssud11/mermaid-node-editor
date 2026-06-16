@@ -5,7 +5,7 @@
 // panel converts these to vscode.Range + WorkspaceEdit and applies them. This
 // keeps the load-bearing rename/relabel logic unit-testable in plain Node.
 
-import { MermaidBlock, MermaidNode, scanNodes } from './parser';
+import { MermaidBlock, MermaidNode, RESERVED, scanNodes } from './parser';
 
 export interface TextEditDesc {
   line: number;
@@ -46,7 +46,11 @@ export function buildNodeRaw(
     label = label.replace(/"/g, '#quot;');
   }
   const wrapped = quote ? `${quote}${label}${quote}` : label;
-  return `${newId}${node.open}${wrapped}${node.close}`;
+  // A bare node (no brackets) being given a label MUST gain brackets, else the id and
+  // label fuse into one token (`Alpha` relabelled to `Gamma` -> `AlphaGamma`).
+  const open = node.open || '[';
+  const close = node.close || ']';
+  return `${newId}${open}${wrapped}${close}`;
 }
 
 /** Change a node's label, preserving its id and bracket shape. */
@@ -54,6 +58,11 @@ export function computeLabelEdit(block: MermaidBlock, nodeId: string, newLabel: 
   const node = block.nodes.find((n) => n.id === nodeId);
   if (!node) {
     return { ok: false, edits: [], error: `Node "${nodeId}" not found in this diagram.` };
+  }
+  // A raw line break inside a label corrupts the source (splices a newline inside the
+  // bracket, so the node + its edges vanish on re-parse). Mermaid uses <br/>, not \n.
+  if (/[\r\n]/.test(newLabel)) {
+    return { ok: false, edits: [], error: 'Label cannot contain a line break (use <br/> for a visual break).' };
   }
   if (node.label === newLabel) {
     return { ok: true, edits: [] };
@@ -145,6 +154,11 @@ export function computeIdRename(
   }
   if (!ID_RE.test(newId)) {
     return { ok: false, edits: [], error: `Invalid id "${newId}". Use letters, digits and underscores only.` };
+  }
+  // A reserved Mermaid keyword as an id makes its line start with that keyword, and
+  // the parser drops keyword-led lines — silently losing the node + its edges. Reject.
+  if (RESERVED.has(newId)) {
+    return { ok: false, edits: [], error: `Id "${newId}" is a reserved Mermaid keyword — its line would be dropped by the parser. Choose another id.` };
   }
   // Subgraph ids are read-only in v1: the `subgraph` declaration line is
   // intentionally never rewritten, so renaming one would rename its edge

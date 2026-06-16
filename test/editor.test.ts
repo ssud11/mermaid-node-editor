@@ -29,6 +29,39 @@ test('buildNodeRaw: preserves bracket shape, adds quotes only when needed', () =
   assert.equal(buildNodeRaw({ open: '[', close: ']', quote: '"' }, 'A', 'keep'), 'A["keep"]');
 });
 
+// ---- regression: /qa-explore dogfood 2026-06-16 (write-tool source corruption) ----
+
+test('buildNodeRaw: a bare node (no brackets) gains brackets when labelled', () => {
+  // bare `Alpha` relabelled to `Gamma` was fusing into `AlphaGamma`.
+  assert.equal(buildNodeRaw({ open: '', close: '', quote: '' }, 'Alpha', 'Gamma'), 'Alpha[Gamma]');
+});
+
+test('computeIdRename: rejects a reserved-keyword id', () => {
+  // rename to `end` (etc.) produced a keyword-led line the parser silently drops.
+  const { block: b, lines } = block('graph TD\nA[x] --> B');
+  for (const kw of ['end', 'graph', 'subgraph', 'classDef']) {
+    const r = computeIdRename(b, lines, 'A', kw);
+    assert.equal(r.ok, false, `rename to "${kw}" must be rejected`);
+    assert.match(r.error!, /reserved/);
+  }
+  assert.equal(computeIdRename(b, lines, 'A', 'Start').ok, true); // a non-reserved id still works
+});
+
+test('computeLabelEdit: rejects a label containing a line break', () => {
+  // an interior newline spliced inside the bracket corrupted the node + its edges.
+  const r = computeLabelEdit(block('graph TD\nA[Start]').block, 'A', 'line1\nline2');
+  assert.equal(r.ok, false);
+  assert.match(r.error!, /line break/);
+});
+
+test('computeLabelEdit: labelling a bare node brackets it instead of fusing', () => {
+  // `Alpha` is declared bare on its own line, then referenced by an edge. Relabelling
+  // the declaration must produce `Alpha[Gamma]` (id intact, edge ref still resolves).
+  const r = computeLabelEdit(block('graph TD\nAlpha\nAlpha --> Beta').block, 'Alpha', 'Gamma');
+  assert.equal(r.ok, true);
+  assert.equal(r.edits[0].newText, 'Alpha[Gamma]');
+});
+
 test('computeLabelEdit: replaces just the node label span', () => {
   const { block: b } = block('graph TD\nA[Start] --> B[End]');
   const r = computeLabelEdit(b, 'A', 'Begin');

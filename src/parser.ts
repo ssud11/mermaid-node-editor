@@ -356,7 +356,7 @@ function edgeLabelRanges(line: string): Array<[number, number]> {
 
 // Mermaid keywords that are NOT node ids — so a bare keyword line isn't mistaken
 // for a bare-node declaration.
-const RESERVED = new Set([
+export const RESERVED = new Set([
   'graph',
   'flowchart',
   'subgraph',
