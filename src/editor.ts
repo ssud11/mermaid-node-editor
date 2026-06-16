@@ -227,6 +227,11 @@ export function computeSubgraphLabelEdit(
   if (!sg) {
     return { ok: false, edits: [], error: `Subgraph "${subgraphId}" not found.` };
   }
+  // Same corruption as a node label: a raw line break splices a newline into the
+  // subgraph declaration line. Reject it (matches computeLabelEdit).
+  if (/[\r\n]/.test(newLabel)) {
+    return { ok: false, edits: [], error: 'Subgraph title cannot contain a line break (use <br/> for a visual break).' };
+  }
   if (sg.label === newLabel) {
     return { ok: true, edits: [] };
   }

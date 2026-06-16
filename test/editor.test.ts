@@ -54,6 +54,14 @@ test('computeLabelEdit: rejects a label containing a line break', () => {
   assert.match(r.error!, /line break/);
 });
 
+test('computeSubgraphLabelEdit: rejects a title containing a line break', () => {
+  // the subgraph-title twin of the node-label newline bug (dogfood follow-up).
+  const { block: b, lines } = block('graph TD\nsubgraph S [Phase]\nA[x] --> B\nend');
+  const r = computeSubgraphLabelEdit(b, lines, 'S', 'line1\nline2');
+  assert.equal(r.ok, false);
+  assert.match(r.error!, /line break/);
+});
+
 test('computeLabelEdit: labelling a bare node brackets it instead of fusing', () => {
   // `Alpha` is declared bare on its own line, then referenced by an edge. Relabelling
   // the declaration must produce `Alpha[Gamma]` (id intact, edge ref still resolves).
