@@ -221,17 +221,28 @@ test('flow_validate: a & inside a label is not flagged as fan-out', () => {
   assert.equal(v.blocks[0].issues.some((i) => i.code === 'unsupported-fanout'), false);
 });
 
-// flow_query's error paths must return the SAME keys as the normal path (null/[]),
-// so a flow-follow agent reading .outgoing / .label never hits an undefined.
-test('flow_query: error paths return the same keys as the normal path', () => {
-  const normal = flowQuery({ text: 'graph TD\nA[x] --> B[y]' }, 'A');
+// flow_query's error paths must return EXACTLY the same key set as the normal path
+// (in BOTH directions — including `error`, present everywhere), so a flow-follow agent
+// reading .outgoing / .label / .error never hits an undefined on any branch.
+test('flow_query: every path returns an identical key set (both directions)', () => {
+  const keys = (o: object) => Object.keys(o).sort().join(',');
+  const found = flowQuery({ text: 'graph TD\nA[x] --> B[y]' }, 'A'); // normal, found
+  const notFound = flowQuery({ text: 'graph TD\nA[x] --> B[y]' }, 'ZZZ'); // normal, id absent
   const noBlock = flowQuery({ text: 'graph TD\nA[x] --> B[y]' }, 'A', 99); // out-of-range block
-  const unsupported = flowQuery({ text: 'sequenceDiagram\nA->>B: x' }, 'A');
-  for (const k of Object.keys(normal)) {
-    assert.ok(k in noBlock, `noBlock missing key ${k}`);
-    assert.ok(k in unsupported, `unsupported missing key ${k}`);
-  }
-  assert.equal(noBlock.found, false);
+  const unsupported = flowQuery({ text: 'sequenceDiagram\nA->>B: x' }, 'A'); // unsupported block
+  const ref = keys(found);
+  assert.equal(keys(notFound), ref, 'id-not-found shape diverges');
+  assert.equal(keys(noBlock), ref, 'no-block shape diverges');
+  assert.equal(keys(unsupported), ref, 'unsupported shape diverges');
+  assert.equal(found.error, null); // present + null on the success path
+  assert.equal(notFound.error, null);
   assert.deepEqual(noBlock.outgoing, []); // not undefined
-  assert.equal(unsupported.label, null);
+});
+
+// flow_relabel on a bare edge-ref id (which flow_query reports found:true) must give
+// an actionable "add a shape first" message, not a contradictory "node not found".
+test('flow_relabel: a bare edge-ref id gets an actionable message, not "not found"', () => {
+  const r = flowRelabel({ text: 'graph TD\nA[x] --> B' }, 'B', 'New') as { ok: boolean; error: string };
+  assert.equal(r.ok, false);
+  assert.match(r.error, /referenced by edges|give it a shape/i);
 });

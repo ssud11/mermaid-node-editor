@@ -139,6 +139,11 @@ export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
     outgoing,
     subgraph,
     duplicateWarnings: dups.map((d) => ({ reason: d.reason, message: d.message })),
+    // `error` is present on EVERY path (null on success / id-absent-in-valid-block;
+    // a string on the no-block / unsupported-block paths via emptyQuery) so the
+    // response shape is uniform — an agent discriminates on found + error, never on
+    // which keys exist.
+    error: null as string | null,
   };
 }
 
