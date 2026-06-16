@@ -136,7 +136,11 @@ export function findDeclaration(block: MermaidBlock, id: string): Declaration | 
   if (node) {
     return { id, kind: 'node', line: node.line, startChar: node.startChar, endChar: node.startChar + id.length };
   }
-  const sg = block.subgraphs.find((s) => s.hasId && s.id === id);
+  // Match an id-less (`subgraph "Title"`) subgraph too — its id IS its title, and
+  // idStart/idEnd point at the title token — so flow_query reports declaration.kind
+  // 'subgraph' for it (the discriminator flow-follow uses to spot a phase container),
+  // not null. (Renaming a subgraph id is still gated separately on hasId.)
+  const sg = block.subgraphs.find((s) => s.id === id);
   if (sg) {
     return { id, kind: 'subgraph', line: sg.line, startChar: sg.idStart, endChar: sg.idEnd };
   }

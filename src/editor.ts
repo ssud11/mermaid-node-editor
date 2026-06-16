@@ -151,6 +151,12 @@ export function renameIdInLine(line: string, oldId: string, newId: string): stri
     if (overlaps(start, end, ranges)) {
       continue;
     }
+    // A hyphen immediately adjacent means oldId is a FRAGMENT of a hyphenated compound
+    // (`receive-order` — our id charset [A-Za-z0-9_] doesn't own the `-`, so the parser
+    // truncated it). Rewriting the fragment would corrupt the compound; leave it.
+    if (line[start - 1] === '-' || line[end] === '-') {
+      continue;
+    }
     out += line.slice(last, start) + newId;
     last = end;
   }

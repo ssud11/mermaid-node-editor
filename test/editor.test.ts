@@ -348,3 +348,13 @@ test('computeIdRename: a non-string newId returns ok:false (no null/undefined co
   assert.equal(r.ok, false);
   assert.match(r.error || '', /must be strings/);
 });
+
+// --- regression: /qa-explore dogfood round 10 (2026-06-16) ---
+
+test('renameIdInLine: does not rewrite an id fragment inside a hyphenated compound', () => {
+  // `receive-order` is truncated to `order` by the parser; renaming `order` must not
+  // corrupt the compound (which would write invalid `receive-safe`).
+  assert.equal(renameIdInLine('receive-order[x] --> B', 'order', 'safe'), 'receive-order[x] --> B');
+  // a genuine standalone `order` is still renamed
+  assert.equal(renameIdInLine('order --> B', 'order', 'safe'), 'safe --> B');
+});
