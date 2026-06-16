@@ -57,7 +57,14 @@ export function buildNodeRaw(
 export function computeLabelEdit(block: MermaidBlock, nodeId: string, newLabel: string): EditResult {
   const node = block.nodes.find((n) => n.id === nodeId);
   if (!node) {
-    return { ok: false, edits: [], error: `Node "${nodeId}" not found in this diagram.` };
+    // The id may be referenced only by edges (a bare endpoint, never bracket-declared)
+    // — there is no label to edit until it has a shape. flow_query reports such an id
+    // as found:true (via collectIds), so give a clearer message than "not found".
+    const isBareRef = block.edges.some((e) => e.from === nodeId || e.to === nodeId);
+    const error = isBareRef
+      ? `"${nodeId}" is referenced by edges but has no declared label to edit — give it a shape first (e.g. ${nodeId}[Label]).`
+      : `Node "${nodeId}" not found in this diagram.`;
+    return { ok: false, edits: [], error };
   }
   // A raw line break inside a label corrupts the source (splices a newline inside the
   // bracket, so the node + its edges vanish on re-parse). Mermaid uses <br/>, not \n.
@@ -271,7 +278,12 @@ export function computeSubgraphLabelEdit(
   if (sg.label === newLabel) {
     return { ok: true, edits: [] };
   }
-  const wrapped = needsQuoting(newLabel) ? `"${newLabel.replace(/"/g, '#quot;')}"` : newLabel;
+  // A bare-title subgraph (no id) has no brackets to delimit the title, so a
+  // multi-word title must be quoted — otherwise `subgraph Three Word Title` parses
+  // with only `Three` as the id. (A titled-with-id subgraph wraps the title in
+  // `[ ]`, where spaces are already safe, so it only quotes on real syntax chars.)
+  const needsQ = needsQuoting(newLabel) || (!sg.hasId && /\s/.test(newLabel));
+  const wrapped = needsQ ? `"${newLabel.replace(/"/g, '#quot;')}"` : newLabel;
   const newLine = sg.hasId
     ? `${sg.indent}subgraph ${sg.id} [${wrapped}]`
     : `${sg.indent}subgraph ${wrapped}`;

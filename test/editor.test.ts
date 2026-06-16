@@ -274,3 +274,23 @@ test('computeIdRename: rejects an empty oldId instead of hanging the process', (
 test('renameIdInLine: an empty oldId is a no-op (no zero-width infinite loop)', () => {
   assert.equal(renameIdInLine('A --> B', '', 'Z'), 'A --> B');
 });
+
+// --- regression: /qa-explore dogfood round 4 (2026-06-16) ---
+
+test('computeSubgraphLabelEdit: quotes a multi-word title on a bare (id-less) subgraph', () => {
+  // A bare-title subgraph has no `[ ]` to delimit the title, so a multi-word new title
+  // must be quoted — `subgraph Three Word Title` would parse with only `Three` as id.
+  const text = ['flowchart TD', 'subgraph "Two Words"', 'A[x]', 'end'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeSubgraphLabelEdit(b, lines, 'Two Words', 'Three Word Title');
+  assert.equal(r.ok, true);
+  assert.equal(r.edits[0].newText, 'subgraph "Three Word Title"');
+});
+
+test('computeLabelEdit: a bare edge-ref id gets a "give it a shape" message, not "not found"', () => {
+  // `B` is only an edge endpoint (never bracket-declared); flow_query reports it
+  // found:true, so relabel must explain it has no label yet rather than say not-found.
+  const r = computeLabelEdit(block('graph TD\nA[x] --> B').block, 'B', 'New');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /referenced by edges|give it a shape/i);
+});

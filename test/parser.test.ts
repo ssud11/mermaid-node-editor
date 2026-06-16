@@ -415,3 +415,20 @@ test('reverify2: directive lines never yield phantom nodes (bracket-like values)
   const b = findMermaidBlocks(['graph LR', 'A[Node]', 'click A myFunc(arg)'].join('\n'), true)[0];
   assert.deepEqual(b.nodes.map((n) => n.id), ['A']);
 });
+
+// ===== round-4 dogfood regression =====
+
+test('end[...] is a reserved-id node line, not a subgraph closer (no early stack pop)', () => {
+  // `end[Done]` starts with the reserved word `end` but is followed by a bracket, so it
+  // is NOT the `end` closer. Before the fix it popped the subgraph early, dropping the
+  // nodes/edges declared after it while flow_validate still said ok. The only real
+  // closer here is the final bare `end`; c and d must stay members of the subgraph.
+  const b = findMermaidBlocks(
+    ['flowchart TD', 'subgraph S [Phase]', 'a[A] --> b[B]', 'end[Done]', 'c[C] --> d[D]', 'end'].join('\n'),
+    true
+  )[0];
+  assert.equal(b.subgraphs.length, 1);
+  assert.ok(b.subgraphs[0].members.includes('c'), 'c declared inside S stays a member');
+  assert.ok(b.subgraphs[0].members.includes('d'), 'd declared inside S stays a member');
+  assert.ok(b.edges.some((e) => e.from === 'c' && e.to === 'd'), 'c->d edge survives');
+});

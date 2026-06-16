@@ -479,7 +479,12 @@ function buildBlock(
     if (trimmed === '' || trimmed.startsWith('%%')) {
       continue;
     }
-    if (/^end\b/.test(trimmed)) {
+    // A subgraph closer is the bare keyword `end` (optionally `;` or a trailing
+    // comment). `end[...]` / `end(...)` / `end{...}` is a node literally NAMED `end`
+    // (a reserved id, skipped later by the RESERVED guard) — it must NOT pop the
+    // stack here, which would close the subgraph early and silently drop the rest of
+    // its nodes/edges while flow_validate still reports ok.
+    if (/^end\s*($|;|%%)/.test(trimmed)) {
       open.pop(); // close the innermost subgraph
       continue;
     }
