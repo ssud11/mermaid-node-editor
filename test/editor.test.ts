@@ -210,3 +210,33 @@ test('computeIdRename: collision guard sees a bare ref even with a trailing semi
   assert.equal(r.ok, false);
   assert.match(r.error || '', /already exists/);
 });
+
+// --- regression: /qa-explore dogfood round 2 (2026-06-16) ---
+
+test('computeIdRename: renames the node ref in style/click but leaves CSS + URL values', () => {
+  // `style A …` / `click A …` LEAD with a real node ref. The old skip-list left them
+  // dangling on the dead id after a rename. Now the leading id follows the rename,
+  // while the CSS value (`#A`) and the quoted URL stay untouched.
+  const text = ['graph TD', 'A[Start] --> B[End]', 'style A fill:#f00,stroke:#A', 'click A href "https://A.example"'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Alpha');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[1], 'Alpha[Start] --> B[End]'); // node + edge ref renamed
+  assert.equal(out[2], 'style Alpha fill:#f00,stroke:#A'); // leading id renamed; CSS value `#A` intact
+  assert.equal(out[3], 'click Alpha href "https://A.example"'); // leading id renamed; URL intact
+});
+
+test('computeIdRename: classDef / linkStyle lines are still left alone', () => {
+  // classDef's token after the keyword is a CLASS name, not a node ref — renaming a
+  // node that happens to share the name must not touch the classDef.
+  const text = ['graph TD', 'A[x] --> B[y]', 'classDef A fill:#eee', 'linkStyle 0 stroke:#333'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Alpha');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[2], 'classDef A fill:#eee'); // class name untouched
+  assert.equal(out[3], 'linkStyle 0 stroke:#333'); // untouched
+});

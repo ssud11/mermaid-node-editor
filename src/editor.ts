@@ -197,11 +197,22 @@ export function computeIdRename(
       /^(graph|flowchart)\b/i.test(trimmed) ||
       /^direction\b/i.test(trimmed) ||
       /^subgraph\b/i.test(trimmed) ||
-      // style / classDef / linkStyle / click statements carry CSS values, class
-      // names and URLs (not node refs we own) — never rewrite ids inside them, or
-      // a node id that matches a value token would corrupt the styling.
-      /^(style|classDef|linkStyle|click)\b/i.test(trimmed)
+      // classDef / linkStyle statements carry class names + CSS values (not node
+      // refs we own) — never rewrite ids inside them.
+      /^(classDef|linkStyle)\b/i.test(trimmed)
     ) {
+      continue;
+    }
+    // `style <id> …` and `click <id> …` LEAD with a real node reference, then CSS /
+    // a callback / a URL. Rename only that leading id token so the directive follows
+    // its node through the rename (otherwise it dangles on the dead id); leave the
+    // rest of the line untouched — running renameIdInLine over the whole line could
+    // rewrite an id-like token inside the CSS value or the quoted URL.
+    const styleClick = /^(\s*(?:style|click)\s+)([A-Za-z0-9_]+)(.*)$/i.exec(original);
+    if (styleClick) {
+      if (styleClick[2] === oldId) {
+        edits.push({ line: ln, startChar: 0, endChar: original.length, newText: `${styleClick[1]}${newId}${styleClick[3]}` });
+      }
       continue;
     }
     const replaced = renameIdInLine(original, oldId, newId);
