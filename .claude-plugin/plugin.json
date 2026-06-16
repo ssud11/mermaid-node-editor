@@ -1,0 +1,17 @@
+{
+  "name": "mermaid-node-editor-flows",
+  "displayName": "Mermaid Node Editor — Flows",
+  "version": "0.1.0",
+  "description": "Read and safely edit Mermaid flowcharts as structured data — extract/query/validate plus propagating rename/relabel — with the flow-author and flow-follow skills.",
+  "author": { "name": "SS-inkwright" },
+  "homepage": "https://marketplace.visualstudio.com/items?itemName=SS-inkwright.mermaid-node-editor",
+  "license": "MIT",
+  "keywords": ["mermaid", "flowchart", "mcp", "diagram", "agent", "flows"],
+  "skills": "./mcp/skills/",
+  "mcpServers": {
+    "flows": {
+      "command": "npx",
+      "args": ["-y", "mermaid-node-editor-flows"]
+    }
+  }
+}

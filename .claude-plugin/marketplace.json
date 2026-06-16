@@ -1,0 +1,12 @@
+{
+  "name": "mermaid-node-editor-flows",
+  "owner": { "name": "SS-inkwright" },
+  "plugins": [
+    {
+      "name": "mermaid-node-editor-flows",
+      "source": ".",
+      "description": "Read and safely edit Mermaid flowcharts as structured data, with the flow-author and flow-follow skills.",
+      "version": "0.1.0"
+    }
+  ]
+}
