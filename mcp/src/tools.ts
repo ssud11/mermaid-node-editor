@@ -143,6 +143,11 @@ export function flowExtract(src: FlowSource, blockIndex?: number) {
 }
 
 export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
+  // An untyped JS caller can merge the id into the src object ({text, id}), leaving the
+  // positional id undefined — return a diagnostic instead of a silent found:false.
+  if (id == null || id === '') {
+    return emptyQuery(id, null, 'No node id provided — pass the id as the second argument, not inside the source object.');
+  }
   const r = resolveSource(src);
   const blocks = getBlocks(r);
   const picked = pickBlock(blocks, blockIndex);

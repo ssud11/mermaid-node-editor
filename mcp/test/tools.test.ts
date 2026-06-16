@@ -315,3 +315,12 @@ test('flow_query: an out-of-range blockIndex reports the block count', () => {
   assert.equal(q.found, false);
   assert.match(q.error ?? '', /out of range/i);
 });
+
+// ---- regression: /qa-explore dogfood round 8 (2026-06-16) ----
+// A missing positional id (an untyped caller merged it into the src object) must give
+// a diagnostic error, not a silent found:false with error:null.
+test('flow_query: a missing positional id yields a diagnostic', () => {
+  const q = flowQuery({ text: 'graph TD\nA[x] --> B[y]' }, undefined as unknown as string);
+  assert.equal(q.found, false);
+  assert.match(q.error ?? '', /No node id provided/);
+});
