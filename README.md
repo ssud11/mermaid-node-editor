@@ -57,6 +57,7 @@ In the source itself, any tag also supports the standard editor gestures: **Go t
 - **Flowcharts only** — other diagram types show an "unsupported" notice.
 - **Subgraph IDs are read-only** — edit the title instead (an `F2` rename of a subgraph id is declined).
 - A dash-delimited edge label (`A -- text --> B`) may add a spurious entry to a node's read-only connection list; the pipe form (`A -->|text| B`) is handled correctly.
+- **`&` fan-out/fan-in edges are not parsed** — a shorthand like `A --> B & C` is not split into separate edges, so those connections are not shown in the connection list. Write them as individual edges (`A --> B` / `A --> C`) instead.
 - A `direction` statement sharing one line with an edge via `;` (e.g. `direction TD; A --> TD`) is not tag-navigated or renamed on that line.
 
 ## Release notes

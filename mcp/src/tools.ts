@@ -11,6 +11,49 @@ import { shapeOf } from './shapes';
 
 const splitLines = (text: string): string[] => text.split(/\r?\n/);
 
+// Uniform "no result" shape for flow_query — every early-return path returns the
+// SAME keys as the normal path (null / [] placeholders) so an agent reading
+// result.outgoing / .label / .incoming never hits an undefined on an error branch.
+function emptyQuery(id: string, blockIndex: number | null, error: string) {
+  return {
+    id,
+    found: false,
+    blockIndex,
+    label: null as string | null,
+    declaration: null as { line: number; kind: string } | null,
+    incoming: [] as Array<{ from: string; label: string | null; kind: string; line: number }>,
+    outgoing: [] as Array<{ to: string; label: string | null; kind: string; line: number }>,
+    subgraph: null as string | null,
+    duplicateWarnings: [] as Array<{ reason: string; message: string }>,
+    error,
+  };
+}
+
+// A `&` at bracket-depth 0 on a link line is Mermaid fan-out/fan-in (`A --> B & C`),
+// which the v1 parser does not split — those edges are silently absent from the
+// model. Detect it so flow_validate can warn rather than report a false-clean. A `&`
+// INSIDE a label (depth > 0) or a quoted string is ordinary text, not fan-out.
+function hasFanoutAmpersand(line: string): boolean {
+  let depth = 0;
+  let quote = '';
+  let ampAtDepth0 = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === '[' || c === '(' || c === '{') {
+      depth++;
+    } else if (c === ']' || c === ')' || c === '}') {
+      depth = Math.max(0, depth - 1);
+    } else if (c === '&' && depth === 0) {
+      ampAtDepth0 = true;
+    }
+  }
+  return ampAtDepth0 && /[-.=]{2,}/.test(line); // depth-0 `&` next to a link operator
+}
+
 // ---- read tools ------------------------------------------------------------
 
 export function flowOverview(src: FlowSource) {
@@ -66,11 +109,11 @@ export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
   const blocks = getBlocks(r);
   const picked = pickBlock(blocks, blockIndex);
   if (!picked) {
-    return { id, found: false, error: 'no Mermaid block found' };
+    return emptyQuery(id, null, 'no Mermaid block found');
   }
   const { block, index } = picked;
   if (!block.supported) {
-    return { id, found: false, blockIndex: index, error: `block ${index} is not a supported flowchart` };
+    return emptyQuery(id, index, `block ${index} is not a supported flowchart`);
   }
   const lines = splitLines(r.text);
   const decl = findDeclaration(block, id);
@@ -147,6 +190,20 @@ export function flowValidate(src: FlowSource) {
         if (!inEdges.has(n.id) && !sgIds.has(n.id) && !sgMembers.has(n.id)) {
           issues.push({ severity: 'info', code: 'unreachable', message: `node "${n.id}" is declared but not connected by any edge`, line: n.line });
         }
+      }
+    }
+    // Mermaid `&` fan-out/fan-in (`A --> B & C`) is not parsed in v1 — those edges
+    // are silently absent from the model. Warn so validate never reports a false-clean
+    // for a flow whose connectivity depends on `&` (otherwise `ok:true, issues:[]`).
+    for (let ln = b.contentStart; ln < b.contentEnd; ln++) {
+      const line = lines[ln];
+      if (line !== undefined && hasFanoutAmpersand(line)) {
+        issues.push({
+          severity: 'warning',
+          code: 'unsupported-fanout',
+          message: 'edge fan-out/fan-in with "&" (e.g. `A --> B & C`) is not parsed in v1 — those edges are not represented; write them as separate edges',
+          line: ln,
+        });
       }
     }
     return { index, supported: true, issues };

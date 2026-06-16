@@ -118,8 +118,8 @@ server.registerTool(
       'Bracket shape + label are preserved.',
     inputSchema: {
       ...sourceShape,
-      oldId: z.string().describe('The current node id.'),
-      newId: z.string().describe('The new node id.'),
+      oldId: z.string().min(1).describe('The current node id.'),
+      newId: z.string().min(1).describe('The new node id.'),
       write: writeOpt,
       block: blockOpt,
     },

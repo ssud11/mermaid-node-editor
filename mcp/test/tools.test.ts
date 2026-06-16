@@ -205,3 +205,33 @@ test('flow_validate: always returns a top-level issues array (consistent shape)'
   const unsupported = flowValidate({ text: 'sequenceDiagram\nA->>B: x' });
   assert.ok(Array.isArray(unsupported.issues) && Array.isArray(unsupported.blocks));
 });
+
+// ---- regression: /qa-explore dogfood round 3 (2026-06-16) ----
+
+// `A --> B & C` fan-out is not parsed in v1; validate must WARN (not silently pass)
+// so an agent never gets a false-clean for a flow whose edges all vanished.
+test('flow_validate: warns on & fan-out edges instead of a silent false-clean', () => {
+  const v = flowValidate({ text: 'flowchart TD\nstart[Start]\na[A]\nb[B]\nstart --> a & b' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'unsupported-fanout'));
+});
+
+// A `&` INSIDE a label is ordinary text, not fan-out — must not false-trigger.
+test('flow_validate: a & inside a label is not flagged as fan-out', () => {
+  const v = flowValidate({ text: 'flowchart TD\nA["x & y"] --> B[ok]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'unsupported-fanout'), false);
+});
+
+// flow_query's error paths must return the SAME keys as the normal path (null/[]),
+// so a flow-follow agent reading .outgoing / .label never hits an undefined.
+test('flow_query: error paths return the same keys as the normal path', () => {
+  const normal = flowQuery({ text: 'graph TD\nA[x] --> B[y]' }, 'A');
+  const noBlock = flowQuery({ text: 'graph TD\nA[x] --> B[y]' }, 'A', 99); // out-of-range block
+  const unsupported = flowQuery({ text: 'sequenceDiagram\nA->>B: x' }, 'A');
+  for (const k of Object.keys(normal)) {
+    assert.ok(k in noBlock, `noBlock missing key ${k}`);
+    assert.ok(k in unsupported, `unsupported missing key ${k}`);
+  }
+  assert.equal(noBlock.found, false);
+  assert.deepEqual(noBlock.outgoing, []); // not undefined
+  assert.equal(unsupported.label, null);
+});
