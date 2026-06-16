@@ -451,3 +451,14 @@ test('subgraph membership follows the declaration site, not a forward edge ref',
   assert.deepEqual(pa.members, ['node_a']); // node_b NOT mis-assigned here
   assert.ok(pb.members.includes('node_b')); // owned by its declaring subgraph
 });
+
+// ===== round-8 dogfood regression =====
+test('reversed `<--` arrow: from/to follow Mermaid semantics (`B <-- C` is C->B)', () => {
+  const b = findMermaidBlocks('flowchart LR\nB[b] <-- C[c]', true)[0];
+  assert.deepEqual([b.edges[0].from, b.edges[0].to], ['C', 'B']); // swapped to match Mermaid
+  assert.equal(b.edges[0].kind.head, 'arrow');
+  // bidirectional `<-->` is NOT reversed (both ends kept; head still arrow)
+  const bd = findMermaidBlocks('flowchart LR\nA[a] <--> B[b]', true)[0];
+  assert.equal(bd.edges[0].kind.bidirectional, true);
+  assert.deepEqual([bd.edges[0].from, bd.edges[0].to], ['A', 'B']);
+});

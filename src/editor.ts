@@ -168,6 +168,12 @@ export function computeIdRename(
   oldId: string,
   newId: string
 ): EditResult {
+  // Harden the pure API for untyped JS callers — a non-string id would coerce to the
+  // literal 'null'/'undefined' inside the regexes. (Symmetric with computeLabelEdit;
+  // unreachable via the MCP server [Zod] / panel.)
+  if (typeof (oldId as unknown) !== 'string' || typeof (newId as unknown) !== 'string') {
+    return { ok: false, edits: [], error: 'oldId and newId must be strings.' };
+  }
   if (newId === oldId) {
     return { ok: true, edits: [] };
   }
@@ -231,6 +237,10 @@ export function computeIdRename(
       /^(graph|flowchart)\b/i.test(trimmed) ||
       /^direction\b/i.test(trimmed) ||
       /^subgraph\b/i.test(trimmed) ||
+      // The bare `end` subgraph closer is a keyword line, not a node ref — never
+      // rewrite it, or renaming a node that happens to be named `end` corrupts the
+      // closer and leaves the subgraph unclosed. Mirrors the parser's closer test.
+      /^end\s*($|;|%%)/.test(trimmed) ||
       // %% lines are Mermaid comments — prose, not node refs. Skip them so a real
       // id mentioned in a comment isn't rewritten (and the comment-only case above
       // is already rejected).

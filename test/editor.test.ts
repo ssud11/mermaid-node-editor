@@ -326,3 +326,25 @@ test('computeLabelEdit: a non-string newLabel returns ok:false (no throw)', () =
   assert.equal(r.ok, false);
   assert.match(r.error || '', /must be a string/);
 });
+
+// --- regression: /qa-explore dogfood round 8 (2026-06-16) ---
+
+test('computeIdRename: renaming a node named `end` leaves the subgraph closer intact', () => {
+  // `A --> end` makes `end` an edge ref; renaming it must NOT rewrite the bare `end`
+  // subgraph closer (which would leave the subgraph unclosed and corrupt the source).
+  const text = ['flowchart TD', 'subgraph phase [Phase]', 'A[Step]', 'end', 'A --> end'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'end', 'done');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[3], 'end'); // the subgraph closer is untouched
+  assert.equal(out[4], 'A --> done'); // the edge reference is renamed
+});
+
+test('computeIdRename: a non-string newId returns ok:false (no null/undefined coercion)', () => {
+  const { block: b, lines } = block('graph TD\nA[x] --> B[y]');
+  const r = computeIdRename(b, lines, 'A', null as unknown as string);
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /must be strings/);
+});

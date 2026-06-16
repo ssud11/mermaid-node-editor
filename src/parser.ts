@@ -266,12 +266,16 @@ const headOf = (c: string): EdgeHead | undefined =>
   c === '>' ? 'arrow' : c === 'o' ? 'circle' : c === 'x' ? 'cross' : undefined;
 
 // Decode one link operator into its kind (stroke/head/bidirectional) + label.
-function decodeLink(op: string, pipe: string | undefined): { kind: EdgeKind; label?: string } {
+function decodeLink(op: string, pipe: string | undefined): { kind: EdgeKind; label?: string; reversed: boolean } {
   const stroke: EdgeStroke = op.includes('=') ? 'thick' : op.includes('.') ? 'dotted' : 'solid';
   const tailHead = headOf(op[op.length - 1]); // arrowhead at the `to` end
   const leadHead =
     op[0] === '<' ? 'arrow' : op[0] === 'o' ? 'circle' : op[0] === 'x' ? 'cross' : undefined;
-  const head: EdgeHead = tailHead ?? 'open';
+  // A left-pointing-only operator (`<--`, `<==`, `o--`) reverses the edge: the head is
+  // at the LEAD end and the caller swaps from/to to match Mermaid (`B <-- C` means C→B).
+  // Bidirectional (`<-->`) keeps both ends and is NOT reversed.
+  const reversed = !!leadHead && !tailHead;
+  const head: EdgeHead = (reversed ? leadHead : tailHead) ?? 'open';
   // Bidirectional connectors exist only in SOLID form (`<-->`, `o--o`, `x--x`).
   // `<==>` / `o..o` etc. are not valid Mermaid — don't report them as bidirectional.
   const bidirectional = !!leadHead && !!tailHead && stroke === 'solid';
@@ -297,7 +301,7 @@ function decodeLink(op: string, pipe: string | undefined): { kind: EdgeKind; lab
       label = q[1];
     }
   }
-  return { kind: { stroke, head, bidirectional }, label: label || undefined };
+  return { kind: { stroke, head, bidirectional }, label: label || undefined, reversed };
 }
 
 function parseEdges(line: string, lineNumber: number, nodes: MermaidNode[]): MermaidEdge[] {
@@ -327,8 +331,10 @@ function parseEdges(line: string, lineNumber: number, nodes: MermaidNode[]): Mer
       const from = idOrNone(fromSeg);
       const to = idOrNone(toSeg);
       if (from && to) {
-        const { kind, label } = decodeLink(links[i].op, links[i].pipe);
-        edges.push({ from, to, line: lineNumber, label, kind });
+        const { kind, label, reversed } = decodeLink(links[i].op, links[i].pipe);
+        // For a reversed (left-pointing) arrow, the textual from/to are backwards.
+        const [src, dst] = reversed ? [to, from] : [from, to];
+        edges.push({ from: src, to: dst, line: lineNumber, label, kind });
       }
     }
   }
