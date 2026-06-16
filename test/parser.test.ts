@@ -432,3 +432,22 @@ test('end[...] is a reserved-id node line, not a subgraph closer (no early stack
   assert.ok(b.subgraphs[0].members.includes('d'), 'd declared inside S stays a member');
   assert.ok(b.edges.some((e) => e.from === 'c' && e.to === 'd'), 'c->d edge survives');
 });
+
+// ===== round-7 dogfood regression =====
+test('subgraph membership follows the declaration site, not a forward edge ref', () => {
+  // node_b is edge-referenced inside phase_a but DECLARED inside phase_b — it must be a
+  // member of phase_b (its declaration), not phase_a (the earlier reference). This is the
+  // standard multi-phase pattern; before the fix every phase-entry node landed one phase early.
+  const b = findMermaidBlocks(
+    [
+      'flowchart TD',
+      'subgraph phase_a [Phase A]', 'node_a[Node A]', 'node_a --> node_b', 'end',
+      'subgraph phase_b [Phase B]', 'node_b[Node B]', 'end',
+    ].join('\n'),
+    true
+  )[0];
+  const pa = b.subgraphs.find((s) => s.id === 'phase_a')!;
+  const pb = b.subgraphs.find((s) => s.id === 'phase_b')!;
+  assert.deepEqual(pa.members, ['node_a']); // node_b NOT mis-assigned here
+  assert.ok(pb.members.includes('node_b')); // owned by its declaring subgraph
+});

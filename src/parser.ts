@@ -457,20 +457,34 @@ function buildBlock(
   }
 
   const nodesById = new Map<string, MermaidNode>();
-  // Subgraph membership: a stack of currently-open subgraphs (innermost last) and
-  // a block-wide set of ids already "seen". An id belongs to the subgraph where it
-  // FIRST appears (Mermaid's ownership rule), so each id is added to the innermost
-  // open subgraph's `members` only on its first occurrence.
+  // Subgraph membership: a stack of currently-open subgraphs (innermost last) and a
+  // block-wide set of ids already "seen". An id belongs to the subgraph where it is
+  // DECLARED (a node-definition / bare-id line); an id that is only ever an edge
+  // reference takes the subgraph of its first reference. So a real declaration RE-HOMES
+  // an id that an earlier forward edge reference had tentatively claimed — otherwise a
+  // node declared in a later phase but referenced from an earlier one (the standard
+  // multi-phase pattern) would be mis-assigned to the referencing phase.
   const open: MermaidSubgraph[] = [];
   const seen = new Set<string>();
-  const claim = (id: string): void => {
+  const refClaim = new Map<string, MermaidSubgraph | null>(); // ids claimed via a bare ref
+  const claim = (id: string, isDeclaration: boolean): void => {
+    const sg = open.length > 0 ? open[open.length - 1] : null;
     if (seen.has(id)) {
+      // A declaration is authoritative: move the id off the subgraph an earlier bare
+      // edge reference put it on, onto the one it's actually declared in (or out).
+      if (isDeclaration && refClaim.has(id)) {
+        const prev = refClaim.get(id) ?? null;
+        refClaim.delete(id);
+        if (prev !== sg) {
+          if (prev) prev.members = prev.members.filter((m) => m !== id);
+          if (sg) sg.members.push(id);
+        }
+      }
       return;
     }
     seen.add(id);
-    if (open.length > 0) {
-      open[open.length - 1].members.push(id);
-    }
+    if (!isDeclaration) refClaim.set(id, sg);
+    if (sg) sg.members.push(id);
   };
 
   for (let i = block.contentStart; i < contentEnd; i++) {
@@ -491,7 +505,7 @@ function buildBlock(
 
     const sg = parseSubgraph(raw, i);
     if (sg) {
-      claim(sg.id); // the subgraph itself is a member of its parent (first appearance)
+      claim(sg.id, true); // the subgraph itself is a member of its parent (declared here)
       block.subgraphs.push(sg);
       open.push(sg);
       continue; // don't treat a subgraph title as nodes/edges
@@ -524,14 +538,15 @@ function buildBlock(
     }
     const lineEdges = parseEdges(parseLine, i, lineNodes);
     block.edges.push(...lineEdges);
-    // Claim membership for every id that first appears on this line, in document
-    // order: node definitions first, then edge endpoints (bare refs).
+    // Claim membership in document order: node DEFINITIONS first (authoritative —
+    // they own the id's subgraph), then edge endpoints as bare REFERENCES (which only
+    // claim an id not yet declared, and are re-homed if a later declaration appears).
     for (const n of lineNodes) {
-      claim(n.id);
+      claim(n.id, true);
     }
     for (const e of lineEdges) {
-      claim(e.from);
-      claim(e.to);
+      claim(e.from, false);
+      claim(e.to, false);
     }
 
     // A bare identifier alone on a line (`A`) is a valid Mermaid node declaration
@@ -556,7 +571,7 @@ function buildBlock(
             quote: '',
           });
         }
-        claim(id);
+        claim(id, true); // a bare id on its own line is a declaration
       }
     }
   }
