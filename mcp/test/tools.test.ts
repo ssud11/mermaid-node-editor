@@ -246,3 +246,35 @@ test('flow_relabel: a bare edge-ref id gets an actionable message, not "not foun
   assert.equal(r.ok, false);
   assert.match(r.error, /referenced by edges|give it a shape/i);
 });
+
+// ---- regression: /qa-explore dogfood round 5 (2026-06-16) ----
+// Three silent-drop classes: the parser skips the line, the node/edge vanishes, and
+// validate would stay ok:true. Each must now surface a warning (false-clean removed).
+
+test('flow_validate: warns on a hyphenated id (truncated + edge dropped)', () => {
+  const v = flowValidate({ text: 'graph TD\nreceive-order[Receive order] --> in-stock{In stock?}' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'malformed-id'));
+});
+
+test('flow_validate: a hyphen INSIDE a label is not flagged as a malformed id', () => {
+  const v = flowValidate({ text: 'graph TD\nA[multi-word label] --> B[ok]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'malformed-id'), false);
+});
+
+test('flow_validate: warns on a reserved-keyword id used on an edge line', () => {
+  const v = flowValidate({ text: 'flowchart TD\nA[Start] --> end\nend --> B[Finish]' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'reserved-id-edge'));
+});
+
+test('flow_validate: warns on a multi-line (unclosed-quote) label', () => {
+  const v = flowValidate({ text: 'flowchart TD\nA["first line\nsecond line"] --> B[Done]' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'multiline-label'));
+});
+
+// flow_query on a subgraph id must report its title, not label:null (matches
+// flow_extract / flow_overview, which expose the subgraph title correctly).
+test('flow_query: a subgraph id reports its title, not null', () => {
+  const q = flowQuery({ text: 'flowchart TD\nsubgraph core [Core flow]\nA[x]\nend' }, 'core');
+  assert.equal(q.found, true);
+  assert.equal(q.label, 'Core flow');
+});

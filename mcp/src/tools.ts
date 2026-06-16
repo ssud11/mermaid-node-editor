@@ -2,7 +2,7 @@
 // server.ts wires these to registerTool. All reuse the vscode-free parser/editor/
 // analysis layer — no logic is duplicated here.
 import { writeFileSync } from 'node:fs';
-import type { MermaidBlock } from '../../src/parser';
+import { RESERVED, type MermaidBlock } from '../../src/parser';
 import { computeIdRename, computeLabelEdit, computeSubgraphLabelEdit, type EditResult } from '../../src/editor';
 import { collectIds, findDeclaration, findDuplicateDeclarations } from '../../src/analysis';
 import { resolveSource, getBlocks, pickBlock, type FlowSource, type ResolvedSource } from './resolve';
@@ -29,29 +29,46 @@ function emptyQuery(id: string, blockIndex: number | null, error: string) {
   };
 }
 
-// A `&` at bracket-depth 0 on a link line is Mermaid fan-out/fan-in (`A --> B & C`),
-// which the v1 parser does not split — those edges are silently absent from the
-// model. Detect it so flow_validate can warn rather than report a false-clean. A `&`
-// INSIDE a label (depth > 0) or a quoted string is ordinary text, not fan-out.
-function hasFanoutAmpersand(line: string): boolean {
+// `structuralPart(line)` blanks all node-label / quoted-string content (anything at
+// bracket-depth > 0) to spaces, leaving only the depth-0 STRUCTURE — ids, link
+// operators, `&`, hyphens. flow_validate's silent-drop probes run on this so a `&`,
+// hyphen, or arrow-like sequence INSIDE a label is never mistaken for structure.
+function structuralPart(line: string): string {
+  let out = '';
   let depth = 0;
   let quote = '';
-  let ampAtDepth0 = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
+  for (const c of line) {
     if (quote) {
+      out += ' ';
       if (c === quote) quote = '';
     } else if (c === '"' || c === "'") {
+      out += ' ';
       quote = c;
     } else if (c === '[' || c === '(' || c === '{') {
+      out += ' ';
       depth++;
     } else if (c === ']' || c === ')' || c === '}') {
+      out += ' ';
       depth = Math.max(0, depth - 1);
-    } else if (c === '&' && depth === 0) {
-      ampAtDepth0 = true;
+    } else {
+      out += depth === 0 ? c : ' ';
     }
   }
-  return ampAtDepth0 && /[-.=]{2,}/.test(line); // depth-0 `&` next to a link operator
+  return out;
+}
+
+// True when a node label opens a quote (right after a shape bracket) that never closes
+// on the same line — a multi-line label (literal newline inside quotes), which the
+// line-by-line parser silently drops along with the node's edges.
+function hasUnterminatedQuotedLabel(line: string): boolean {
+  const re = /[[({]\s*(["'])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    if (line.indexOf(m[1], m.index + m[0].length) === -1) {
+      return true; // this label's opening quote has no closing quote on the line
+    }
+  }
+  return false;
 }
 
 // ---- read tools ------------------------------------------------------------
@@ -126,8 +143,13 @@ export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
     .map((e) => ({ to: e.to, label: e.label ?? null, kind: e.kind, line: e.line }));
   const subgraph = block.subgraphs.find((s) => s.members.includes(id))?.id ?? null;
   // The node's OWN label (declared nodes only; a bare/undeclared edge ref has none).
-  // Lets a flow-walk read a node's label from this one call instead of a flow_extract pre-pass.
-  const label = block.nodes.find((n) => n.id === id)?.label ?? null;
+  // Lets a flow-walk read a node's label from this one call instead of a flow_extract
+  // pre-pass. A subgraph id falls back to its title (the same lookup flow_extract /
+  // flow_overview use) so a subgraph isn't reported with a null label.
+  const label =
+    block.nodes.find((n) => n.id === id)?.label ??
+    block.subgraphs.find((s) => s.id === id)?.label ??
+    null;
   const dups = findDuplicateDeclarations(block, lines).filter((d) => d.id === id);
   return {
     id,
@@ -197,18 +219,33 @@ export function flowValidate(src: FlowSource) {
         }
       }
     }
-    // Mermaid `&` fan-out/fan-in (`A --> B & C`) is not parsed in v1 — those edges
-    // are silently absent from the model. Warn so validate never reports a false-clean
-    // for a flow whose connectivity depends on `&` (otherwise `ok:true, issues:[]`).
+    // Silent-drop probes: certain valid-looking Mermaid lines are skipped by the
+    // line-by-line parser (the node/edge vanishes) while validate would otherwise stay
+    // ok:true. Each probe turns that silent source loss into a visible warning. They
+    // run on structuralPart() so a `&`/hyphen/arrow inside a label never false-triggers.
     for (let ln = b.contentStart; ln < b.contentEnd; ln++) {
       const line = lines[ln];
-      if (line !== undefined && hasFanoutAmpersand(line)) {
-        issues.push({
-          severity: 'warning',
-          code: 'unsupported-fanout',
-          message: 'edge fan-out/fan-in with "&" (e.g. `A --> B & C`) is not parsed in v1 — those edges are not represented; write them as separate edges',
-          line: ln,
-        });
+      if (line === undefined) continue;
+      const struct = structuralPart(line);
+      // `&` fan-out/fan-in (`A --> B & C`) is not split in v1.
+      if (/&/.test(struct) && /[-.=]{2,}/.test(struct)) {
+        issues.push({ severity: 'warning', code: 'unsupported-fanout', message: 'edge fan-out/fan-in with "&" (e.g. `A --> B & C`) is not parsed in v1 — those edges are not represented; write them as separate edges', line: ln });
+      }
+      // A hyphen in an id position: v1 ids are [A-Za-z0-9_], so `receive-order` is
+      // truncated to `order` and its edge is dropped. Use snake_case.
+      if (/[A-Za-z0-9_]-[A-Za-z0-9_]/.test(struct)) {
+        issues.push({ severity: 'warning', code: 'malformed-id', message: 'a node id appears to contain a hyphen ("-"); v1 ids are [A-Za-z0-9_] only, so the id is truncated and its edge dropped — use snake_case', line: ln });
+      }
+      // A reserved keyword used as a node id on an edge line: the parser skips the whole
+      // line, so its edge and any node declared on it are not represented.
+      const firstTok = /^\s*([A-Za-z0-9_]+)/.exec(line);
+      if (firstTok && RESERVED.has(firstTok[1]) && /[-.=]{2,}[>ox]?/.test(struct)) {
+        issues.push({ severity: 'warning', code: 'reserved-id-edge', message: `a line beginning with the reserved keyword "${firstTok[1]}" contains an edge; the line is skipped, so its edge and any node declared on it are not represented — rename the node`, line: ln });
+      }
+      // A label whose quote never closes on the line = a multi-line label; the node and
+      // its edges on this line are dropped (v1 labels are single-line; use <br/>).
+      if (hasUnterminatedQuotedLabel(line)) {
+        issues.push({ severity: 'warning', code: 'multiline-label', message: 'a node label appears to span multiple lines (an unclosed quote); the node and its edges on this line are not parsed in v1 — keep the label on one line (use <br/> for a visual break)', line: ln });
       }
     }
     return { index, supported: true, issues };

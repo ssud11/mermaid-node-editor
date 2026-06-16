@@ -97,7 +97,8 @@ server.registerTool(
   {
     description:
       'Lint a flowchart: structured issues with line numbers — duplicate tags (one tag = one element), ' +
-      'empty labels, unreachable (unconnected) nodes, and unsupported diagram types. Returns {ok, issues, blocks:[{issues}]} ' +
+      'empty labels, unreachable (unconnected) nodes, unsupported diagram types, and silently-dropped ' +
+      'constructs (& fan-out, hyphenated/reserved-keyword ids, multi-line labels). Returns {ok, issues, blocks:[{issues}]} ' +
       '— top-level `issues` are file-level (e.g. no Mermaid block found); per-block problems are in `blocks[].issues`.',
     inputSchema: sourceShape,
   },
