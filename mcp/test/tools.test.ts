@@ -324,3 +324,37 @@ test('flow_query: a missing positional id yields a diagnostic', () => {
   assert.equal(q.found, false);
   assert.match(q.error ?? '', /No node id provided/);
 });
+
+// ---- regression: /qa-explore dogfood round 9 (2026-06-16) ----
+
+// The silent-drop probes must skip %% comment lines (a comment mentioning a hyphenated
+// id / `&` / brackets is prose, not a dropped construct) — else they false-warn.
+test('flow_validate: a %% comment line does not trip the silent-drop probes', () => {
+  const v = flowValidate({ text: 'graph TD\n%% later: rename node-a and split a & b --> c\nA[Start] --> B[End]' });
+  const codes = v.blocks[0].issues.map((i) => i.code);
+  assert.ok(!codes.includes('malformed-id'));
+  assert.ok(!codes.includes('unsupported-fanout'));
+});
+
+// A subgraph id that is a real edge endpoint (`p1 --> p2`) participates in the flow and
+// must remain in entry/exit (only pure containers are excluded).
+test('flow_overview: a subgraph used as an edge endpoint stays in entry/exit', () => {
+  const o = flowOverview({ text: 'flowchart TD\nsubgraph p1 [P1]\nA[a]\nend\nsubgraph p2 [P2]\nB[b]\nend\np1 --> p2' });
+  const blk = o.blocks[0];
+  assert.ok(blk.entryNodes.includes('p1'));
+  assert.ok(blk.exitNodes.includes('p2'));
+});
+
+// counts.nodes must include bare edge-endpoint-only ids (which never land in b.nodes).
+test('flow_overview: counts.nodes includes bare edge-endpoint-only ids', () => {
+  const o = flowOverview({ text: 'graph TD\nA --> B --> C' });
+  assert.equal(o.blocks[0].counts.nodes, 3);
+});
+
+// A pure container subgraph (never an edge endpoint) is still excluded from entry/exit.
+test('flow_overview: a pure-container subgraph is still excluded from entry/exit', () => {
+  const o = flowOverview({ text: 'graph TD\nsubgraph PROC [Processing]\nX --> Y\nend' });
+  const blk = o.blocks[0];
+  assert.ok(!blk.entryNodes.includes('PROC'));
+  assert.ok(!blk.exitNodes.includes('PROC'));
+});

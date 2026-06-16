@@ -104,17 +104,22 @@ export function flowOverview(src: FlowSource) {
       const froms = new Set(b.edges.map((e) => e.from));
       const tos = new Set(b.edges.map((e) => e.to));
       const allIds = collectIds(b);
-      // Subgraph ids are grouping containers, not flow nodes — they're never an
-      // edge endpoint, so without this they'd land in BOTH entry and exit lists.
       const sgIds = new Set(b.subgraphs.map((s) => s.id));
+      // A subgraph id is a grouping CONTAINER unless it is itself a real edge endpoint
+      // (`phase1 --> phase2`), in which case it participates in the flow and belongs in
+      // entry/exit. Exclude only the pure containers (never an endpoint) — otherwise a
+      // subgraph used as an endpoint vanishes from entry/exit and a walk stops early.
+      const containerSgIds = new Set([...sgIds].filter((id) => !froms.has(id) && !tos.has(id)));
       return {
         index,
         diagramType: b.diagramType,
         supported: b.supported,
         lineRange: [b.startLine, b.endLine] as [number, number],
-        counts: { nodes: b.nodes.length, edges: b.edges.length, subgraphs: b.subgraphs.length },
-        entryNodes: b.supported ? [...allIds].filter((id) => !tos.has(id) && !sgIds.has(id)) : [],
-        exitNodes: b.supported ? [...allIds].filter((id) => !froms.has(id) && !sgIds.has(id)) : [],
+        // `nodes` counts every node id — INCLUDING bare edge-endpoint-only ids that
+        // aren't in b.nodes — but excludes subgraph containers (counted separately).
+        counts: { nodes: [...allIds].filter((id) => !sgIds.has(id)).length, edges: b.edges.length, subgraphs: b.subgraphs.length },
+        entryNodes: b.supported ? [...allIds].filter((id) => !tos.has(id) && !containerSgIds.has(id)) : [],
+        exitNodes: b.supported ? [...allIds].filter((id) => !froms.has(id) && !containerSgIds.has(id)) : [],
         subgraphs: b.subgraphs.map((s) => ({ id: s.id, title: s.label, members: s.members })),
       };
     }),
@@ -257,6 +262,8 @@ export function flowValidate(src: FlowSource) {
     for (let ln = b.contentStart; ln < b.contentEnd; ln++) {
       const line = lines[ln];
       if (line === undefined) continue;
+      const t = line.trim();
+      if (t === '' || t.startsWith('%%')) continue; // blank / comment lines aren't content
       const struct = structuralPart(line);
       // `&` fan-out/fan-in (`A --> B & C`) is not split in v1.
       if (/&/.test(struct) && /[-.=]{2,}/.test(struct)) {
