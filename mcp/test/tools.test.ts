@@ -291,3 +291,27 @@ test('flow_validate: a balanced nested-quote label is not flagged unbalanced', (
   const v = flowValidate({ text: 'graph TD\nA["a]b"] --> B[ok]' });
   assert.equal(v.blocks[0].issues.some((i) => i.code === 'unbalanced-bracket'), false);
 });
+
+// ---- regression: /qa-explore dogfood round 7 (2026-06-16) ----
+
+// A reserved keyword used as a standalone node declaration (`end[End node]`, edge on a
+// separate line) is dropped by the parser — the edge-form probe misses it, so a
+// dedicated declaration probe must fire.
+test('flow_validate: warns on a reserved-keyword standalone declaration', () => {
+  const v = flowValidate({ text: 'flowchart TD\nstart[Start]\nend[End node]\nstart --> end' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'reserved-id-dropped'));
+});
+
+// A subgraph header (`subgraph S [Title]`) must NOT be mistaken for a dropped reserved id.
+test('flow_validate: a subgraph header is not flagged reserved-id-dropped', () => {
+  const v = flowValidate({ text: 'flowchart TD\nsubgraph S [Phase]\nA[x]\nend' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'reserved-id-dropped'), false);
+});
+
+// An out-of-range blockIndex reports the count, not the generic "no Mermaid block found".
+test('flow_query: an out-of-range blockIndex reports the block count', () => {
+  const md = '```mermaid\ngraph TD\nA-->B\n```\n\n```mermaid\ngraph LR\nC-->D\n```';
+  const q = flowQuery({ text: md }, 'A', 9);
+  assert.equal(q.found, false);
+  assert.match(q.error ?? '', /out of range/i);
+});

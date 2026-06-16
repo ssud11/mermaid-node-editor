@@ -147,7 +147,12 @@ export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
   const blocks = getBlocks(r);
   const picked = pickBlock(blocks, blockIndex);
   if (!picked) {
-    return emptyQuery(id, null, 'no Mermaid block found');
+    // Distinguish "you asked for block N but there are only M" from "no blocks at all".
+    const msg =
+      blockIndex != null && blocks.length > 0
+        ? `block index ${blockIndex} is out of range (${blocks.length} block${blocks.length === 1 ? '' : 's'} in this source)`
+        : 'no Mermaid block found';
+    return emptyQuery(id, null, msg);
   }
   const { block, index } = picked;
   if (!block.supported) {
@@ -262,6 +267,13 @@ export function flowValidate(src: FlowSource) {
       const firstTok = /^\s*([A-Za-z0-9_]+)/.exec(line);
       if (firstTok && RESERVED.has(firstTok[1]) && /[-.=]{2,}[>ox]?/.test(struct)) {
         issues.push({ severity: 'warning', code: 'reserved-id-edge', message: `a line beginning with the reserved keyword "${firstTok[1]}" contains an edge; the line is skipped, so its edge and any node declared on it are not represented — rename the node`, line: ln });
+      }
+      // A reserved keyword used as a node DECLARATION — immediately followed by a shape
+      // bracket (`end[End]`) — is dropped whole by the parser, so the node silently
+      // vanishes even when its edge is on a separate line (which the edge probe misses).
+      const reservedDecl = /^\s*([A-Za-z0-9_]+)[[({>]/.exec(line);
+      if (reservedDecl && RESERVED.has(reservedDecl[1])) {
+        issues.push({ severity: 'warning', code: 'reserved-id-dropped', message: `node id "${reservedDecl[1]}" is a reserved Mermaid keyword; its declaration is silently dropped — rename it (e.g. ${reservedDecl[1]}_node)`, line: ln });
       }
       // A label whose quote never closes on the line = a multi-line label; the node and
       // its edges on this line are dropped (v1 labels are single-line; use <br/>).
