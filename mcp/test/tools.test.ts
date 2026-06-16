@@ -351,6 +351,55 @@ test('flow_overview: counts.nodes includes bare edge-endpoint-only ids', () => {
   assert.equal(o.blocks[0].counts.nodes, 3);
 });
 
+// ---- regression: /qa-explore dogfood round 10 (2026-06-16) ----
+
+// The asymmetric `>]` shape (a supported shape) must NOT false-warn unbalanced-bracket.
+test('flow_validate: an asymmetric >] node does not false-warn unbalanced-bracket', () => {
+  const v = flowValidate({ text: 'flowchart TD\ns_asym>Asymmetric] --> done[Done]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'unbalanced-bracket'), false);
+});
+
+// A nested-bracket label drops its edge with globally-balanced brackets — the catch-all
+// dropped-edge probe must warn (the unbalanced-bracket probe can't see balanced nesting).
+test('flow_validate: a nested-bracket label that drops its edge warns (dropped-edge)', () => {
+  const v = flowValidate({ text: 'graph TD\nD[a[b]] --> E' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'dropped-edge'));
+});
+
+// A normal edge line must NOT get a spurious dropped-edge warning.
+test('flow_validate: a well-formed edge line is not flagged dropped-edge', () => {
+  const v = flowValidate({ text: 'graph TD\nA[a] --> B[b]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'dropped-edge'), false);
+});
+
+// Tilde-fenced (~~~mermaid) inline markdown must be markdown, not a raw .mmd block.
+test('flow_overview: a tilde-fenced (~~~mermaid) block is markdown, not raw .mmd', () => {
+  const o = flowOverview({ text: '# Docs\n\n~~~mermaid\nflowchart TD\nA[a] --> B[b]\n~~~' });
+  assert.equal(o.format, 'markdown');
+  assert.equal(o.blocks[0].supported, true);
+});
+
+// flow_relabel on a duplicated node id must refuse (not silently update only the first).
+test('flow_relabel: a duplicated node id is refused (no partial ok:true)', () => {
+  const r = flowRelabel({ text: 'graph TD\nA[First] --> B\nA[Second]' }, 'A', 'New') as { ok: boolean; error?: string };
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? '', /more than one declaration|ambiguous/i);
+});
+
+// A `&` fan-out source must not also be flagged unreachable (its edges just aren't parsed).
+test('flow_validate: a & fan-out source is not also flagged unreachable', () => {
+  const v = flowValidate({ text: 'flowchart TD\nstart[Start]\na[A]\nb[B]\nstart --> a & b' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'unreachable' && i.message.includes('start')), false);
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'unsupported-fanout'));
+});
+
+// flow_query on an id-less (quoted-title) subgraph must report declaration.kind subgraph.
+test('flow_query: an id-less subgraph reports declaration.kind subgraph (not null)', () => {
+  const q = flowQuery({ text: 'flowchart LR\nsubgraph "My Title"\nA[x]\nend' }, 'My Title');
+  assert.equal(q.found, true);
+  assert.equal(q.declaration?.kind, 'subgraph');
+});
+
 // A pure container subgraph (never an edge endpoint) is still excluded from entry/exit.
 test('flow_overview: a pure-container subgraph is still excluded from entry/exit', () => {
   const o = flowOverview({ text: 'graph TD\nsubgraph PROC [Processing]\nX --> Y\nend' });

@@ -78,6 +78,7 @@ function hasUnterminatedQuotedLabel(line: string): boolean {
 function hasPrematureBracketClose(line: string): boolean {
   let depth = 0;
   let quote = '';
+  let prev = '';
   for (const c of line) {
     if (quote) {
       if (c === quote) quote = '';
@@ -85,9 +86,12 @@ function hasPrematureBracketClose(line: string): boolean {
       quote = c;
     } else if (c === '[' || c === '(' || c === '{') {
       depth++;
+    } else if (c === '>' && /[A-Za-z0-9_]/.test(prev)) {
+      depth++; // `id>label]` asymmetric-shape opener — but NOT the `>` in an arrowhead
     } else if ((c === ']' || c === ')' || c === '}') && --depth < 0) {
       return true;
     }
+    prev = c;
   }
   return false;
 }
@@ -242,15 +246,26 @@ export function flowValidate(src: FlowSource) {
         issues.push({ severity: 'warning', code: 'empty-label', message: `node "${n.id}" has an empty label`, line: n.line });
       }
     }
+    // ids on a `&` fan-out line — their edges aren't parsed, so without this they'd
+    // false-positive as unreachable (the unsupported-fanout warning already covers them).
+    const fanoutIds = new Set<string>();
+    for (let ln = b.contentStart; ln < b.contentEnd; ln++) {
+      const fl = lines[ln];
+      if (fl === undefined) continue;
+      const fs = structuralPart(fl);
+      if (/&/.test(fs) && /[-.=]{2,}/.test(fs)) {
+        for (const mm of fs.matchAll(/[A-Za-z0-9_]+/g)) fanoutIds.add(mm[0]);
+      }
+    }
     // Unreachable: a declared node that appears in no edge, when the block has edges.
-    // Subgraph containers AND their declared members are intentionally grouped,
-    // not orphaned — exclude both so they don't false-positive as unreachable.
+    // Subgraph containers AND their declared members are intentionally grouped, not
+    // orphaned — exclude both, plus fan-out-line ids, so none false-positive.
     if (b.edges.length > 0) {
       const inEdges = new Set(b.edges.flatMap((e) => [e.from, e.to]));
       const sgIds = new Set(b.subgraphs.map((s) => s.id));
       const sgMembers = new Set(b.subgraphs.flatMap((s) => s.members));
       for (const n of b.nodes) {
-        if (!inEdges.has(n.id) && !sgIds.has(n.id) && !sgMembers.has(n.id)) {
+        if (!inEdges.has(n.id) && !sgIds.has(n.id) && !sgMembers.has(n.id) && !fanoutIds.has(n.id)) {
           issues.push({ severity: 'info', code: 'unreachable', message: `node "${n.id}" is declared but not connected by any edge`, line: n.line });
         }
       }
@@ -265,6 +280,7 @@ export function flowValidate(src: FlowSource) {
       const t = line.trim();
       if (t === '' || t.startsWith('%%')) continue; // blank / comment lines aren't content
       const struct = structuralPart(line);
+      const before = issues.length; // so the catch-all below only fires if nothing specific did
       // `&` fan-out/fan-in (`A --> B & C`) is not split in v1.
       if (/&/.test(struct) && /[-.=]{2,}/.test(struct)) {
         issues.push({ severity: 'warning', code: 'unsupported-fanout', message: 'edge fan-out/fan-in with "&" (e.g. `A --> B & C`) is not parsed in v1 — those edges are not represented; write them as separate edges', line: ln });
@@ -296,6 +312,17 @@ export function flowValidate(src: FlowSource) {
       // node early, dropping the rest of the line and its edge.
       if (hasPrematureBracketClose(line)) {
         issues.push({ severity: 'warning', code: 'unbalanced-bracket', message: 'an unmatched closing bracket (likely `]`/`)`/`}` inside an unquoted label) closes a node early — the rest of the line and its edge are dropped; quote the label or balance the brackets', line: ln });
+      }
+      // Catch-all: the line has a link operator but the parser recorded NO edge for it,
+      // and no specific probe above fired — a node label/id silently failed to parse
+      // (e.g. a nested unquoted bracket `D[a[b]]` truncated the label, dropping the edge,
+      // with globally-balanced brackets that the unbalanced-bracket probe can't see).
+      if (
+        issues.length === before &&
+        /[-.=]{2,}[>ox]?|[<ox]?[-.=]{2,}/.test(struct) &&
+        !b.edges.some((e) => e.line === ln)
+      ) {
+        issues.push({ severity: 'warning', code: 'dropped-edge', message: 'this line has an edge operator but no edge was parsed — a node label or id likely failed to parse (e.g. an unquoted bracket inside a label); quote the label or simplify the id', line: ln });
       }
     }
     return { index, supported: true, issues };
@@ -364,6 +391,13 @@ export function flowRelabel(src: FlowSource, id: string, newLabel: string, opts?
   // the subgraph-title editor — otherwise relabelling a subgraph returns a misleading
   // "Node not found".
   const isSubgraph = picked.block.subgraphs.some((s) => s.id === id);
+  // A node id declared more than once would relabel only the FIRST declaration (the
+  // parser keeps the first-seen), leaving the others divergent on a false ok:true.
+  // Refuse instead — the duplicate is malformed; converge it first. (flow_rename is
+  // safe here: it line-scans and rewrites every occurrence.)
+  if (!isSubgraph && findDuplicateDeclarations(picked.block, splitLines(r.text)).some((d) => d.id === id)) {
+    return { ok: false, error: `"${id}" has more than one declaration — relabel is ambiguous; converge the duplicate declarations first.` };
+  }
   const result = isSubgraph
     ? computeSubgraphLabelEdit(picked.block, splitLines(r.text), id, newLabel)
     : computeLabelEdit(picked.block, id, newLabel);
