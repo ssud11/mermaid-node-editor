@@ -4,13 +4,14 @@ examples/**
 out/**
 node_modules/**
 test/**
+mermaid-node-core/**
 src/**/*.ts
 **/*.map
 **/tsconfig.json
 esbuild.config.js
 **/.DS_Store
 *.vsix
-*.md
+**/*.md
 !README.md
 !CHANGELOG.md
 package-lock.json

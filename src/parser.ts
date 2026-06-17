@@ -1,57 +1,154 @@
-// Mermaid flowchart parser (v1).
+// Utility shim: re-exports the block-finding API from mermaid-node-core and
+// retains the three helpers that the extension uses but the core does not
+// expose publicly (scanNodes, RESERVED, hasOverBracketedShape).
 //
-// Pure and vscode-free on purpose: it operates on plain strings + line/column
-// numbers so it can be unit-tested in plain Node and reused by the write-back
-// layer. Parsing is regex line-by-line (NOT the mermaid npm AST) per the v1
-// build plan — flowcharts only (`graph`/`flowchart`).
+// Block-finding (findMermaidBlocks / blockAtLine) now goes through the
+// grammar-backed PEG parser in mermaid-node-core. The utilities below are
+// extension-side logic that intentionally stays here.
+
+// ---- Types ------------------------------------------------------------------
+// Kept here so every import site continues to see concrete types.
+// The core uses plain JS (no .d.ts yet). Until a hand-written declaration file
+// is added, TS infers `any` for values that come back from the core, so we
+// declare the types here and expose them through the typed wrappers below.
 
 export type Quote = '' | '"' | "'";
 
 export interface MermaidNode {
   id: string;
   label: string;
-  line: number; // 0-based absolute line in the document
-  startChar: number; // start column of the raw node text (the id)
-  endChar: number; // end column (exclusive) of the raw node text
-  labelStart: number; // start column of the label *content* (inside quotes)
-  labelEnd: number; // end column (exclusive) of the label content
-  raw: string; // original text, e.g. 'A[Session open]'
-  open: string; // opening bracket token, e.g. '[' or '([' or '{{'
-  close: string; // matching closing bracket token, e.g. ']' or '])'
-  quote: Quote; // quote char wrapping the label, '' if unquoted
+  line: number;
+  startChar: number;
+  endChar: number;
+  labelStart: number;
+  labelEnd: number;
+  open: string;
+  close: string;
+  quote: Quote;
+  // `raw` is NOT present on nodes returned by the core parser. All callers
+  // that previously used node.raw have been ported to structural derivations.
 }
 
 export interface MermaidSubgraph {
   id: string;
   label: string;
   line: number;
-  indent: string;
-  raw: string;
-  hasId: boolean; // false when written as `subgraph "Title"` (no explicit id)
+  // `indent` is NOT present on subgraphs returned by the core parser.
+  // computeSubgraphLabelEdit derives indent directly from the lines array.
+  hasId: boolean;
   quote: Quote;
-  idStart: number; // start column of the id/title token on the line
-  idEnd: number; // end column (exclusive) of the id/title token
+  idStart: number;
+  idEnd: number;
+  members: string[];
+}
+
+export type EdgeStroke = 'solid' | 'dotted' | 'thick';
+export type EdgeHead = 'arrow' | 'open' | 'circle' | 'cross';
+
+export interface EdgeKind {
+  stroke: EdgeStroke;
+  head: EdgeHead;
+  bidirectional: boolean;
 }
 
 export interface MermaidEdge {
   from: string;
   to: string;
   line: number;
+  label?: string;
+  // The core stores stroke/head/bidirectional as FLAT fields on the edge
+  // (no nested EdgeKind object). External API callers wrap them
+  // back into the nested form to preserve their response contract.
+  // The extension sidebar never reads edge.kind directly.
+  kind: EdgeKind;
 }
 
 export interface MermaidBlock {
-  startLine: number; // line of the ```mermaid fence (0 for .mmd)
-  endLine: number; // line of the closing ``` (last line for .mmd)
-  contentStart: number; // first line of diagram content
-  contentEnd: number; // one past the last content line (exclusive)
-  diagramType: string; // e.g. 'graph TD', 'flowchart LR', or the raw first line
-  supported: boolean; // false for non-flowchart diagram types (v1 scope)
+  startLine: number;
+  endLine: number;
+  contentStart: number;
+  contentEnd: number;
+  diagramType: string;
+  supported: boolean;
+  /** The parser's reason when `supported` is false (a hard parse failure);
+   *  undefined when the block parses. Surfaced as an Error diagnostic. */
+  parseError?: string;
+  /** 0-based document line/column of the parse failure (for a precise squiggle);
+   *  undefined when the block parses or the location is unavailable. */
+  parseErrorLine?: number;
+  parseErrorColumn?: number;
   nodes: MermaidNode[];
   subgraphs: MermaidSubgraph[];
   edges: MermaidEdge[];
 }
 
-// Bracket shapes, longest-open-token first so e.g. `([` matches before `(`.
+// ---- Core block API (re-exported with concrete types) -----------------------
+// The core is a plain-JS ESM module; we load it via require() (esbuild handles
+// ESM→CJS at bundle time) and re-export with TypeScript signatures so callers
+// stay fully typed.
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+// Load the core. Resolution approach:
+//   - esbuild bundles: the coreResolvePlugin in esbuild.config.js intercepts
+//     any path containing 'mermaid-node-core' and redirects to the absolute
+//     path of the core's index.js — the literal here is irrelevant at bundle time.
+//   - tsc + node --test: `require.resolve` walks from __dirname at runtime, so
+//     the compiled output file's directory is used. We locate the core by
+//     searching parent directories for 'mermaid-node-core' from __filename.
+//     Using `node:module` createRequire on the closest package.json isn't portable,
+//     so we use a small runtime search instead.
+// In an esbuild bundle, `__MNE_BUNDLE__` is defined `true`, so core is INLINED via a
+// STATIC specifier the core-remap plugin intercepts — the packaged build excludes the
+// core source tree, so it MUST be inlined, never resolved at runtime. esbuild constant-
+// folds the guard and DCE-drops the parent-dir walk below.
+declare const __MNE_BUNDLE__: boolean | undefined;
+function _loadCore(): {
+  findMermaidBlocks: (text: string, isMmd: boolean) => MermaidBlock[];
+  blockAtLine: (blocks: MermaidBlock[], line: number, isMmd: boolean) => MermaidBlock | undefined;
+} {
+  // Bundle path: a STATIC require the esbuild core-remap plugin (filter
+  // /mermaid-node-core/) intercepts and inlines. `typeof` is safe when undefined.
+  if (typeof __MNE_BUNDLE__ !== 'undefined') {
+    return require('../../mermaid-node-core/src/index.js');
+  }
+  // tsc + node:test: no bundler — walk parent dirs from the compiled file location
+  // (../../ from out/src reaches the project root).
+  const literals = [
+    '../../mermaid-node-core/src/index.js',
+    '../../../mermaid-node-core/src/index.js',
+    '../../../../mermaid-node-core/src/index.js',
+  ];
+  const nodePath = require('node:path') as typeof import('node:path');
+  for (const rel of literals) {
+    const abs = nodePath.resolve(__dirname, rel);
+    try {
+      return require(abs);
+    } catch {
+      // not found at this depth, try next
+    }
+  }
+  throw new Error(
+    `mermaid-node-core not found from ${__dirname}. ` +
+      `Run 'npm run build:parser' in the mermaid-node-core directory first.`
+  );
+}
+const _core = _loadCore();
+/* eslint-enable @typescript-eslint/no-require-imports */
+
+/** Find every Mermaid flowchart block in a document (core parser). */
+export const findMermaidBlocks: (text: string, isMmd: boolean) => MermaidBlock[] =
+  _core.findMermaidBlocks;
+
+/** Pick the block containing a given line. */
+export const blockAtLine: (
+  blocks: MermaidBlock[],
+  line: number,
+  isMmd: boolean
+) => MermaidBlock | undefined = _core.blockAtLine;
+
+// ---- Utilities retained from the original parser ----------------------------
+
+// Bracket shapes, longest open token first so `([` matches before `(`.
 const OPEN_TO_CLOSE: Record<string, string> = {
   '([': '])',
   '[[': ']]',
@@ -61,18 +158,15 @@ const OPEN_TO_CLOSE: Record<string, string> = {
   '[': ']',
   '(': ')',
   '{': '}',
-  '>': ']', // asymmetric node `A>label]`
+  '>': ']',
 };
 
-// id immediately followed by one of the opening bracket tokens (multi-char first).
+// id immediately followed by one of the opening bracket tokens.
 const ID_OPEN_RE = /([A-Za-z0-9_]+)(\(\[|\[\[|\[\(|\(\(|\{\{|\[|\(|\{|>)/g;
 
-const ID_TOKEN = /^[A-Za-z0-9_]+$/;
-
 /**
- * Find every node *definition* on a single line. A definition is an id directly
+ * Find every node definition on a single line. A definition is an id directly
  * followed by a bracketed label, e.g. `A[Start]`, `B(("Round"))`, `C{Decision}`.
- * Bare id references (in edges) are not definitions and are not returned here.
  */
 export function scanNodes(line: string, lineNumber: number): MermaidNode[] {
   const nodes: MermaidNode[] = [];
@@ -83,7 +177,6 @@ export function scanNodes(line: string, lineNumber: number): MermaidNode[] {
     const open = m[2];
     const idStart = m.index;
 
-    // Reject if the id is actually the tail of a longer identifier.
     if (idStart > 0 && /[A-Za-z0-9_]/.test(line[idStart - 1])) {
       ID_OPEN_RE.lastIndex = idStart + id.length;
       continue;
@@ -106,11 +199,11 @@ export function scanNodes(line: string, lineNumber: number): MermaidNode[] {
       quote = first;
       const qEnd = line.indexOf(quote, afterOpen + 1);
       if (qEnd === -1) {
-        continue; // unterminated quote
+        continue;
       }
       const idx = line.indexOf(close, qEnd + 1);
       if (idx === -1 || line.slice(qEnd + 1, idx).trim() !== '') {
-        continue; // close token missing or stray text between quote and close
+        continue;
       }
       contentStart = afterOpen + 1;
       contentEnd = qEnd;
@@ -136,7 +229,6 @@ export function scanNodes(line: string, lineNumber: number): MermaidNode[] {
       endChar,
       labelStart: contentStart,
       labelEnd: contentEnd,
-      raw: line.slice(idStart, endChar),
       open,
       close,
       quote,
@@ -146,251 +238,33 @@ export function scanNodes(line: string, lineNumber: number): MermaidNode[] {
   return nodes;
 }
 
-function stripQuotes(text: string): { value: string; quote: Quote } {
-  const t = text.trim();
-  if (t.length >= 2 && (t[0] === '"' || t[0] === "'") && t[t.length - 1] === t[0]) {
-    return { value: t.slice(1, -1), quote: t[0] as Quote };
-  }
-  return { value: t, quote: '' };
-}
-
-function parseSubgraph(line: string, lineNumber: number): MermaidSubgraph | undefined {
-  const m = /^(\s*)subgraph\b\s*(.*)$/.exec(line);
-  if (!m) {
-    return undefined;
-  }
-  const indent = m[1];
-  const rest = m[2].trim();
-
-  // Column where the content after the `subgraph` keyword begins (the id/title).
-  let cs = indent.length + 'subgraph'.length;
-  while (cs < line.length && /\s/.test(line[cs])) {
-    cs++;
-  }
-
-  // `subgraph id [Title]`
-  const withBracket = /^([A-Za-z0-9_]+)\s*\[(.*)\]\s*$/.exec(rest);
-  if (withBracket) {
-    const inner = stripQuotes(withBracket[2]);
-    return {
-      id: withBracket[1],
-      label: inner.value,
-      line: lineNumber,
-      indent,
-      raw: line,
-      hasId: true,
-      quote: inner.quote,
-      idStart: cs,
-      idEnd: cs + withBracket[1].length,
-    };
-  }
-
-  // `subgraph "Title"` / `subgraph 'Title'`
-  if ((rest.startsWith('"') && rest.endsWith('"')) || (rest.startsWith("'") && rest.endsWith("'"))) {
-    const inner = stripQuotes(rest);
-    return { id: inner.value, label: inner.value, line: lineNumber, indent, raw: line, hasId: false, quote: inner.quote, idStart: cs, idEnd: cs + rest.length };
-  }
-
-  // `subgraph plainId`
-  if (ID_TOKEN.test(rest)) {
-    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: true, quote: '', idStart: cs, idEnd: cs + rest.length };
-  }
-
-  // `subgraph Some free text title`
-  if (rest.length > 0) {
-    return { id: rest, label: rest, line: lineNumber, indent, raw: line, hasId: false, quote: '', idStart: cs, idEnd: cs + rest.length };
-  }
-
-  return undefined;
-}
-
-// Build a "skeleton" of a line where every node definition is collapsed to its
-// id, so edge detection isn't confused by bracketed label text.
-function edgeSkeleton(line: string, nodes: MermaidNode[]): string {
-  let out = '';
-  let last = 0;
-  for (const n of [...nodes].sort((a, b) => a.startChar - b.startChar)) {
-    out += line.slice(last, n.startChar) + n.id;
-    last = n.endChar;
-  }
-  out += line.slice(last);
-  return out;
-}
-
-const ARROW_SPLIT = /\s*[<xo]?[-.=]{2,}[->xo]?\s*/;
-
-function parseEdges(line: string, lineNumber: number, nodes: MermaidNode[]): MermaidEdge[] {
-  let skeleton = edgeSkeleton(line, nodes);
-  skeleton = skeleton.replace(/\|[^|]*\|/g, ' '); // drop |edge labels|
-  // Drop inline edge labels (`A -- text --> B`, glued `A --text--> B`, dotted/thick
-  // forms) so the label prose isn't split out as a phantom node endpoint. The
-  // opening operator must NOT be an arrowhead (the `(?![>xo])` lookahead) so a
-  // chained edge `A --> B --> C` keeps B as a real node.
-  skeleton = skeleton.replace(/(?<=^|\s)[<xo]?[-.=]{2,}(?![>xo])\s*.+?\s*[-.=]{2,}[>xo]?(?=\s|$)/g, ' --> ');
-  const edges: MermaidEdge[] = [];
-  // `;` terminates/separates Mermaid statements (`A-->B; C-->D`). Parse each
-  // statement independently: otherwise a trailing `;` drops the edge (`B;` fails
-  // the id test) and two statements on one line synthesize a spurious cross-edge.
-  for (const stmt of skeleton.split(';')) {
-    const ids = stmt
-      .split(ARROW_SPLIT)
-      .map((p) => p.trim())
-      .filter((p) => ID_TOKEN.test(p));
-    for (let k = 0; k < ids.length - 1; k++) {
-      edges.push({ from: ids[k], to: ids[k + 1], line: lineNumber });
-    }
-  }
-  return edges;
-}
-
-function buildBlock(
-  lines: string[],
-  startLine: number,
-  contentStart: number,
-  contentEnd: number,
-  endLine: number
-): MermaidBlock {
-  const block: MermaidBlock = {
-    startLine,
-    endLine,
-    contentStart,
-    contentEnd,
-    diagramType: '',
-    supported: false,
-    nodes: [],
-    subgraphs: [],
-    edges: [],
-  };
-
-  // Skip a leading YAML frontmatter block (`--- ... ---`) that Mermaid allows
-  // before the diagram keyword (title:/config:/id:). Advance contentStart PAST it
-  // so node scanning AND the analysis/edit layers (which iterate
-  // contentStart..contentEnd) never treat frontmatter as diagram content — e.g. a
-  // node named `id` must not collide with a `id: <uuid>` frontmatter key. Without
-  // the skip the opening `---` is also taken as the diagram type and a valid
-  // flowchart is wrongly marked unsupported.
-  let first = block.contentStart;
-  while (first < contentEnd && (lines[first].trim() === '' || lines[first].trim().startsWith('%%'))) {
-    first++;
-  }
-  if (first < contentEnd && lines[first].trim() === '---') {
-    let j = first + 1;
-    while (j < contentEnd && lines[j].trim() !== '---') {
-      j++;
-    }
-    if (j >= contentEnd) {
-      return block; // unterminated frontmatter — malformed; leave unsupported
-    }
-    block.contentStart = j + 1;
-  }
-
-  // First meaningful content line decides the diagram type.
-  for (let i = block.contentStart; i < contentEnd; i++) {
-    const t = lines[i].trim();
-    if (t === '' || t.startsWith('%%')) {
-      continue;
-    }
-    const dt = /^(graph|flowchart)\b\s*([A-Za-z]{1,2})?/i.exec(t);
-    block.diagramType = t;
-    block.supported = !!dt;
-    break;
-  }
-
-  if (!block.supported) {
-    return block;
-  }
-
-  const nodesById = new Map<string, MermaidNode>();
-  for (let i = block.contentStart; i < contentEnd; i++) {
-    const raw = lines[i];
-    const trimmed = raw.trim();
-    if (trimmed === '' || trimmed.startsWith('%%')) {
-      continue;
-    }
-    if (/^end\b/.test(trimmed)) {
-      continue;
-    }
-
-    const sg = parseSubgraph(raw, i);
-    if (sg) {
-      block.subgraphs.push(sg);
-      continue; // don't treat a subgraph title as nodes/edges
-    }
-
-    const lineNodes = scanNodes(raw, i);
-    for (const n of lineNodes) {
-      if (!nodesById.has(n.id)) {
-        nodesById.set(n.id, n);
-      }
-    }
-    block.edges.push(...parseEdges(raw, i, lineNodes));
-  }
-
-  block.nodes = [...nodesById.values()];
-  return block;
-}
-
-// A markdown code-fence line: 3+ backticks (or tildes), then an optional info
-// string (first non-space token decides the language).
-const FENCE = /^(\s*)(`{3,}|~{3,})\s*(\S*)/;
+/** Mermaid keywords that are NOT valid node ids. */
+export const RESERVED = new Set([
+  'graph',
+  'flowchart',
+  'subgraph',
+  'end',
+  'direction',
+  'click',
+  'class',
+  'classDef',
+  'style',
+  'linkStyle',
+  'default',
+]);
 
 /**
- * Find every Mermaid block in a document.
- *  - `.mmd` / `.mermaid` (isMmd=true): the whole file is one block.
- *  - markdown (isMmd=false): each fenced ```mermaid ... ``` block.
+ * True when a node uses an over-long opening-bracket run (`(((`, `[[[`, `{{{`)
+ * that is not a supported Mermaid shape. Derived structurally from node.open
+ * and node.label (the core no longer provides node.raw).
  *
- * The markdown scan is fence-aware: it walks code fences and skips their
- * CONTENT, so a ```mermaid that is itself nested inside an outer fence (e.g. a
- * ````markdown example) is not mistaken for a live diagram, and an UNTERMINATED
- * ```mermaid fence does not swallow the rest of the file (which would otherwise
- * let a write-back rewrite ordinary prose). A closing fence must use the same
- * marker and be at least as long as the opener (CommonMark).
+ * The scanner greedily matches the 2-char open (`((`) so for a `(((` run:
+ *   open = `((`, label starts with `(`.
+ * Detect by checking whether the label begins with the same bracket character
+ * as the open token.
  */
-export function findMermaidBlocks(text: string, isMmd: boolean): MermaidBlock[] {
-  const lines = text.split(/\r?\n/);
-
-  if (isMmd) {
-    return [buildBlock(lines, 0, 0, lines.length, Math.max(0, lines.length - 1))];
-  }
-
-  const blocks: MermaidBlock[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const open = FENCE.exec(lines[i]);
-    if (!open) {
-      i++;
-      continue;
-    }
-    const fenceChar = open[2][0]; // '`' or '~'
-    const len = open[2].length;
-    const info = open[3].toLowerCase();
-    const closeRe = new RegExp('^\\s*' + fenceChar + '{' + len + ',}\\s*$');
-    let j = i + 1;
-    while (j < lines.length && !closeRe.test(lines[j])) {
-      j++;
-    }
-    if (j >= lines.length) {
-      // Unterminated fence — not a valid block. Skip only this opener line so a
-      // stray fence cannot capture the remainder of the document.
-      i++;
-      continue;
-    }
-    if (info === 'mermaid') {
-      blocks.push(buildBlock(lines, i, i + 1, j, j));
-    }
-    i = j + 1; // resume after the closing fence (its content is consumed)
-  }
-  return blocks;
-}
-
-/**
- * Pick the block containing a given line. For `.mmd` the whole file is one block,
- * so the first (only) block is always returned. Pure counterpart of the panel's
- * cursor→block lookup so providers/diagnostics can share it.
- */
-export function blockAtLine(blocks: MermaidBlock[], line: number, isMmd: boolean): MermaidBlock | undefined {
-  if (isMmd) {
-    return blocks[0];
-  }
-  return blocks.find((b) => line >= b.startLine && line <= b.endLine);
+export function hasOverBracketedShape(node: Pick<MermaidNode, 'open' | 'label'>): boolean {
+  if (!node.open) return false;
+  const leakChar = node.open[0];
+  return node.open.length === 2 && node.label.startsWith(leakChar);
 }
