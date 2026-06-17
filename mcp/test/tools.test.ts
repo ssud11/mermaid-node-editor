@@ -281,6 +281,50 @@ test('flow_validate: a hyphen INSIDE a label is not flagged as a malformed id', 
   assert.equal(v.blocks[0].issues.some((i) => i.code === 'malformed-id'), false);
 });
 
+// ---- regression: pipe-label & dash-label false positives (2026-06-17) ----
+// A `&` or hyphen INSIDE a pipe-label (|text|) or dash-label (-- text -->) is ordinary
+// text, not a structure marker — must not false-trigger unsupported-fanout or malformed-id.
+
+test('flow_validate: an & inside a pipe-label is not flagged as fan-out', () => {
+  const v = flowValidate({ text: 'flowchart TD\na[A] -->|ok & done| b[B]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'unsupported-fanout'), false);
+});
+
+test('flow_validate: a hyphen inside a pipe-label is not flagged as a malformed id', () => {
+  const v = flowValidate({ text: 'flowchart TD\na[A] -->|step-by-step| b[B]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'malformed-id'), false);
+});
+
+test('flow_validate: an & inside a dash-label is not flagged as fan-out', () => {
+  const v = flowValidate({ text: 'flowchart TD\na[A] -- ok & done --> b[B]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'unsupported-fanout'), false);
+});
+
+test('flow_validate: a hyphen inside a dash-label is not flagged as a malformed id', () => {
+  const v = flowValidate({ text: 'flowchart TD\na[A] -- step-by-step --> b[B]' });
+  assert.equal(v.blocks[0].issues.some((i) => i.code === 'malformed-id'), false);
+});
+
+// Regression: the fix must not suppress the REAL probes. A genuine & fan-out on the
+// structural spine MUST still warn, and a real hyphenated id MUST still warn.
+test('flow_validate: a real & fan-out (not in a label) still warns unsupported-fanout', () => {
+  const v = flowValidate({ text: 'flowchart TD\nstart[Start]\na[A]\nb[B]\nstart --> a & b' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'unsupported-fanout'));
+});
+
+test('flow_validate: a real hyphenated id (not in a label) still warns malformed-id', () => {
+  const v = flowValidate({ text: 'flowchart TD\nreceive-order[Receive order] --> in-stock{In stock?}' });
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'malformed-id'));
+});
+
+// A bare `---`/`-- ` link (NO matching `-->` closer) is NOT a dash-label, so a
+// hyphenated TARGET after it must still warn — guards against over-blanking the whole
+// rest of the line as a phantom dash-label (the escalated fix to the dash handling).
+test('flow_validate: a hyphenated target after a bare --- / -- link still warns malformed-id', () => {
+  assert.ok(flowValidate({ text: 'flowchart TD\na --- one-two' }).blocks[0].issues.some((i) => i.code === 'malformed-id'));
+  assert.ok(flowValidate({ text: 'flowchart TD\na -- one-two' }).blocks[0].issues.some((i) => i.code === 'malformed-id'));
+});
+
 test('flow_validate: warns on a reserved-keyword id used on an edge line', () => {
   const v = flowValidate({ text: 'flowchart TD\nA[Start] --> end\nend --> B[Finish]' });
   assert.ok(v.blocks[0].issues.some((i) => i.code === 'reserved-id-edge'));

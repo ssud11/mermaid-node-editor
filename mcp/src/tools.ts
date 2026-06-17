@@ -29,21 +29,30 @@ function emptyQuery(id: string, blockIndex: number | null, error: string) {
   };
 }
 
-// `structuralPart(line)` blanks all node-label / quoted-string content (anything at
-// bracket-depth > 0) to spaces, leaving only the depth-0 STRUCTURE — ids, link
-// operators, `&`, hyphens. flow_validate's silent-drop probes run on this so a `&`,
-// hyphen, or arrow-like sequence INSIDE a label is never mistaken for structure.
+// `structuralPart(line)` blanks all node-label / quoted-string / pipe-label / dash-label
+// content to spaces, leaving only the depth-0 STRUCTURE — ids, link operators, `&`, hyphens.
+// flow_validate's silent-drop probes run on this so a `&`, hyphen, or arrow-like
+// sequence INSIDE a label (quoted, pipe-delimited, or dash-delimited) is never mistaken
+// for structure. Dash labels like `-- text -->` are blanked between `--` (not `-->`) and
+// the closing `-->`.
 function structuralPart(line: string): string {
   let out = '';
   let depth = 0;
   let quote = '';
+  let pipe = false;
   for (const c of line) {
-    if (quote) {
+    if (pipe) {
+      out += ' ';
+      if (c === '|') pipe = false; // close the |edge label|
+    } else if (quote) {
       out += ' ';
       if (c === quote) quote = '';
     } else if (c === '"' || c === "'") {
       out += ' ';
       quote = c;
+    } else if (c === '|' && depth === 0) {
+      out += ' ';
+      pipe = true; // open a pipe edge-label `-->|text|`
     } else if (c === '[' || c === '(' || c === '{') {
       out += ' ';
       depth++;
@@ -54,7 +63,13 @@ function structuralPart(line: string): string {
       out += depth === 0 ? c : ' ';
     }
   }
-  return out;
+  // Blank INLINE edge-label text too (`A -- text --> B`, `A == t ==> B`, `A -. t .-> B`).
+  // Reuses the parser's vetted opener pattern: the `(?![>xo])` lookahead means a plain
+  // `-->` arrowhead is NOT an opener, and the inner requires a MATCHING closing operator
+  // — so a bare `A --- B` / `A -- B` link (no closer) is correctly left intact (not
+  // blanked), which a naive `--`-opener state machine gets wrong.
+  const inlineLabelRe = /(?<=^|\s)([<xo]?[-.=]{2,}(?![>xo])\s*)(.+?)(\s*[-.=]{2,}[>xo]?)(?=\s|$)/g;
+  return out.replace(inlineLabelRe, (_m, open, inner, close) => open + ' '.repeat(inner.length) + close);
 }
 
 // True when a node label opens a quote (right after a shape bracket) that never closes
