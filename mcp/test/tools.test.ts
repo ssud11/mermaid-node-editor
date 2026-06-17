@@ -187,6 +187,26 @@ test('flow_relabel: retitles a subgraph when the id is a subgraph (not "node not
   assert.match(r.newText, /A\[x\] --> B\[y\]/); // body untouched
 });
 
+// An id used for both a node and a subgraph is ambiguous — relabel must reject it,
+// not perform a silent partial write (subgraph title only). flowValidate already warns
+// 'node-and-subgraph' on this; flowRelabel should refuse the operation.
+test('flow_relabel: rejects when id is both a node and subgraph (ambiguous)', () => {
+  const ambiguous = 'flowchart TD\nsubgraph foo [Phase]\nA[Node]\nend\nfoo[Also a node]\nB --> foo';
+  const result = flowRelabel({ text: ambiguous }, 'foo', 'New Label') as { ok: false; error: string } | { ok: true };
+  assert.equal(result.ok, false);
+});
+
+// Normal node relabel and normal subgraph relabel must still work.
+test('flow_relabel: normal cases still work (non-ambiguous node and subgraph)', () => {
+  const text1 = flowRelabel({ text: 'graph TD\nA[Old]' }, 'A', 'New Label') as { ok: boolean; newText: string };
+  assert.equal(text1.ok, true);
+  assert.match(text1.newText, /A\[New Label\]/);
+
+  const text2 = flowRelabel({ text: 'graph TD\nsubgraph S [Old]\nX --> Y\nend' }, 'S', 'New Phase') as { ok: boolean; newText: string };
+  assert.equal(text2.ok, true);
+  assert.match(text2.newText, /subgraph S \[New Phase\]/);
+});
+
 // The literal ```mermaid string INSIDE a node label must NOT flip a raw flowchart
 // into markdown mode (which yielded zero blocks). A real leading fence still does.
 test('resolveSource: a fence string inside a label stays raw .mmd; a real leading fence is markdown', () => {

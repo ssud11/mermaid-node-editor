@@ -395,7 +395,11 @@ export function flowRelabel(src: FlowSource, id: string, newLabel: string, opts?
   // parser keeps the first-seen), leaving the others divergent on a false ok:true.
   // Refuse instead — the duplicate is malformed; converge it first. (flow_rename is
   // safe here: it line-scans and rewrites every occurrence.)
-  if (!isSubgraph && findDuplicateDeclarations(picked.block, splitLines(r.text)).some((d) => d.id === id)) {
+  const dups = findDuplicateDeclarations(picked.block, splitLines(r.text)).filter((d) => d.id === id);
+  if (dups.some((d) => d.reason === 'node-and-subgraph')) {
+    return { ok: false, error: `"${id}" is used for both a node and a subgraph — relabel is ambiguous; use a unique id for each.` };
+  }
+  if (!isSubgraph && dups.length > 0) {
     return { ok: false, error: `"${id}" has more than one declaration — relabel is ambiguous; converge the duplicate declarations first.` };
   }
   const result = isSubgraph
