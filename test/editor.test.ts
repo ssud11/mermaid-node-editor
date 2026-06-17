@@ -368,6 +368,18 @@ test('computeLabelEdit: a non-string newLabel returns ok:false (no throw)', () =
   assert.match(r.error || '', /must be a string/);
 });
 
+test('computeLabelEdit: refuses an over-bracketed `(((` shape instead of corrupting (R14-2)', () => {
+  // `done(((Complete)))` mis-parses (open=`((`, label=`(Complete`); a naive relabel
+  // would emit `done((New)))` and orphan the trailing `)`. Refuse instead.
+  const r = computeLabelEdit(block('flowchart TD\ndone(((Complete)))').block, 'done', 'Finished');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /unsupported bracket shape|\(\(\(/);
+  assert.deepEqual(r.edits, []); // no edit emitted -> no source corruption
+  // A normal double-paren circle still relabels fine (no false-refuse).
+  const ok = computeLabelEdit(block('flowchart TD\nfin((Complete))').block, 'fin', 'Finished');
+  assert.equal(ok.ok, true);
+});
+
 // --- regression: /qa-explore dogfood round 8 (2026-06-16) ---
 
 test('computeIdRename: renaming a node named `end` leaves the subgraph closer intact', () => {

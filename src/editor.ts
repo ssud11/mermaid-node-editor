@@ -5,7 +5,7 @@
 // panel converts these to vscode.Range + WorkspaceEdit and applies them. This
 // keeps the load-bearing rename/relabel logic unit-testable in plain Node.
 
-import { MermaidBlock, MermaidNode, RESERVED, scanNodes } from './parser';
+import { MermaidBlock, MermaidNode, RESERVED, scanNodes, hasOverBracketedShape } from './parser';
 
 export interface TextEditDesc {
   line: number;
@@ -71,6 +71,13 @@ export function computeLabelEdit(block: MermaidBlock, nodeId: string, newLabel: 
       ? `"${nodeId}" is referenced by edges but has no declared label to edit — give it a shape first (e.g. ${nodeId}[Label]).`
       : `Node "${nodeId}" not found in this diagram.`;
     return { ok: false, edits: [], error };
+  }
+  // An over-bracketed shape (`(((`, `[[[`, `{{{`) mis-parses: the scanner captured the
+  // 2-char open + a label with a leaked bracket, so a rebuilt node would leave the
+  // extra closing bracket as residue (`done(((x)))` -> `done((New)))`). Refuse rather
+  // than corrupt — the shape is unsupported; fix it to a documented shape first (R14-2).
+  if (hasOverBracketedShape(node)) {
+    return { ok: false, edits: [], error: `"${nodeId}" uses an unsupported bracket shape (e.g. \`(((\`); a relabel would corrupt the source — change it to a documented shape (e.g. \`((${nodeId}))\`) first.` };
   }
   // A raw line break inside a label corrupts the source (splices a newline inside the
   // bracket, so the node + its edges vanish on re-parse). Mermaid uses <br/>, not \n.

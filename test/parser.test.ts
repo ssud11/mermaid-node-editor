@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findMermaidBlocks, scanNodes, blockAtLine } from '../src/parser';
+import { findMermaidBlocks, scanNodes, blockAtLine, hasOverBracketedShape } from '../src/parser';
 
 test('scanNodes: basic rectangle node', () => {
   const nodes = scanNodes('A[Start]', 0);
@@ -461,4 +461,16 @@ test('reversed `<--` arrow: from/to follow Mermaid semantics (`B <-- C` is C->B)
   const bd = findMermaidBlocks('flowchart LR\nA[a] <--> B[b]', true)[0];
   assert.equal(bd.edges[0].kind.bidirectional, true);
   assert.deepEqual([bd.edges[0].from, bd.edges[0].to], ['A', 'B']);
+});
+
+test('hasOverBracketedShape: flags `(((`/`[[[`/`{{{` runs, not the documented shapes (R14-2)', () => {
+  const over = (src: string) => hasOverBracketedShape(scanNodes(src, 0)[0]);
+  // over-bracket runs (unsupported, mis-parsed) -> true
+  assert.equal(over('done(((Complete)))'), true);
+  assert.equal(over('x[[[y]]]'), true);
+  assert.equal(over('z{{{w}}}'), true);
+  // every documented v1 shape -> false (no false-positive)
+  for (const s of ['A[r]', 'A(r)', 'A([r])', 'A[[r]]', 'A[(r)]', 'A((r))', 'A{r}', 'A{{r}}', 'A>r]']) {
+    assert.equal(over(s), false, `${s} must NOT be flagged over-bracketed`);
+  }
 });

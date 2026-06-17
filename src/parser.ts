@@ -158,6 +158,16 @@ export function scanNodes(line: string, lineNumber: number): MermaidNode[] {
   return nodes;
 }
 
+// An over-long opening-bracket run (`(((`, `[[[`, `{{{`) is NOT a supported shape.
+// The scanner greedily matches the 2-char open (`((`) and the third bracket leaks into
+// the label — so the read tools return a silently-wrong label/shape and a relabel
+// corrupts the trailing bracket. Detect it from node.raw (which begins `id` + the
+// bracket run) so callers can WARN (flow_validate) / REFUSE (relabel) instead of
+// silently mis-handling it. Structural (a bracket-run test), so no label false-positives.
+export function hasOverBracketedShape(node: Pick<MermaidNode, 'raw' | 'id'>): boolean {
+  return /^(\(\(\(|\[\[\[|\{\{\{)/.test(node.raw.slice(node.id.length));
+}
+
 function stripQuotes(text: string): { value: string; quote: Quote } {
   const t = text.trim();
   if (t.length >= 2 && (t[0] === '"' || t[0] === "'") && t[t.length - 1] === t[0]) {

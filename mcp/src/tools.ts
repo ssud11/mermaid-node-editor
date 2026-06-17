@@ -2,7 +2,7 @@
 // server.ts wires these to registerTool. All reuse the vscode-free parser/editor/
 // analysis layer — no logic is duplicated here.
 import { writeFileSync } from 'node:fs';
-import { RESERVED, type MermaidBlock } from '../../src/parser';
+import { RESERVED, hasOverBracketedShape, type MermaidBlock } from '../../src/parser';
 import { computeIdRename, computeLabelEdit, computeSubgraphLabelEdit, type EditResult } from '../../src/editor';
 import { collectIds, findDeclaration, findDuplicateDeclarations } from '../../src/analysis';
 import { resolveSource, getBlocks, pickBlock, type FlowSource, type ResolvedSource } from './resolve';
@@ -263,6 +263,12 @@ export function flowValidate(src: FlowSource) {
     for (const n of b.nodes) {
       if (n.open !== '' && n.label.trim() === '') {
         issues.push({ severity: 'warning', code: 'empty-label', message: `node "${n.id}" has an empty label`, line: n.line });
+      }
+      // An over-bracketed shape (`(((`, `[[[`, `{{{`) is not a supported shape — the
+      // scanner mis-parses the label/shape and a relabel would corrupt the source.
+      // Warn instead of staying silently clean (relabel itself refuses; R14-2).
+      if (hasOverBracketedShape(n)) {
+        issues.push({ severity: 'warning', code: 'unsupported-shape', message: `node "${n.id}" uses an over-bracketed shape (e.g. \`(((\`) that is not supported in v1; its label/shape is misread and a relabel would corrupt the source — use a documented shape (e.g. \`((${n.id}))\`)`, line: n.line });
       }
     }
     // ids on a `&` fan-out line — their edges aren't parsed, so without this they'd

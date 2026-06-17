@@ -436,6 +436,24 @@ test('flow_validate: an asymmetric >] node does not false-warn unbalanced-bracke
   assert.equal(v.blocks[0].issues.some((i) => i.code === 'unbalanced-bracket'), false);
 });
 
+// R14-2: an over-bracketed `(((` shape mis-parses silently (validate stayed ok:true) and
+// a relabel then corrupted the source. Validate must WARN, and relabel must REFUSE.
+test('flow_validate: an over-bracketed `(((` shape warns unsupported-shape (was silently clean)', () => {
+  const v = flowValidate({ text: 'flowchart TD\ndone(((Complete)))' });
+  // the clean signal is ok:true AND zero issues — the warning breaks the false-clean
+  assert.ok(v.blocks[0].issues.some((i) => i.code === 'unsupported-shape'));
+  // a normal circle must NOT false-warn
+  const ok = flowValidate({ text: 'flowchart TD\nfin((Complete))' });
+  assert.ok(!ok.blocks[0].issues.some((i) => i.code === 'unsupported-shape'));
+});
+
+test('flow_relabel: refuses an over-bracketed `(((` shape rather than corrupting source', () => {
+  const r = flowRelabel({ text: 'flowchart TD\ndone(((Complete)))' }, 'done', 'Finished') as { ok: boolean; error?: string; newText?: string };
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? '', /unsupported bracket shape|\(\(\(/);
+  assert.equal(r.newText, undefined); // no corrupted text emitted
+});
+
 // A nested-bracket label drops its edge with globally-balanced brackets — the catch-all
 // dropped-edge probe must warn (the unbalanced-bracket probe can't see balanced nesting).
 test('flow_validate: a nested-bracket label that drops its edge warns (dropped-edge)', () => {
