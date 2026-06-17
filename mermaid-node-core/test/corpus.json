@@ -1,0 +1,900 @@
+[
+  {
+    "id": "shape-rect",
+    "category": "node-shapes",
+    "input": "graph TD\nA[Rectangle]",
+    "expectNodes": [{ "id": "A", "label": "Rectangle", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Rectangle []"
+  },
+  {
+    "id": "shape-round",
+    "category": "node-shapes",
+    "input": "graph TD\nA(Rounded)",
+    "expectNodes": [{ "id": "A", "label": "Rounded", "shape": "()" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Rounded ()"
+  },
+  {
+    "id": "shape-stadium",
+    "category": "node-shapes",
+    "input": "graph TD\nA([Stadium])",
+    "expectNodes": [{ "id": "A", "label": "Stadium", "shape": "([])" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Stadium ([])"
+  },
+  {
+    "id": "shape-subroutine",
+    "category": "node-shapes",
+    "input": "graph TD\nA[[Subroutine]]",
+    "expectNodes": [{ "id": "A", "label": "Subroutine", "shape": "[[]]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Subroutine [[]]"
+  },
+  {
+    "id": "shape-cylinder",
+    "category": "node-shapes",
+    "input": "graph TD\nA[(Cylinder)]",
+    "expectNodes": [{ "id": "A", "label": "Cylinder", "shape": "[()]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Cylinder [()]"
+  },
+  {
+    "id": "shape-circle",
+    "category": "node-shapes",
+    "input": "graph TD\nA((Circle))",
+    "expectNodes": [{ "id": "A", "label": "Circle", "shape": "(())" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Circle (())"
+  },
+  {
+    "id": "shape-diamond",
+    "category": "node-shapes",
+    "input": "graph TD\nA{Diamond}",
+    "expectNodes": [{ "id": "A", "label": "Diamond", "shape": "{}" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Diamond {}"
+  },
+  {
+    "id": "shape-hexagon",
+    "category": "node-shapes",
+    "input": "graph TD\nA{{Hexagon}}",
+    "expectNodes": [{ "id": "A", "label": "Hexagon", "shape": "{{}}" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Hexagon {{}}"
+  },
+  {
+    "id": "shape-asymmetric",
+    "category": "node-shapes",
+    "input": "graph TD\nA>Asymmetric]",
+    "expectNodes": [{ "id": "A", "label": "Asymmetric", "shape": ">]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Asymmetric >]"
+  },
+  {
+    "id": "shape-rect-edge",
+    "category": "node-shapes",
+    "input": "graph TD\nA[Start] --> B([Stop])",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "Stop", "shape": "([])" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Mixed shapes across an edge"
+  },
+  {
+    "id": "shape-diamond-decision",
+    "category": "node-shapes",
+    "input": "graph TD\nA{Is it ok?} -->|yes| B[Done]",
+    "expectNodes": [
+      { "id": "A", "label": "Is it ok?", "shape": "{}" },
+      { "id": "B", "label": "Done", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "yes" }],
+    "valid": true,
+    "note": "Diamond decision with pipe label"
+  },
+
+  {
+    "id": "arrow-solid-spaced",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] --> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Solid arrow, spaced"
+  },
+  {
+    "id": "arrow-solid-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start]-->B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Solid arrow, COMPACT (no spaces) — the compact (no-space) in-contract case"
+  },
+  {
+    "id": "arrow-solid-left-glued",
+    "category": "arrow-forms",
+    "input": "graph TD\nA-->B[End]",
+    "expectNodes": [{ "id": "B", "label": "End", "shape": "[]" }],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "One-side-glued: bare left, shaped right"
+  },
+  {
+    "id": "arrow-solid-right-glued",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start]-->B",
+    "expectNodes": [{ "id": "A", "label": "Start", "shape": "[]" }],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "One-side-glued: shaped left, bare right"
+  },
+  {
+    "id": "arrow-open-link-spaced",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] --- B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Open link ---, spaced"
+  },
+  {
+    "id": "arrow-open-link-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start]---B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Open link, compact"
+  },
+  {
+    "id": "arrow-thick-spaced",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] ==> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Thick ==>, spaced"
+  },
+  {
+    "id": "arrow-thick-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start]==>B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Thick, compact"
+  },
+  {
+    "id": "arrow-thick-link",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] === B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Thick open link ==="
+  },
+  {
+    "id": "arrow-dotted-spaced",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] -.-> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Dotted -.->, spaced"
+  },
+  {
+    "id": "arrow-dotted-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start]-.->B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Dotted, compact"
+  },
+  {
+    "id": "arrow-dotted-link",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] -.- B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Dotted open link -.-"
+  },
+  {
+    "id": "arrow-bidir-spaced",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] <--> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Bidirectional <-->, spaced"
+  },
+  {
+    "id": "arrow-bidir-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start]<-->B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Bidirectional, compact"
+  },
+  {
+    "id": "arrow-reversed",
+    "category": "arrow-forms",
+    "input": "graph TD\nB[End] <-- C[Start]",
+    "expectNodes": [
+      { "id": "B", "label": "End", "shape": "[]" },
+      { "id": "C", "label": "Start", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "C", "to": "B" }],
+    "valid": true,
+    "note": "Left-pointing <-- reverses: C->B in the model"
+  },
+  {
+    "id": "arrow-pipe-label-spaced",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] -->|yes| B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "yes" }],
+    "valid": true,
+    "note": "Pipe edge label, spaced"
+  },
+  {
+    "id": "arrow-pipe-label-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start]-->|yes|B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "yes" }],
+    "valid": true,
+    "note": "Pipe edge label, compact"
+  },
+  {
+    "id": "arrow-pipe-label-quoted",
+    "category": "arrow-forms",
+    "input": "graph TD\nA --> B -->|\"edge label\"| C",
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "C", "label": "edge label" }
+    ],
+    "valid": true,
+    "note": "Quoted pipe edge label — quotes stripped per Mermaid"
+  },
+  {
+    "id": "arrow-inline-dash-label",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] -- yes --> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "yes" }],
+    "valid": true,
+    "note": "Inline dash edge label -- text -->"
+  },
+  {
+    "id": "arrow-pipe-label-node-syntax",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -->|check(x)| B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "check(x)" }],
+    "valid": true,
+    "note": "Node-like syntax inside a pipe label must NOT register 'check' as a node"
+  },
+  {
+    "id": "arrow-chain-spaced",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] --> B[Middle] --> C[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "Middle", "shape": "[]" },
+      { "id": "C", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "C" }
+    ],
+    "valid": true,
+    "note": "Chained edges on one line"
+  },
+  {
+    "id": "arrow-chain-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA-->B-->C",
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "C" }
+    ],
+    "valid": true,
+    "note": "Chained compact arrows"
+  },
+
+  {
+    "id": "label-unquoted",
+    "category": "labels",
+    "input": "graph TD\nA[Hello World]",
+    "expectNodes": [{ "id": "A", "label": "Hello World", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Unquoted multi-word label"
+  },
+  {
+    "id": "label-double-quoted",
+    "category": "labels",
+    "input": "graph TD\nA[\"Quoted Label\"]",
+    "expectNodes": [{ "id": "A", "label": "Quoted Label", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Double-quoted label"
+  },
+  {
+    "id": "label-single-quoted",
+    "category": "labels",
+    "input": "graph TD\nA['Single Quoted']",
+    "expectNodes": [{ "id": "A", "label": "Single Quoted", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Single-quoted label"
+  },
+  {
+    "id": "label-special-chars-quoted",
+    "category": "labels",
+    "input": "graph TD\nA[\"Has (special) chars\"]",
+    "expectNodes": [{ "id": "A", "label": "Has (special) chars", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Special-char label is quoted; parens inside quotes must not scan as a nested node"
+  },
+  {
+    "id": "label-quoted-with-brackets",
+    "category": "labels",
+    "input": "graph TD\nA[\"a[b]c\"]",
+    "expectNodes": [{ "id": "A", "label": "a[b]c", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Quoted label containing the close bracket char"
+  },
+  {
+    "id": "label-empty",
+    "category": "labels",
+    "input": "graph TD\nA[]",
+    "expectNodes": [{ "id": "A", "label": "", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Empty bracketed label"
+  },
+  {
+    "id": "label-round-special-quoted",
+    "category": "labels",
+    "input": "graph TD\nA(\"with, comma\") --> B",
+    "expectNodes": [{ "id": "A", "label": "with, comma", "shape": "()" }],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Quoted label inside () shape, then an edge"
+  },
+
+  {
+    "id": "compound-id-underscore",
+    "category": "ids",
+    "input": "graph TD\nreceive_order[Receive Order] --> process_payment[Process Payment]",
+    "expectNodes": [
+      { "id": "receive_order", "label": "Receive Order", "shape": "[]" },
+      { "id": "process_payment", "label": "Process Payment", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "receive_order", "to": "process_payment" }],
+    "valid": true,
+    "note": "snake_case ids (in-contract) — full id captured"
+  },
+  {
+    "id": "compound-id-numeric",
+    "category": "ids",
+    "input": "graph TD\nnode1 --> node2",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "node1", "to": "node2" }],
+    "valid": true,
+    "note": "Alphanumeric ids"
+  },
+  {
+    "id": "compound-id-hyphenated",
+    "category": "ids",
+    "input": "graph TD\nreceive-order --> process",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "receive", "to": "process" }],
+    "valid": true,
+    "note": "Hyphenated id (off-contract §3): truncated at hyphen, remainder discarded — must not crash"
+  },
+  {
+    "id": "compound-id-hyphenated-both",
+    "category": "ids",
+    "input": "graph TD\nreceive-order --> send-confirm",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "receive", "to": "send" }],
+    "valid": true,
+    "note": "Both endpoints hyphenated compound"
+  },
+  {
+    "id": "single-char-x-source-thick",
+    "category": "ids",
+    "input": "graph TD\nx==>B[End]",
+    "expectNodes": [{ "id": "B", "label": "End", "shape": "[]" }],
+    "expectEdges": [{ "from": "x", "to": "B" }],
+    "valid": true,
+    "note": "Regression: single-char id 'x' before ==> must NOT be a cross arrowhead"
+  },
+  {
+    "id": "single-char-o-source-thick",
+    "category": "ids",
+    "input": "graph TD\no==>B[End]",
+    "expectNodes": [{ "id": "B", "label": "End", "shape": "[]" }],
+    "expectEdges": [{ "from": "o", "to": "B" }],
+    "valid": true,
+    "note": "Regression: single-char id 'o' before ==> must NOT be a circle arrowhead"
+  },
+  {
+    "id": "id-ending-in-x",
+    "category": "ids",
+    "input": "graph TD\nbox-->y",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "box", "to": "y" }],
+    "valid": true,
+    "note": "Regression: id ending in 'x' (box) is captured whole; the x is not an arrowhead"
+  },
+
+  {
+    "id": "subgraph-id-and-title",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph proc [Processing]\n  A[Start] --> B[End]\nend",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "expectSubgraphs": [{ "id": "proc", "label": "Processing", "hasId": true, "members": ["A", "B"] }],
+    "valid": true,
+    "note": "Subgraph id 'proc' + title 'Processing'"
+  },
+  {
+    "id": "subgraph-plain-id",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph myGroup\n  A[Node]\nend",
+    "expectNodes": [{ "id": "A", "label": "Node", "shape": "[]" }],
+    "expectEdges": [],
+    "expectSubgraphs": [{ "id": "myGroup", "label": "myGroup", "hasId": true, "members": ["A"] }],
+    "valid": true,
+    "note": "Subgraph plain id, no separate title"
+  },
+  {
+    "id": "subgraph-quoted-title",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph \"My Group\"\n  A[Node]\nend",
+    "expectNodes": [{ "id": "A", "label": "Node", "shape": "[]" }],
+    "expectEdges": [],
+    "expectSubgraphs": [{ "id": "My Group", "label": "My Group", "hasId": false, "members": ["A"] }],
+    "valid": true,
+    "note": "Subgraph quoted title only (hasId=false)"
+  },
+  {
+    "id": "subgraph-free-title",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph My Group\n  A[Node]\nend",
+    "expectNodes": [{ "id": "A", "label": "Node", "shape": "[]" }],
+    "expectEdges": [],
+    "expectSubgraphs": [{ "id": "My Group", "label": "My Group", "hasId": false, "members": ["A"] }],
+    "valid": true,
+    "note": "Subgraph free-text title, no quotes"
+  },
+  {
+    "id": "subgraph-nested",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph outer [Outer]\n  subgraph inner [Inner]\n    A[Node]\n  end\n  B[Other]\nend",
+    "expectNodes": [
+      { "id": "A", "label": "Node", "shape": "[]" },
+      { "id": "B", "label": "Other", "shape": "[]" }
+    ],
+    "expectEdges": [],
+    "expectSubgraphs": [
+      { "id": "outer", "label": "Outer", "hasId": true, "members": ["inner", "B"] },
+      { "id": "inner", "label": "Inner", "hasId": true, "members": ["A"] }
+    ],
+    "valid": true,
+    "note": "Nested subgraphs — membership across nested end keywords"
+  },
+  {
+    "id": "subgraph-two-siblings",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph a [A]\n  X[x]\nend\nsubgraph b [B]\n  Y[y]\nend\nX --> Y",
+    "expectNodes": [
+      { "id": "X", "label": "x", "shape": "[]" },
+      { "id": "Y", "label": "y", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "X", "to": "Y" }],
+    "expectSubgraphs": [
+      { "id": "a", "label": "A", "hasId": true, "members": ["X"] },
+      { "id": "b", "label": "B", "hasId": true, "members": ["Y"] }
+    ],
+    "valid": true,
+    "note": "Two sibling subgraphs + an edge between members declared outside"
+  },
+
+  {
+    "id": "fenced-mermaid-md",
+    "category": "fenced-blocks",
+    "input": "# My doc\n\nSome prose.\n\n```mermaid\ngraph TD\nA[Start] --> B[End]\n```\n\nMore prose.",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Fenced ```mermaid in markdown — block detection + line offset"
+  },
+  {
+    "id": "fenced-tilde-md",
+    "category": "fenced-blocks",
+    "input": "# Tilde fence\n\n~~~mermaid\ngraph LR\nA[Start] --> B[End]\n~~~",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "~~~mermaid tilde fence"
+  },
+  {
+    "id": "fenced-multiple-md",
+    "category": "fenced-blocks",
+    "input": "```mermaid\ngraph TD\nA --> B\n```\n\nText in between.\n\n```mermaid\ngraph TD\nC --> D\n```",
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "C", "to": "D" }
+    ],
+    "valid": true,
+    "note": "Two mermaid blocks — both returned (combined here), correct absolute lines",
+    "combineBlocks": true
+  },
+  {
+    "id": "fenced-nested-not-live",
+    "category": "fenced-blocks",
+    "input": "````markdown\n```mermaid\ngraph TD\nA --> B\n```\n````\n\n```mermaid\ngraph TD\nC --> D\n```",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "C", "to": "D" }],
+    "valid": true,
+    "note": "A ```mermaid nested inside an outer ````markdown fence is NOT a live diagram"
+  },
+  {
+    "id": "whole-mmd",
+    "category": "fenced-blocks",
+    "input": "graph TD\nA[Start] --> B[Middle]\nB --> C[End]",
+    "isMmd": true,
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "Middle", "shape": "[]" },
+      { "id": "C", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "C" }
+    ],
+    "valid": true,
+    "note": "Whole .mmd file is one block at line 0"
+  },
+  {
+    "id": "flowchart-keyword-lr",
+    "category": "fenced-blocks",
+    "input": "flowchart LR\nA[Start] --> B[End]",
+    "isMmd": true,
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "flowchart LR keyword variant"
+  },
+  {
+    "id": "graph-no-direction",
+    "category": "fenced-blocks",
+    "input": "graph\nA[Start] --> B[End]",
+    "isMmd": true,
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "graph with no direction token"
+  },
+  {
+    "id": "frontmatter-skip",
+    "category": "fenced-blocks",
+    "input": "---\ntitle: My Diagram\n---\ngraph TD\nA[Start] --> B[End]",
+    "isMmd": true,
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "YAML frontmatter before the keyword is skipped, not treated as the diagram type"
+  },
+
+  {
+    "id": "comment-inline",
+    "category": "comments",
+    "input": "graph TD\nA[Start] --> B[End] %% this is a comment",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Inline %% comment stripped; edge not dropped"
+  },
+  {
+    "id": "comment-own-line",
+    "category": "comments",
+    "input": "graph TD\n%% a comment line\nA[Start] --> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Own-line %% comment"
+  },
+  {
+    "id": "comment-in-label",
+    "category": "comments",
+    "input": "graph TD\nA[\"x %% y\"] --> B",
+    "expectNodes": [{ "id": "A", "label": "x %% y", "shape": "[]" }],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "%% inside a quoted label is content, not a comment"
+  },
+  {
+    "id": "blank-lines",
+    "category": "comments",
+    "input": "graph TD\n\nA[Start]\n\n\nA --> B\n",
+    "expectNodes": [{ "id": "A", "label": "Start", "shape": "[]" }],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Blank lines interspersed + trailing newline"
+  },
+
+  {
+    "id": "reserved-id-end-node",
+    "category": "reserved-ids",
+    "input": "graph TD\nend[End Node]",
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Reserved id 'end' as a node — skipped by reserved guard, not an error (off-contract §3)"
+  },
+  {
+    "id": "reserved-id-graph-node",
+    "category": "reserved-ids",
+    "input": "graph TD\nA[Start]\nB[Other]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "Other", "shape": "[]" }
+    ],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Two standalone shaped nodes on separate lines"
+  },
+
+  {
+    "id": "bare-id-decl",
+    "category": "bare-ids",
+    "input": "graph TD\nA",
+    "isMmd": true,
+    "expectNodes": [{ "id": "A", "label": "A", "shape": "" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "Bare id on its own line — valid node, label==id, no shape"
+  },
+  {
+    "id": "bare-id-edge-ref",
+    "category": "bare-ids",
+    "input": "graph TD\nA[Start] --> B",
+    "expectNodes": [{ "id": "A", "label": "Start", "shape": "[]" }],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Bare id B referenced in edge but not shaped — appears in edges"
+  },
+
+  {
+    "id": "semicolon-statements",
+    "category": "edge-variants",
+    "input": "graph TD\nA --> B; C --> D",
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "C", "to": "D" }
+    ],
+    "valid": true,
+    "note": "Semicolon-separated statements on one line"
+  },
+  {
+    "id": "semicolon-trailing",
+    "category": "edge-variants",
+    "input": "graph TD\nA --> B;",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Trailing semicolon must not drop the edge"
+  },
+
+  {
+    "id": "r15-rename-compact-source",
+    "category": "r15-stash",
+    "input": "graph TD\nA[Start]-->B\nB-->C[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "C", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "C" }
+    ],
+    "valid": true,
+    "note": "Compact-arrow regression: compact arrows over two lines; B is a real node on both edges"
+  },
+  {
+    "id": "r15-chain-compact",
+    "category": "r15-stash",
+    "input": "graph TD\nA-->B-->C",
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "C" }
+    ],
+    "valid": true,
+    "note": "Compact-arrow regression: chained compact arrows — B is a real node, both refs"
+  },
+  {
+    "id": "r15-x-arrowhead",
+    "category": "r15-stash",
+    "input": "graph TD\nA--xB",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Compact-arrow regression: glued cross arrowhead --x; B is the node, x is the head"
+  },
+  {
+    "id": "r15-o-arrowhead",
+    "category": "r15-stash",
+    "input": "graph TD\nA--oB",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Compact-arrow regression: glued circle arrowhead --o"
+  },
+  {
+    "id": "r15-bidir-both-ends",
+    "category": "r15-stash",
+    "input": "graph TD\nA<-->B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "Compact-arrow regression: bidirectional compact, both endpoints are real ids"
+  },
+
+  {
+    "id": "invalid-unclosed-bracket",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA[Unclosed",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "Unclosed bracket — must not crash; block is unsupported/parseError"
+  },
+  {
+    "id": "invalid-mid-typed",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA[Start] --> B\nC[",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "Mid-typed partial second node — must not crash (no error recovery: whole block unsupported)"
+  },
+  {
+    "id": "invalid-unclosed-fence",
+    "category": "invalid-inputs",
+    "input": "# Doc\n\n```mermaid\ngraph TD\nA --> B",
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "Unterminated ```mermaid fence — must not swallow the file; no block returned",
+    "expectNoBlocks": true
+  },
+  {
+    "id": "invalid-reserved-end-target",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA --> end",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "Reserved 'end' as edge target (off-contract §3) — must not crash"
+  },
+  {
+    "id": "invalid-over-bracketed",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA[[[Over-bracketed]]]",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "Over-bracketed [[[ shape (off-contract §3) — must WARN/refuse, not silently corrupt"
+  },
+  {
+    "id": "invalid-fanout-ampersand",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA --> B & C",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "& fan-out (off-contract §3) — not parsed/split; must not crash"
+  }
+]

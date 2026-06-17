@@ -5,6 +5,7 @@ out/**
 node_modules/**
 test/**
 mcp/**
+mermaid-node-core/**
 src/**/*.ts
 **/*.map
 **/tsconfig.json

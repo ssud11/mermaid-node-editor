@@ -1,0 +1,466 @@
+// ============================================================================
+// mermaid-node-core — Mermaid flowchart grammar (the §2 input contract, as a spec)
+// ============================================================================
+//
+// This PEG grammar IS the closed specification of the input contract: a Mermaid
+// *flowchart* (`graph` / `flowchart`), authored to the conventions the product
+// is held to. Re-derived from the contract — node shapes, edge operators,
+// subgraphs, labels, comments, frontmatter — not lifted from any prototype.
+//
+// What it produces: a positioned model. Every node, edge and subgraph carries a
+// REAL `{ line, startChar, endChar }` span taken from the matched-rule region
+// (peggy's `location()`), 0-based line, 0-based exclusive-end column — never a
+// zero-width start. Labels additionally carry `{ labelStart, labelEnd }` (the
+// span of the label *content*, inside any quotes), so a relabel writes exactly
+// the content slice and leaves brackets/quotes untouched.
+//
+// Off-contract input: a hyphenated id is truncated at the hyphen
+// (matching the documented v1 behavior) and the remainder discarded — so the
+// fragment can be left alone on rename; `&` fan-out, over-bracketed shapes,
+// reserved-id nodes and unterminated constructs do not match cleanly and either
+// produce a structured parse error or are skipped — never a crash or a hang.
+//
+// Generated to ESM (zero runtime dep) via `peggy --format es`. The runtime
+// surface uses no Node-only APIs.
+//
+// NOTE ON ENVELOPE: this grammar parses ONE flowchart's text (a `.mmd` body or
+// the inside of a ```mermaid fence). The markdown-fence / whole-.mmd envelope is
+// a thin string pre-processor in `src/parser.js` that locates each block, then
+// feeds its content here with a line offset applied to the returned positions.
+// Keeping the envelope out of the grammar keeps the grammar a pure flowchart
+// spec and avoids the "unterminated fence swallows the file" class of bug.
+// ============================================================================
+
+{{
+  // --- model constructors -------------------------------------------------
+
+  // 0-based line + 0-based exclusive-end column from a peggy location().
+  function span(loc) {
+    return {
+      line: loc.start.line - 1,
+      startChar: loc.start.column - 1,
+      endChar: loc.end.column - 1,
+    };
+  }
+
+  function makeNode(id, shapeInfo, loc) {
+    const s = span(loc);
+    return {
+      kind: "node",
+      id,
+      label: shapeInfo ? shapeInfo.label : id,
+      shape: shapeInfo ? shapeInfo.shape : "",
+      open: shapeInfo ? shapeInfo.open : "",
+      close: shapeInfo ? shapeInfo.close : "",
+      quote: shapeInfo ? shapeInfo.quote : "",
+      line: s.line,
+      startChar: s.startChar,
+      endChar: s.endChar,
+      // label content span — for an unbracketed bare id the label IS the id span.
+      labelStart: shapeInfo ? shapeInfo.labelStart : s.startChar,
+      labelEnd: shapeInfo ? shapeInfo.labelEnd : s.endChar,
+    };
+  }
+
+  function makeEdge(from, to, label, loc) {
+    const s = span(loc);
+    return {
+      kind: "edge",
+      from,
+      to,
+      label: (label === null || label === undefined) ? undefined : label,
+      line: s.line,
+      startChar: s.startChar,
+      endChar: s.endChar,
+    };
+  }
+
+  // The set of flowchart keywords that may never be a node id (per the input
+  // contract: ids are never a reserved keyword). Matched case-insensitively.
+  const RESERVED = new Set([
+    "graph", "flowchart", "subgraph", "end", "direction",
+    "click", "class", "classdef", "style", "linkstyle", "default",
+  ]);
+  function isReserved(id) {
+    return RESERVED.has(id.toLowerCase());
+  }
+
+  // Build a shape descriptor from open/close tokens + a label result. `l` is the
+  // { value, quote, labelStart, labelEnd } from a ShapeLabel/AsymLabel rule.
+  function shape(open, close, l) {
+    return {
+      open,
+      close,
+      shape: open + close,
+      label: l.value,
+      quote: l.quote,
+      labelStart: l.labelStart,
+      labelEnd: l.labelEnd,
+    };
+  }
+
+  // Label content span helpers. `startLoc` is the HERE-captured location at the
+  // first character of the content; `endLoc` is location() AFTER the content
+  // (and any close quote) was consumed, so we subtract the trailing quote.
+  function labelSpan(value, quote, startLoc, endLoc) {
+    const start = startLoc.start.column - 1 + (quote ? 1 : 0);
+    return {
+      value,
+      quote,
+      labelStart: start,
+      labelEnd: start + value.length,
+    };
+  }
+  // A raw (unquoted) run — its span is exactly the consumed text.
+  function labelSpanRaw(value, quote, startLoc) {
+    const start = startLoc.start.column - 1;
+    return {
+      value,
+      quote,
+      labelStart: start,
+      labelEnd: start + value.length,
+    };
+  }
+}}
+
+// ─── Entry point ────────────────────────────────────────────────────────────
+// A single flowchart: optional frontmatter, the diagram header, then a body of
+// statement lines. The body is a flat list of model items (nodes/edges) plus a
+// tree of subgraphs assembled in the action.
+
+Document
+  = _nl Frontmatter? _nl header:DiagramHeader body:Body EOF
+  {
+    return {
+      supported: true,
+      diagramType: header.raw,
+      keyword: header.keyword,
+      direction: header.direction,
+      nodes: body.nodes,
+      edges: body.edges,
+      subgraphs: body.subgraphs,
+    };
+  }
+
+// YAML-ish frontmatter Mermaid allows before the keyword (title:/config:/id:).
+// Consumed and discarded; the position offset is handled by counting lines, so
+// node/edge lines remain absolute within the block.
+Frontmatter
+  = "---" RestOfLine NL (!("---" RestOfLine (NL / EOF)) RestOfLine NL)* "---" RestOfLine (NL / EOF)
+
+DiagramHeader
+  = kw:("flowchart" / "graph") dir:(WS d:Direction { return d; })? Sp InlineComment? (NL / EOF)
+  { return { keyword: kw, direction: dir, raw: text().replace(/\s*%%.*$/, "").trim() }; }
+
+Direction = ("TD" / "TB" / "BT" / "LR" / "RL" / "DT") { return text(); }
+
+// ─── Body assembly (nodes + edges + subgraph tree) ───────────────────────────
+// Each StmtLine yields { nodes, edges, subgraphs }; we merge them, threading a
+// `members` list onto each subgraph from the ids declared/referenced inside it.
+
+Body
+  = lines:StmtLine*
+  {
+    const nodes = [];
+    const edges = [];
+    const subgraphs = [];
+    for (const ln of lines) {
+      if (!ln) continue;
+      for (const n of ln.nodes) nodes.push(n);
+      for (const e of ln.edges) edges.push(e);
+      for (const sg of ln.subgraphs) subgraphs.push(sg);
+    }
+    return { nodes, edges, subgraphs };
+  }
+
+// A statement line. A Subgraph is a MULTI-line construct that consumes its own
+// terminator (the closing `end` line), so it is matched first and on its own —
+// NOT wrapped in the single-line NL terminator. Every other alternative consumes
+// at least its trailing NL (or, for the final line, real content before EOF), so
+// a `StmtLine*` loop can never spin on a zero-width match.
+StmtLine
+  = sg:Subgraph                              { return sg; }   // self-terminating, multi-line
+  / content:SingleLineBody NL                { return content; } // a line ending in a newline
+  / content:SingleLineBody EOF               { return content; } // the final line, no NL
+  / Sp InlineComment? NL                     { return null; }    // blank / comment-only line
+
+// A single-line statement's payload (no terminator). Requires real content so the
+// final-line (EOF) alternative is never a zero-width match.
+SingleLineBody
+  = Sp content:StmtContent Sp InlineComment? { return content; }
+
+StmtContent
+  = SemicolonStmts
+  / s:SingleStmt Sp ";"? { return s; }   // a single statement, optional trailing `;`
+
+// `A --> B ; C --> D` — split on a top-level `;` (a `;` inside a pipe/inline
+// label can't appear here because labels are matched as opaque runs). A trailing
+// `;` with nothing after it is allowed (`A --> B;`).
+SemicolonStmts
+  = first:SingleStmt rest:(Sp ";" Sp s:SingleStmt { return s; })+ Sp ";"?
+  {
+    const acc = { nodes: [...first.nodes], edges: [...first.edges], subgraphs: [] };
+    for (const s of rest) {
+      acc.nodes.push(...s.nodes);
+      acc.edges.push(...s.edges);
+    }
+    return acc;
+  }
+
+SingleStmt
+  = EdgeChain
+  / NodeStmt
+
+// ─── Subgraph ────────────────────────────────────────────────────────────────
+// `subgraph [id] [title]` ... `end`. The header carries its own positions (for
+// editing the title); the body recurses through StmtLine, and the inner items
+// (nodes/edges/nested subgraphs) are both returned up AND recorded as members.
+
+Subgraph
+  = Sp "subgraph" hdrLoc:HERE header:(WS h:SubgraphHeader { return h; })? Sp InlineComment? NL
+    body:StmtLine*
+    Sp "end" !IdChar Sp InlineComment? (NL / EOF)
+  {
+    const nodes = [];
+    const edges = [];
+    const subgraphs = [];
+    const members = [];
+    const seenMember = new Set();
+    const addMember = (id) => {
+      if (!seenMember.has(id)) { seenMember.add(id); members.push(id); }
+    };
+    for (const ln of body) {
+      if (!ln) continue;
+      // A line that yielded nested subgraph(s) contributes ONLY the nested
+      // subgraph id(s) as direct members of THIS subgraph — the nested nodes are
+      // members of the nested subgraph, not this one. (They still bubble up into
+      // `nodes` so the block-level node list is complete.)
+      const isNested = ln.subgraphs.length > 0;
+      for (const n of ln.nodes) {
+        nodes.push(n);
+        if (!isNested) addMember(n.id);
+      }
+      for (const e of ln.edges) {
+        edges.push(e);
+        if (!isNested) { addMember(e.from); addMember(e.to); }
+      }
+      for (const sg of ln.subgraphs) {
+        subgraphs.push(sg);
+        // The directly-nested subgraph is the FIRST in the returned list (the
+        // Subgraph action prepends itself before its own descendants).
+      }
+      if (isNested) addMember(ln.subgraphs[0].id);
+    }
+    const h = header || { id: null, title: null, idLoc: hdrLoc, idText: "" };
+    const idSpan = span(h.idLoc);
+    const id = h.id != null ? h.id : (h.title != null ? h.title : "");
+    const sgNode = {
+      kind: "subgraph",
+      id,
+      label: h.title != null ? h.title : (h.id != null ? h.id : ""),
+      hasId: h.id != null,
+      quote: h.quote || "",
+      line: idSpan.line,
+      idStart: idSpan.startChar,
+      idEnd: idSpan.endChar,
+      members,
+    };
+    return { nodes, edges, subgraphs: [sgNode, ...subgraphs] };
+  }
+
+// Header variants. Each captures the span of the id/title token (idLoc) so a
+// title relabel can target it precisely. A bare PlainId is only an id when it is
+// the WHOLE header (nothing but space/comment follows); otherwise the header is a
+// free-text title (`subgraph My Group`).
+// `idLoc` is the span of the EDITABLE token: the id when an explicit id is
+// present (`subgraph proc [Title]` → `proc`); otherwise the title token (quoted
+// run, or free text). Each `*Located` rule captures location() around exactly
+// that token, so idStart/idEnd are real columns a title/id editor can target.
+SubgraphHeader
+  = idl:PlainIdLocated WS title:SubgraphTitle &EndOfHeader
+    { return { id: idl.value, title: title.value, quote: title.quote, idLoc: idl.loc }; }
+  / t:TitleLocated &EndOfHeader
+    { return { id: null, title: t.value, quote: t.quote, idLoc: t.loc }; }
+  / idl:PlainIdLocated &EndOfHeader
+    { return { id: idl.value, title: null, quote: "", idLoc: idl.loc }; }
+  / t:FreeTitleLocated
+    { return { id: null, title: t.value, quote: "", idLoc: t.loc }; }
+
+PlainIdLocated  = v:PlainId      { return { value: v, loc: location() }; }
+TitleLocated    = t:SubgraphTitle { return { value: t.value, quote: t.quote, loc: location() }; }
+FreeTitleLocated = v:FreeTitle   { return { value: v, loc: location() }; }
+
+// The header ends when only inline space and/or a comment remain before the NL.
+EndOfHeader = Sp ("%%" / "\n" / "\r" / !.)
+
+SubgraphTitle
+  = "[" '"' c:DQuoted '"' "]" { return { value: c, quote: '"' }; }
+  / "[" "'" c:SQuoted "'" "]" { return { value: c, quote: "'" }; }
+  / "[" c:BracketRun "]"      { return { value: c.trim(), quote: "" }; }
+  / '"' c:DQuoted '"'         { return { value: c, quote: '"' }; }
+  / "'" c:SQuoted "'"         { return { value: c, quote: "'" }; }
+
+// A bare free-text subgraph title (no id, no brackets, no quotes) — e.g.
+// `subgraph My Group`. Stops at end-of-line / comment.
+FreeTitle = chars:(!("\n" / "%%") c:. { return c; })+ { return chars.join("").trim(); }
+
+// ─── Edge chains ──────────────────────────────────────────────────────────────
+// `A --> B`, `A --> B --> C`, with optional pipe / inline-dash labels and either
+// endpoint optionally shaped. Each link emits an edge; a shaped endpoint also
+// emits a node. Reversed (`<--`) operators swap from/to so the model matches
+// Mermaid's directed semantics.
+
+EdgeChain
+  = first:NodeRef rest:(seg:EdgeSeg { return seg; })+
+  {
+    const out = { nodes: [], edges: [], subgraphs: [] };
+    const emitNode = (ref) => {
+      if (ref.shapeInfo && !isReserved(ref.id)) {
+        out.nodes.push(makeNode(ref.id, ref.shapeInfo, ref.loc));
+      }
+    };
+    emitNode(first);
+    let prev = first;
+    for (const seg of rest) {
+      emitNode(seg.node);
+      if (!isReserved(prev.id) && !isReserved(seg.node.id)) {
+        const link = seg.link;
+        const [from, to] = link.reversed
+          ? [seg.node.id, prev.id]
+          : [prev.id, seg.node.id];
+        // edge span: from the previous node start to this node end.
+        const loc = { start: prev.loc.start, end: seg.node.loc.end };
+        out.edges.push(makeEdge(from, to, link.label, loc));
+      }
+      prev = seg.node;
+    }
+    return out;
+  }
+
+// A segment = arrow, optional pipe label, then the next node. A pipe label
+// (`-->|yes|`) takes precedence over an inline-dash label if both somehow appear.
+EdgeSeg
+  = Sp link:Link Sp pipe:PipeLabel? Sp node:NodeRef
+  {
+    const label = pipe !== null && pipe !== undefined ? pipe : link.label;
+    return { link: { label, reversed: link.reversed }, node };
+  }
+
+PipeLabel
+  = "|" '"' c:DQuoted '"' "|" { return c; }
+  / "|" "'" c:SQuoted "'" "|" { return c; }
+  / "|" c:PipeRun "|"         { return c.trim(); }
+
+PipeRun = chars:(!("|" / "\n") c:. { return c; })* { return chars.join(""); }
+
+// ─── A single bare node / shaped node on its own line ─────────────────────────
+
+NodeStmt
+  = ref:NodeRef &{ return !isReserved(ref.id); }
+  {
+    return { nodes: [makeNode(ref.id, ref.shapeInfo, ref.loc)], edges: [], subgraphs: [] };
+  }
+
+// ─── Node reference (id, optionally with a shape) ─────────────────────────────
+
+NodeRef
+  = loc:HERE id:NodeId shape:NodeShape
+    { return { id, shapeInfo: shape, loc: { start: loc.start, end: location().end } }; }
+  / loc:HERE id:NodeId
+    { return { id, shapeInfo: null, loc: { start: loc.start, end: location().end } }; }
+
+// HERE captures a zero-width location at the current input position, so callers
+// can build a precise start..end span around a following construct.
+HERE = "" { return location(); }
+
+// ─── Identifiers ──────────────────────────────────────────────────────────────
+// §2 ids are snake_case: [A-Za-z0-9_]. A hyphenated compound (`receive-order`)
+// is §3 off-contract — we take the prefix `receive` and discard `-order`, but
+// ONLY when the hyphen is followed by an id char (so a `-`/`-.` that begins an
+// arrow operator is left for the Link rule).
+
+NodeId "node id"
+  = first:[A-Za-z0-9_] rest:IdChar* HyphenTail*
+  { return first + rest.join(""); }
+
+IdChar = [A-Za-z0-9_]
+
+// A hyphen that begins a compound id (followed by id chars), NOT an arrow.
+HyphenTail = "-" !("-" / ".") IdChar+
+
+// A plain id for subgraph headers (allows internal hyphens since it is not in
+// arrow context).
+PlainId "plain id"
+  = first:[A-Za-z_] rest:[A-Za-z0-9_\-]*
+  { return first + rest.join(""); }
+
+// ─── Node shapes ──────────────────────────────────────────────────────────────
+// Multi-char opening tokens are tried before single-char ones. Each returns the
+// shape token pair, the label content, the quote char, and the content span.
+
+NodeShape
+  = "[[" l:ShapeLabel "]]" { return shape("[[", "]]", l); }
+  / "[(" l:ShapeLabel ")]" { return shape("[(", ")]", l); }
+  / "([" l:ShapeLabel "])" { return shape("([", "])", l); }
+  / "((" l:ShapeLabel "))" { return shape("((", "))", l); }
+  / "{{" l:ShapeLabel "}}" { return shape("{{", "}}", l); }
+  / "["  l:ShapeLabel "]"  { return shape("[", "]", l); }
+  / "("  l:ShapeLabel ")"  { return shape("(", ")", l); }
+  / "{"  l:ShapeLabel "}"  { return shape("{", "}", l); }
+  / ">"  l:AsymLabel  "]"  { return shape(">", "]", l); }
+
+// ShapeLabel returns { value, quote, labelStart, labelEnd } — the content span is
+// captured around the inner content so labelStart/labelEnd are real columns.
+ShapeLabel
+  = lLoc:HERE '"' c:DQuoted '"' { return labelSpan(c, '"', lLoc, location()); }
+  / lLoc:HERE "'" c:SQuoted "'" { return labelSpan(c, "'", lLoc, location()); }
+  / lLoc:HERE c:BracketRun      { return labelSpanRaw(c, "", lLoc); }
+
+AsymLabel
+  = lLoc:HERE c:AsymRun { return labelSpanRaw(c, "", lLoc); }
+
+// Raw label runs — opaque text up to the (unquoted) close token / newline.
+// A `%%` inside a label is content, not a comment, so it is NOT excluded here.
+BracketRun = chars:(!("]" / ")" / "}" / "\n") c:. { return c; })* { return chars.join(""); }
+AsymRun    = chars:(!("]" / "\n") c:. { return c; })* { return chars.join(""); }
+
+DQuoted = chars:(!('"' / "\n") c:. { return c; })* { return chars.join(""); }
+SQuoted = chars:(!("'" / "\n") c:. { return c; })* { return chars.join(""); }
+
+// ─── Links (arrow operators) ──────────────────────────────────────────────────
+// Returns { label, reversed }. The inline-dash label form (`-- text -->`) is
+// matched as one Link before the bare `--`.
+
+Link "arrow"
+  // Inline dash label first (so `-- text -->` is one token, not `--` + ...).
+  = "--" WS l:InlineDashLabel WS "-->" { return { label: l.trim(), reversed: false }; }
+  / "==" WS l:InlineThickLabel WS "==>" { return { label: l.trim(), reversed: false }; }
+  // Bidirectional (solid only — Mermaid has no `<==>`).
+  / "<-->" { return { label: undefined, reversed: false }; }
+  / "<--"  { return { label: undefined, reversed: true }; }
+  // Thick.
+  / "==>"  { return { label: undefined, reversed: false }; }
+  / "===" "="* { return { label: undefined, reversed: false }; } // `===`, `====`, …
+  / "==>" "="* { return { label: undefined, reversed: false }; }
+  // Dotted (length variants `-.->`, `-..->`).
+  / "-." "."* "->" { return { label: undefined, reversed: false }; }
+  / "-." "."* "-"  { return { label: undefined, reversed: false }; }
+  // Solid arrow / open link, with length variants (`-->`, `--->`, `---`, `----`).
+  / "--" "-"* ">"  { return { label: undefined, reversed: false }; }
+  / "--x"          { return { label: undefined, reversed: false }; }
+  / "--o"          { return { label: undefined, reversed: false }; }
+  / "--" "-"+      { return { label: undefined, reversed: false }; } // `---`, `----`
+  / "--"           { return { label: undefined, reversed: false }; } // bare open `--`
+
+InlineDashLabel  = chars:(!(" -->" / "-->" / "\n") c:. { return c; })+ { return chars.join(""); }
+InlineThickLabel = chars:(!(" ==>" / "==>" / "\n") c:. { return c; })+ { return chars.join(""); }
+
+// ─── Whitespace / lines ─────────────────────────────────────────────────────────
+
+Sp "inline space" = [ \t]*
+WS "whitespace"   = [ \t]+
+_nl               = [ \t\n\r]*
+NL                = "\r\n" / "\n"
+RestOfLine        = (!"\n" .)*
+InlineComment     = "%%" (!"\n" .)*
+EOF               = !.
