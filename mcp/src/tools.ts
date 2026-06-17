@@ -13,6 +13,14 @@ const splitLines = (text: string): string[] => text.split(/\r?\n/);
 
 // Uniform "no result" shape for flow_query — every early-return path returns the
 // SAME keys as the normal path (null / [] placeholders) so an agent reading
+// "you asked for block N but only M exist" vs "no blocks at all" — one diagnostic
+// shared by every block-indexed tool (read + write) so the message never diverges (R12-5).
+function noBlockMessage(blockCount: number, blockIndex?: number): string {
+  return blockIndex != null && blockCount > 0
+    ? `block index ${blockIndex} is out of range (${blockCount} block${blockCount === 1 ? '' : 's'} in this source)`
+    : 'no Mermaid block found';
+}
+
 // result.outgoing / .label / .incoming never hits an undefined on an error branch.
 function emptyQuery(id: string, blockIndex: number | null, error: string) {
   return {
@@ -177,11 +185,7 @@ export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
   const picked = pickBlock(blocks, blockIndex);
   if (!picked) {
     // Distinguish "you asked for block N but there are only M" from "no blocks at all".
-    const msg =
-      blockIndex != null && blocks.length > 0
-        ? `block index ${blockIndex} is out of range (${blocks.length} block${blocks.length === 1 ? '' : 's'} in this source)`
-        : 'no Mermaid block found';
-    return emptyQuery(id, null, msg);
+    return emptyQuery(id, null, noBlockMessage(blocks.length, blockIndex));
   }
   const { block, index } = picked;
   if (!block.supported) {
@@ -378,9 +382,10 @@ function finishWrite(r: ResolvedSource, result: EditResult, newText: string, opt
 
 export function flowRename(src: FlowSource, oldId: string, newId: string, opts?: WriteOpts) {
   const r = resolveSource(src);
-  const picked = pickBlock(getBlocks(r), opts?.block);
+  const blocks = getBlocks(r);
+  const picked = pickBlock(blocks, opts?.block);
   if (!picked) {
-    return { ok: false, error: 'no Mermaid block found' };
+    return { ok: false, error: noBlockMessage(blocks.length, opts?.block) };
   }
   if (!picked.block.supported) {
     return { ok: false, error: `block ${picked.index} is not a supported flowchart` };
@@ -394,9 +399,10 @@ export function flowRename(src: FlowSource, oldId: string, newId: string, opts?:
 
 export function flowRelabel(src: FlowSource, id: string, newLabel: string, opts?: WriteOpts) {
   const r = resolveSource(src);
-  const picked = pickBlock(getBlocks(r), opts?.block);
+  const blocks = getBlocks(r);
+  const picked = pickBlock(blocks, opts?.block);
   if (!picked) {
-    return { ok: false, error: 'no Mermaid block found' };
+    return { ok: false, error: noBlockMessage(blocks.length, opts?.block) };
   }
   if (!picked.block.supported) {
     return { ok: false, error: `block ${picked.index} is not a supported flowchart` };

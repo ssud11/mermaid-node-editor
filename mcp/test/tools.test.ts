@@ -380,6 +380,19 @@ test('flow_query: an out-of-range blockIndex reports the block count', () => {
   assert.match(q.error ?? '', /out of range/i);
 });
 
+// R12-5: the WRITE tools shared flow_query's old generic message — an out-of-range
+// block index said "no Mermaid block found" (implying nothing to edit) instead of the
+// count. Both write tools now use the same diagnostic as flow_query.
+test('flow_rename / flow_relabel: an out-of-range block index reports the count', () => {
+  const md = '```mermaid\ngraph TD\nA-->B\n```\n\n```mermaid\ngraph LR\nC-->D\n```';
+  const ren = flowRename({ text: md }, 'A', 'Z', { block: 9 }) as { ok: boolean; error?: string };
+  assert.equal(ren.ok, false);
+  assert.match(ren.error ?? '', /out of range/i);
+  const rel = flowRelabel({ text: md }, 'A', 'New', { block: 9 }) as { ok: boolean; error?: string };
+  assert.equal(rel.ok, false);
+  assert.match(rel.error ?? '', /out of range/i);
+});
+
 // ---- regression: /qa-explore dogfood round 8 (2026-06-16) ----
 // A missing positional id (an untyped caller merged it into the src object) must give
 // a diagnostic error, not a silent found:false with error:null.
