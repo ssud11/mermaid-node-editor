@@ -234,6 +234,78 @@ test("subgraph no-space id[title] parses to {id,title,hasId} with correct spans"
   assert.equal(line.slice(sg.titleStart, sg.titleEnd), "The One");
 });
 
+test("inline-dash/thick edge label: full family parses to the stripped label", () => {
+  // Any closing-shaft length is one arrow — the extra shaft chars must not leak.
+  const longShaft = [
+    ["graph TD\nA -- text ---> B", "text"],
+    ["graph TD\nA -- text ----> B", "text"],
+    ["graph TD\nA -- text -----> B", "text"],
+    ["graph TD\nA == text ===> B", "text"],
+    ["graph TD\nA == text ====> B", "text"],
+  ];
+  for (const [src, want] of longShaft) {
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.edges.length, 1, `one edge for: ${src}`);
+    assert.equal(b.edges[0].label, want, `no shaft leak for: ${src}`);
+  }
+  // Quoted inline labels strip the surrounding quotes, like the pipe form.
+  const quoted = [
+    ['graph TD\nA -- "q label" --> B', "q label"],
+    ["graph TD\nA -- 'q label' --> B", "q label"],
+    ['graph TD\nA == "q label" ==> B', "q label"],
+  ];
+  for (const [src, want] of quoted) {
+    assert.equal(findMermaidBlocks(src, true)[0].edges[0].label, want, `quotes stripped for: ${src}`);
+  }
+  // Internal hyphens/pipes inside the label are preserved (not terminators).
+  assert.equal(findMermaidBlocks("graph TD\nA -- a-b-c --> B", true)[0].edges[0].label, "a-b-c");
+  assert.equal(findMermaidBlocks("graph TD\nA -- one|two --> B", true)[0].edges[0].label, "one|two");
+  // Canonical controls — the short-shaft and pipe forms still strip correctly.
+  assert.equal(findMermaidBlocks("graph TD\nA -- label --> B", true)[0].edges[0].label, "label");
+  assert.equal(findMermaidBlocks("graph TD\nA -->|label| B", true)[0].edges[0].label, "label");
+});
+
+test("bare hyphenated-id node span is bounded to the kept id (slice === id)", () => {
+  // `receive-order` truncates to `receive`; the node span must cover ONLY the kept
+  // id so a span-rename can't overwrite the discarded `-order` tail.
+  const src = "graph TD\nreceive-order";
+  const n = findMermaidBlocks(src, true)[0].nodes[0];
+  const line = src.split("\n")[n.line];
+  assert.equal(n.id, "receive");
+  assert.equal(n.label, "receive");
+  assert.equal(line.slice(n.startChar, n.endChar), "receive");
+  assert.equal(line.slice(n.labelStart, n.labelEnd), "receive");
+  // A plain (non-hyphenated) bare id keeps the same invariant.
+  const src2 = "graph TD\nplain";
+  const n2 = findMermaidBlocks(src2, true)[0].nodes[0];
+  assert.equal(src2.split("\n")[n2.line].slice(n2.startChar, n2.endChar), "plain");
+});
+
+test("asymmetric label may not begin with an unquoted opening bracket", () => {
+  // `A>(text)]` / `A>{x}]` must WARN (no live node), not silently capture the bracket.
+  for (const src of ["graph TD\nA>(text)]", "graph TD\nA>{x}]"]) {
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal((b.nodes || []).length, 0, `no live node for: ${src}`);
+    assert.equal(b.supported, false, `block warns (supported:false) for: ${src}`);
+  }
+  // A QUOTED asymmetric label with an inner bracket is still valid (quotes stripped).
+  const q = findMermaidBlocks('graph TD\nA>"(text)"]', true)[0].nodes[0];
+  assert.equal(q.shape, ">]");
+  assert.equal(q.label, "(text)");
+});
+
+test("diagramType strips a same-line inline comment from the header", () => {
+  // A commented header line `graph TD %% note` must yield diagramType 'graph TD',
+  // not keep the trailing comment — while the nodes/edges parse normally.
+  const b = findMermaidBlocks("graph TD %% layout note\nA --> B", true)[0];
+  assert.equal(b.diagramType, "graph TD");
+  assert.equal(b.supported, true);
+  assert.deepEqual(b.edges.map((e) => ({ from: e.from, to: e.to })), [{ from: "A", to: "B" }]);
+  // own-line comment control is unaffected
+  const c = findMermaidBlocks("graph TD\n%% layout note\nA --> B", true)[0];
+  assert.equal(c.diagramType, "graph TD");
+});
+
 test("never throws on a battery of off-contract / malformed inputs", () => {
   const malformed = [
     "graph TD\nA[Unclosed",

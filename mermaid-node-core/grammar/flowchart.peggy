@@ -45,6 +45,13 @@
 
   function makeNode(id, shapeInfo, loc) {
     const s = span(loc);
+    // For a BARE id (no shape) the node text IS the kept id, so the span must end
+    // exactly at startChar + id.length — NOT at the matched-rule end, which for an
+    // off-contract hyphenated id (`receive-order` → kept id `receive`) runs past the
+    // discarded `-order` tail. Bounding the bare-node span to the kept id keeps the
+    // content-exclusive invariant (`source.slice(startChar,endChar) === id`), so a
+    // span-rename targets only the kept id and leaves the discarded tail untouched.
+    const bareEnd = shapeInfo ? s.endChar : s.startChar + id.length;
     return {
       kind: "node",
       id,
@@ -55,10 +62,10 @@
       quote: shapeInfo ? shapeInfo.quote : "",
       line: s.line,
       startChar: s.startChar,
-      endChar: s.endChar,
+      endChar: bareEnd,
       // label content span — for an unbracketed bare id the label IS the id span.
       labelStart: shapeInfo ? shapeInfo.labelStart : s.startChar,
-      labelEnd: shapeInfo ? shapeInfo.labelEnd : s.endChar,
+      labelEnd: shapeInfo ? shapeInfo.labelEnd : bareEnd,
     };
   }
 
@@ -170,7 +177,11 @@ Frontmatter
 
 DiagramHeader
   = kw:("flowchart" / "graph") dir:(WS d:Direction { return d; })? Sp InlineComment? (NL / EOF)
-  { return { keyword: kw, direction: dir, raw: text().replace(/\s*%%.*$/, "").trim() }; }
+  // `text()` includes the consumed trailing newline, so the comment-strip regex
+  // needs the `m` flag for `$` to anchor at the END OF LINE (before that `\n`) —
+  // without it `$` only matches the very end of the string, the inline comment is
+  // not at `$`, and a same-line `%% note` leaks into `diagramType` (`graph TD %% note`).
+  { return { keyword: kw, direction: dir, raw: text().replace(/\s*%%.*$/m, "").trim() }; }
 
 Direction = ("TD" / "TB" / "BT" / "LR" / "RL") { return text(); }
 
@@ -523,10 +534,18 @@ OpenBracket = "[" / "(" / "{"
 // otherwise a relabel honoring labelStart/labelEnd would silently drop the quotes
 // (`A>"x"]` → `A>new]`). Mirror ShapeLabel: try the quoted forms first, then the
 // raw unquoted run.
+// The unquoted run gets the SAME `!OpenBracket` guard ShapeLabel has, for the
+// SAME reason: an unquoted asym label must not begin with `[`/`(`/`{`. Without it,
+// `A>(text)]` / `A>{x}]` silently parse as a `>]` node whose label keeps the stray
+// opener (`label:'(text)'`) — the asymmetric over-bracket corruption class the
+// contract forbids. With the guard those forms fail to match the shape, so the
+// block is reported `supported:false` + `parseError` (a clean WARN). A label that
+// genuinely starts with a bracket must be quoted (`A>"(text)"]`), which the quoted
+// alternatives above accept.
 AsymLabel
   = lLoc:HERE '"' c:DQuoted '"' { return labelSpan(c, '"', lLoc, location()); }
   / lLoc:HERE "'" c:SQuoted "'" { return labelSpan(c, "'", lLoc, location()); }
-  / lLoc:HERE c:AsymRun { return labelSpanRaw(c, "", lLoc); }
+  / lLoc:HERE !OpenBracket c:AsymRun { return labelSpanRaw(c, "", lLoc); }
 
 // Raw label runs — opaque text up to the (unquoted) close token / newline.
 // A `%%` inside a label is content, not a comment, so it is NOT excluded here.
@@ -546,9 +565,13 @@ Link "arrow"
   // Inline dash label first (so `-- text -->` is one token, not `--` + ...). The
   // surrounding whitespace is optional so the compact (`A--text-->B`) and
   // one-side-glued (`A -- text-->B`, `A--text --> B`) forms parse to ONE labelled
-  // edge instead of fabricating a phantom node from the label text.
-  = "--" WS? l:InlineDashLabel WS? "-->" { return { label: l.trim(), reversed: false }; }
-  / "==" WS? l:InlineThickLabel WS? "==>" { return { label: l.trim(), reversed: false }; }
+  // edge instead of fabricating a phantom node from the label text. The CLOSING
+  // arrow is matched as a full-length shaft run (`DashArrowClose`/`ThickArrowClose`,
+  // ANY shaft length `-- -* >` / `== =* >` — same length-variant family the bare
+  // arrow at the `"--" "-"* ">"` rule accepts) so `A -- text ---> B` consumes the
+  // whole `--->` and the shaft chars never leak into the label.
+  = "--" WS? l:InlineDashLabel WS? DashArrowClose { return { label: l, reversed: false }; }
+  / "==" WS? l:InlineThickLabel WS? ThickArrowClose { return { label: l, reversed: false }; }
   // Bidirectional (solid only — Mermaid has no `<==>`).
   / "<-->" { return { label: undefined, reversed: false }; }
   / "<--"  { return { label: undefined, reversed: true }; }
@@ -566,23 +589,40 @@ Link "arrow"
   / "--" "-"+      { return { label: undefined, reversed: false }; } // `---`, `----`
   / "--"           { return { label: undefined, reversed: false }; } // bare open `--`
 
-// The label cannot START with `>`/`-` (that would mean the leading `--` was
-// really the head of a `-->`/`---` arrow, e.g. `A-->B` must NOT be read as
-// `A --[>B]`), and never spans an arrow terminator. This keeps `A--text-->B` a
-// single labelled edge while leaving plain `A-->B-->C` to the bare-arrow rules.
-// The first char also may not be `|`: a `--|label|-->` / `==|label|==>` is the
-// pipe-label form glued to the arrow, NOT an inline-dash label. Excluding `|` here
-// makes the inline-dash branch decline, so the arrow's `PipeLabel?` (`-->|label|`)
-// fires and strips the pipes (label='label') instead of leaking them as content
-// (`label='|label|'`, the silent false-green).
+// The closing arrows of the inline-label form, as full-length shaft runs. Any
+// shaft length is one closing arrow (`-->`, `--->`, `---->`, … / `==>`, `===>`,
+// `====>`, …) — the same length-variant family the bare-arrow `"--" "-"* ">"`
+// rule (above) accepts. The label rules use these as a negative lookahead so the
+// label STOPS at the first char of the closing shaft run instead of leaking the
+// extra shaft chars (`label='text -'`) — and the Link rule consumes the whole run.
+DashArrowClose  = "--" "-"* ">"
+ThickArrowClose = "==" "="* ">"
+
+// An inline-dash / inline-thick edge label: a QUOTED run (quotes stripped, like
+// PipeLabel) or a raw unquoted run. The raw form may not START with the head of
+// the closing arrow (`>`/`-` for dash, `>`/`=` for thick — that would mean the
+// leading `--` was really an arrow head, e.g. `A-->B` must NOT read as `A --[>B]`)
+// and never spans an arrow terminator: it stops at the first char of the closing
+// shaft run (`WS? DashArrowClose`), so ANY shaft length closes cleanly and internal
+// hyphens/equals/pipes inside the label are preserved (only a run that actually
+// reaches `>` is a terminator). The first raw char also may not be `|`: a
+// `--|label|-->` / `==|label|==>` is the pipe-label form glued to the arrow, NOT an
+// inline-dash label — excluding `|` makes this branch decline so the arrow's
+// `PipeLabel?` (`-->|label|`) fires and strips the pipes instead of leaking them.
+// Quoted forms (`-- "label" -->`, `== 'label' ==>`) strip the surrounding quotes,
+// mirroring PipeLabel, so a quoted inline label never keeps its quote chars.
 InlineDashLabel
-  = first:(!(" -->" / "-->" / ">" / "-" / "|" / "\n") c:. { return c; })
-    rest:(!(" -->" / "-->" / "\n") c:. { return c; })*
-  { return first + rest.join(""); }
+  = '"' c:DQuoted '"' { return c; }
+  / "'" c:SQuoted "'" { return c; }
+  / first:(!(Sp DashArrowClose) !(">" / "-" / "|" / "\n") c:. { return c; })
+    rest:(!(Sp DashArrowClose) !"\n" c:. { return c; })*
+  { return (first + rest.join("")).trim(); }
 InlineThickLabel
-  = first:(!(" ==>" / "==>" / ">" / "=" / "|" / "\n") c:. { return c; })
-    rest:(!(" ==>" / "==>" / "\n") c:. { return c; })*
-  { return first + rest.join(""); }
+  = '"' c:DQuoted '"' { return c; }
+  / "'" c:SQuoted "'" { return c; }
+  / first:(!(Sp ThickArrowClose) !(">" / "=" / "|" / "\n") c:. { return c; })
+    rest:(!(Sp ThickArrowClose) !"\n" c:. { return c; })*
+  { return (first + rest.join("")).trim(); }
 
 // ─── Whitespace / lines ─────────────────────────────────────────────────────────
 

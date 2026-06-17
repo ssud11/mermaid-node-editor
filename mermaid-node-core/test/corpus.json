@@ -1312,5 +1312,145 @@
     "expectEdges": [{ "from": "A", "to": "B", "label": "label" }],
     "valid": true,
     "note": "control: the canonical inline-dash form `-- label -->` yields label='label'"
+  },
+
+  {
+    "id": "edge-inline-dash-label-long-shaft-3",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- text ---> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "a longer closing shaft `--->` is one arrow; the extra shaft chars must NOT leak into the label (label='text', not 'text -')"
+  },
+  {
+    "id": "edge-inline-dash-label-long-shaft-4",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- text ----> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "closing shaft `---->` consumed whole; label stays 'text' (was leaking 'text --')"
+  },
+  {
+    "id": "edge-inline-dash-label-long-shaft-5",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- text -----> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "any shaft length closes cleanly; label stays 'text' (was leaking 'text ---')"
+  },
+  {
+    "id": "edge-inline-thick-label-long-shaft-3",
+    "category": "arrow-forms",
+    "input": "graph TD\nA == text ===> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "thick: longer closing shaft `===>` is one arrow; label stays 'text' (was leaking 'text =')"
+  },
+  {
+    "id": "edge-inline-thick-label-long-shaft-4",
+    "category": "arrow-forms",
+    "input": "graph TD\nA == text ====> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "thick: closing shaft `====>` consumed whole; label stays 'text' (was leaking 'text ==')"
+  },
+  {
+    "id": "edge-inline-dash-label-quoted-double",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- \"q label\" --> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "q label" }],
+    "valid": true,
+    "note": "a double-quoted inline-dash label strips the surrounding quotes → label='q label' (mirrors the pipe form)"
+  },
+  {
+    "id": "edge-inline-dash-label-quoted-single",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- 'q label' --> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "q label" }],
+    "valid": true,
+    "note": "a single-quoted inline-dash label strips the surrounding quotes → label='q label'"
+  },
+  {
+    "id": "edge-inline-thick-label-quoted-double",
+    "category": "arrow-forms",
+    "input": "graph TD\nA == \"q label\" ==> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "q label" }],
+    "valid": true,
+    "note": "thick: a double-quoted inline label strips the surrounding quotes → label='q label'"
+  },
+  {
+    "id": "edge-inline-dash-label-internal-hyphen",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- a-b-c --> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "a-b-c" }],
+    "valid": true,
+    "note": "internal hyphens inside the label are preserved — only a shaft run that reaches `>` is a terminator"
+  },
+  {
+    "id": "edge-inline-dash-label-internal-pipe",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- one|two --> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "one|two" }],
+    "valid": true,
+    "note": "an internal pipe (not the FIRST char) is preserved as label content; only a leading `|` declines to the pipe-label form"
+  },
+  {
+    "id": "edge-inline-dash-label-pipe-control",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -->|label| B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "label" }],
+    "valid": true,
+    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes → label='label'"
+  },
+
+  {
+    "id": "invalid-asym-unquoted-open-paren",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA>(text)]",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "an asymmetric label may not begin with an unquoted opening bracket; `A>(text)]` must WARN/refuse, not corrupt to label '(text)'"
+  },
+  {
+    "id": "invalid-asym-unquoted-open-brace",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA>{x}]",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "`A>{x}]` (asymmetric, unquoted leading brace) must WARN/refuse, not corrupt to label '{x}'"
+  },
+  {
+    "id": "asym-quoted-with-inner-bracket-control",
+    "category": "shapes",
+    "input": "graph TD\nA>\"(text)\"]",
+    "expectNodes": [{ "id": "A", "label": "(text)", "shape": ">]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "control: a QUOTED asymmetric label may contain a leading bracket → label='(text)', quotes stripped"
+  },
+  {
+    "id": "bare-hyphenated-id-span-bounds-kept-id",
+    "category": "ids",
+    "input": "graph TD\nreceive-order",
+    "isMmd": true,
+    "expectNodes": [{ "id": "receive", "label": "receive", "shape": "" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "a bare hyphenated id is truncated to the kept prefix `receive`; the node span ends at the kept id so a span-rename leaves the discarded tail alone (slice===id)"
   }
 ]
