@@ -121,6 +121,26 @@
       labelEnd: start + value.length,
     };
   }
+
+  // Subgraph-title content span helpers. Both return { titleStart, titleEnd }
+  // such that source.slice(titleStart, titleEnd) === the title value (the same
+  // content-exclusive invariant the node label spans uphold).
+  //
+  // contentSpan: `cLoc` is the HERE location at the opening quote; the content
+  // begins `leading` chars after it (1 for the single opening quote).
+  function contentSpan(value, cLoc, leading) {
+    const start = cLoc.start.column - 1 + (leading === undefined ? 1 : leading);
+    return { titleStart: start, titleEnd: start + value.length };
+  }
+  // trimmedSpan: an unquoted bracketed run that gets .trim()'d — `cLoc` is the
+  // HERE location at the first RAW char; advance past the leading whitespace that
+  // trim removed so the span aligns with the trimmed value.
+  function trimmedSpan(raw, cLoc) {
+    const lead = raw.length - raw.replace(/^[ \t]+/, "").length;
+    const trimmed = raw.trim();
+    const start = cLoc.start.column - 1 + lead;
+    return { titleStart: start, titleEnd: start + trimmed.length };
+  }
 }}
 
 // ─── Entry point ────────────────────────────────────────────────────────────
@@ -152,7 +172,7 @@ DiagramHeader
   = kw:("flowchart" / "graph") dir:(WS d:Direction { return d; })? Sp InlineComment? (NL / EOF)
   { return { keyword: kw, direction: dir, raw: text().replace(/\s*%%.*$/, "").trim() }; }
 
-Direction = ("TD" / "TB" / "BT" / "LR" / "RL" / "DT") { return text(); }
+Direction = ("TD" / "TB" / "BT" / "LR" / "RL") { return text(); }
 
 // ─── Body assembly (nodes + edges + subgraph tree) ───────────────────────────
 // Each StmtLine yields { nodes, edges, subgraphs }; we merge them, threading a
@@ -180,9 +200,22 @@ Body
 // a `StmtLine*` loop can never spin on a zero-width match.
 StmtLine
   = sg:Subgraph                              { return sg; }   // self-terminating, multi-line
+  / DirectionStmt                            { return null; }    // `direction LR` — consumed + ignored
   / content:SingleLineBody NL                { return content; } // a line ending in a newline
   / content:SingleLineBody EOF               { return content; } // the final line, no NL
   / Sp InlineComment? NL                     { return null; }    // blank / comment-only line
+  / Sp InlineComment EOF                     { return null; }    // final comment-only line, no NL
+  / WS EOF                                   { return null; }    // final whitespace-only line, no NL
+
+// A per-(sub)graph layout directive — `direction LR` / `direction TD` etc. It
+// carries no node/edge to model, so (like a comment) it is consumed and ignored.
+// `direction` is in the RESERVED set but otherwise has no producing rule; without
+// this, a standard mixed-orientation diagram fails the WHOLE block. Matched at the
+// statement-line level so it is recognized both top-level and inside a subgraph
+// body. Requires a real direction token (so a node literally named `direction`
+// without a following direction keyword still falls through to NodeStmt).
+DirectionStmt
+  = Sp "direction" WS Direction Sp InlineComment? (NL / EOF)
 
 // A single-line statement's payload (no terminator). Requires real content so the
 // final-line (EOF) alternative is never a zero-width match.
@@ -251,54 +284,83 @@ Subgraph
       }
       if (isNested) addMember(ln.subgraphs[0].id);
     }
-    const h = header || { id: null, title: null, idLoc: hdrLoc, idText: "" };
+    const h = header || { id: null, title: null, idLoc: hdrLoc, idText: "", titleSpan: null };
     const idSpan = span(h.idLoc);
     const id = h.id != null ? h.id : (h.title != null ? h.title : "");
+    const hasId = h.id != null;
+    // The EDITABLE id/title span. With an explicit id, idStart/idEnd point at the
+    // id token. Without an id (title-only header) the editable token IS the title,
+    // so idStart/idEnd use the title's CONTENT-exclusive span (so the span slices
+    // to the label, matching the node labelStart/labelEnd invariant — never the
+    // surrounding quotes/brackets).
+    const idStart = (!hasId && h.titleSpan) ? h.titleSpan.titleStart : idSpan.startChar;
+    const idEnd = (!hasId && h.titleSpan) ? h.titleSpan.titleEnd : idSpan.endChar;
     const sgNode = {
       kind: "subgraph",
       id,
       label: h.title != null ? h.title : (h.id != null ? h.id : ""),
-      hasId: h.id != null,
+      hasId,
       quote: h.quote || "",
       line: idSpan.line,
-      idStart: idSpan.startChar,
-      idEnd: idSpan.endChar,
+      idStart,
+      idEnd,
       members,
     };
+    // A positioned, content-exclusive span for the title content (when the header
+    // has a title) — for a title editor to target without rebuilding the line.
+    if (h.titleSpan) {
+      sgNode.titleStart = h.titleSpan.titleStart;
+      sgNode.titleEnd = h.titleSpan.titleEnd;
+    }
     return { nodes, edges, subgraphs: [sgNode, ...subgraphs] };
   }
 
-// Header variants. Each captures the span of the id/title token (idLoc) so a
-// title relabel can target it precisely. A bare PlainId is only an id when it is
-// the WHOLE header (nothing but space/comment follows); otherwise the header is a
-// free-text title (`subgraph My Group`).
-// `idLoc` is the span of the EDITABLE token: the id when an explicit id is
-// present (`subgraph proc [Title]` → `proc`); otherwise the title token (quoted
-// run, or free text). Each `*Located` rule captures location() around exactly
-// that token, so idStart/idEnd are real columns a title/id editor can target.
+// Header variants. Each captures the span of the EDITABLE token so a title/id
+// relabel can target it precisely:
+//   - `idLoc`    — the id token's span (when an explicit id is present).
+//   - `titleSpan`— the title CONTENT span ({ titleStart, titleEnd }), exclusive of
+//                  any quotes/brackets, so `source.slice(titleStart,titleEnd) === title`
+//                  (the same content-only invariant the node `labelStart/labelEnd`
+//                  upholds). Present for every form that has a title.
+// A bare PlainId is only an id when it is the WHOLE header (nothing but space /
+// comment follows); otherwise the header is a free-text title (`subgraph My Group`).
+//
+// The id↔title separator is OPTIONAL (`WS?`) for the bracket/quote title forms so
+// the no-space canonical Mermaid `subgraph id[title]` / `id("title")` parses to
+// { id, title, hasId:true } — NOT a single free-text id. `SubgraphTitle` matches
+// only bracket/quote forms (never bare words), so a free-text two-word title like
+// `subgraph My Group` still falls through to the FreeTitle catch-all.
 SubgraphHeader
-  = idl:PlainIdLocated WS title:SubgraphTitle &EndOfHeader
-    { return { id: idl.value, title: title.value, quote: title.quote, idLoc: idl.loc }; }
-  / t:TitleLocated &EndOfHeader
-    { return { id: null, title: t.value, quote: t.quote, idLoc: t.loc }; }
+  = idl:PlainIdLocated WS? title:SubgraphTitle &EndOfHeader
+    { return { id: idl.value, title: title.value, quote: title.quote, idLoc: idl.loc, titleSpan: title.span }; }
+  / t:SubgraphTitle &EndOfHeader
+    { return { id: null, title: t.value, quote: t.quote, idLoc: t.loc, titleSpan: t.span }; }
   / idl:PlainIdLocated &EndOfHeader
-    { return { id: idl.value, title: null, quote: "", idLoc: idl.loc }; }
+    { return { id: idl.value, title: null, quote: "", idLoc: idl.loc, titleSpan: null }; }
   / t:FreeTitleLocated
-    { return { id: null, title: t.value, quote: "", idLoc: t.loc }; }
+    { return { id: null, title: t.value, quote: "", idLoc: t.loc, titleSpan: { titleStart: t.loc.start.column - 1, titleEnd: t.loc.start.column - 1 + t.value.length } }; }
 
 PlainIdLocated  = v:PlainId      { return { value: v, loc: location() }; }
-TitleLocated    = t:SubgraphTitle { return { value: t.value, quote: t.quote, loc: location() }; }
 FreeTitleLocated = v:FreeTitle   { return { value: v, loc: location() }; }
 
 // The header ends when only inline space and/or a comment remain before the NL.
 EndOfHeader = Sp ("%%" / "\n" / "\r" / !.)
 
+// A subgraph title: `[title]`, `["title"]`, `['title']`, `(title)`, `("title")`,
+// `('title')`, or a bare quoted run. Returns the title value, the quote char, a
+// content-exclusive span ({ titleStart, titleEnd }), and (for the title-only
+// header) `loc` (the whole-token location, used as the editable id span fallback).
+// `cLoc:HERE` captures the column of the first CONTENT char so the span excludes
+// the surrounding bracket/quote delimiters.
 SubgraphTitle
-  = "[" '"' c:DQuoted '"' "]" { return { value: c, quote: '"' }; }
-  / "[" "'" c:SQuoted "'" "]" { return { value: c, quote: "'" }; }
-  / "[" c:BracketRun "]"      { return { value: c.trim(), quote: "" }; }
-  / '"' c:DQuoted '"'         { return { value: c, quote: '"' }; }
-  / "'" c:SQuoted "'"         { return { value: c, quote: "'" }; }
+  = "[" cLoc:HERE '"' c:DQuoted '"' "]" { return { value: c, quote: '"', span: contentSpan(c, cLoc), loc: location() }; }
+  / "[" cLoc:HERE "'" c:SQuoted "'" "]" { return { value: c, quote: "'", span: contentSpan(c, cLoc), loc: location() }; }
+  / "[" cLoc:HERE c:BracketRun "]"      { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location() }; }
+  / "(" cLoc:HERE '"' c:DQuoted '"' ")" { return { value: c, quote: '"', span: contentSpan(c, cLoc), loc: location() }; }
+  / "(" cLoc:HERE "'" c:SQuoted "'" ")" { return { value: c, quote: "'", span: contentSpan(c, cLoc), loc: location() }; }
+  / "(" cLoc:HERE c:ParenRun ")"        { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location() }; }
+  / cLoc:HERE '"' c:DQuoted '"'         { return { value: c, quote: '"', span: contentSpan(c, cLoc, 1), loc: location() }; }
+  / cLoc:HERE "'" c:SQuoted "'"         { return { value: c, quote: "'", span: contentSpan(c, cLoc, 1), loc: location() }; }
 
 // A bare free-text subgraph title (no id, no brackets, no quotes) — e.g.
 // `subgraph My Group`. Stops at end-of-line / comment.
@@ -411,10 +473,24 @@ NodeShape
 
 // ShapeLabel returns { value, quote, labelStart, labelEnd } — the content span is
 // captured around the inner content so labelStart/labelEnd are real columns.
+//
+// The unquoted run must NOT begin with an opening bracket char (`[`/`(`/`{`).
+// That guard closes the ASYMMETRIC over-bracket class (`A[[[hello]]`, `A((x)`,
+// `A{{{x}}`, …): when a multi-char opener like `[[` fails to find its symmetric
+// close, the single-char opener `[` would otherwise backtrack and swallow the
+// leftover `[` as label content (`label:'[hello'`) — a silent corruption that
+// PRODUCT.md §3 forbids. With the guard the whole node shape fails to match, so
+// the block is reported `supported:false` + `parseError` (a clean WARN). A label
+// that genuinely starts with a bracket must be quoted (`A["[x"]`), which the
+// quoted alternatives above accept.
 ShapeLabel
   = lLoc:HERE '"' c:DQuoted '"' { return labelSpan(c, '"', lLoc, location()); }
   / lLoc:HERE "'" c:SQuoted "'" { return labelSpan(c, "'", lLoc, location()); }
-  / lLoc:HERE c:BracketRun      { return labelSpanRaw(c, "", lLoc); }
+  / lLoc:HERE !OpenBracket c:BracketRun { return labelSpanRaw(c, "", lLoc); }
+
+// An opening bracket char — used as a negative lookahead so an unquoted shape
+// label can never begin with one (the asymmetric over-bracket corruption guard).
+OpenBracket = "[" / "(" / "{"
 
 AsymLabel
   = lLoc:HERE c:AsymRun { return labelSpanRaw(c, "", lLoc); }
@@ -423,6 +499,8 @@ AsymLabel
 // A `%%` inside a label is content, not a comment, so it is NOT excluded here.
 BracketRun = chars:(!("]" / ")" / "}" / "\n") c:. { return c; })* { return chars.join(""); }
 AsymRun    = chars:(!("]" / "\n") c:. { return c; })* { return chars.join(""); }
+// An unquoted subgraph-title run inside `(...)` — opaque up to the close paren.
+ParenRun   = chars:(!(")" / "\n") c:. { return c; })* { return chars.join(""); }
 
 DQuoted = chars:(!('"' / "\n") c:. { return c; })* { return chars.join(""); }
 SQuoted = chars:(!("'" / "\n") c:. { return c; })* { return chars.join(""); }
@@ -432,9 +510,12 @@ SQuoted = chars:(!("'" / "\n") c:. { return c; })* { return chars.join(""); }
 // matched as one Link before the bare `--`.
 
 Link "arrow"
-  // Inline dash label first (so `-- text -->` is one token, not `--` + ...).
-  = "--" WS l:InlineDashLabel WS "-->" { return { label: l.trim(), reversed: false }; }
-  / "==" WS l:InlineThickLabel WS "==>" { return { label: l.trim(), reversed: false }; }
+  // Inline dash label first (so `-- text -->` is one token, not `--` + ...). The
+  // surrounding whitespace is optional so the compact (`A--text-->B`) and
+  // one-side-glued (`A -- text-->B`, `A--text --> B`) forms parse to ONE labelled
+  // edge instead of fabricating a phantom node from the label text.
+  = "--" WS? l:InlineDashLabel WS? "-->" { return { label: l.trim(), reversed: false }; }
+  / "==" WS? l:InlineThickLabel WS? "==>" { return { label: l.trim(), reversed: false }; }
   // Bidirectional (solid only — Mermaid has no `<==>`).
   / "<-->" { return { label: undefined, reversed: false }; }
   / "<--"  { return { label: undefined, reversed: true }; }
@@ -452,8 +533,18 @@ Link "arrow"
   / "--" "-"+      { return { label: undefined, reversed: false }; } // `---`, `----`
   / "--"           { return { label: undefined, reversed: false }; } // bare open `--`
 
-InlineDashLabel  = chars:(!(" -->" / "-->" / "\n") c:. { return c; })+ { return chars.join(""); }
-InlineThickLabel = chars:(!(" ==>" / "==>" / "\n") c:. { return c; })+ { return chars.join(""); }
+// The label cannot START with `>`/`-` (that would mean the leading `--` was
+// really the head of a `-->`/`---` arrow, e.g. `A-->B` must NOT be read as
+// `A --[>B]`), and never spans an arrow terminator. This keeps `A--text-->B` a
+// single labelled edge while leaving plain `A-->B-->C` to the bare-arrow rules.
+InlineDashLabel
+  = first:(!(" -->" / "-->" / ">" / "-" / "\n") c:. { return c; })
+    rest:(!(" -->" / "-->" / "\n") c:. { return c; })*
+  { return first + rest.join(""); }
+InlineThickLabel
+  = first:(!(" ==>" / "==>" / ">" / "=" / "\n") c:. { return c; })
+    rest:(!(" ==>" / "==>" / "\n") c:. { return c; })*
+  { return first + rest.join(""); }
 
 // ─── Whitespace / lines ─────────────────────────────────────────────────────────
 

@@ -457,7 +457,7 @@
     "expectNodes": [],
     "expectEdges": [{ "from": "receive", "to": "process" }],
     "valid": true,
-    "note": "Hyphenated id (off-contract §3): truncated at hyphen, remainder discarded — must not crash"
+    "note": "Hyphenated id (off-contract): truncated at hyphen, remainder discarded — must not crash"
   },
   {
     "id": "compound-id-hyphenated-both",
@@ -725,7 +725,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": true,
-    "note": "Reserved id 'end' as a node — skipped by reserved guard, not an error (off-contract §3)"
+    "note": "Reserved id 'end' as a node — skipped by reserved guard, not an error (off-contract)"
   },
   {
     "id": "reserved-id-graph-node",
@@ -875,7 +875,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Reserved 'end' as edge target (off-contract §3) — must not crash"
+    "note": "Reserved 'end' as edge target (off-contract) — must not crash"
   },
   {
     "id": "invalid-over-bracketed",
@@ -885,7 +885,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Over-bracketed [[[ shape (off-contract §3) — must WARN/refuse, not silently corrupt"
+    "note": "Over-bracketed [[[ shape (off-contract) — must WARN/refuse, not silently corrupt"
   },
   {
     "id": "invalid-fanout-ampersand",
@@ -895,6 +895,215 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "& fan-out (off-contract §3) — not parsed/split; must not crash"
+    "note": "& fan-out (off-contract) — not parsed/split; must not crash"
+  },
+
+  {
+    "id": "direction-top-level",
+    "category": "directives",
+    "input": "graph TD\ndirection LR\nA[Start] --> B[End]",
+    "isMmd": true,
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "top-level `direction LR` directive consumed+ignored; nodes/edges still exposed"
+  },
+  {
+    "id": "direction-in-subgraph",
+    "category": "directives",
+    "input": "flowchart TD\nsubgraph API\n  direction LR\n  A[Endpoint] --> B[Handler]\nend",
+    "isMmd": true,
+    "expectNodes": [
+      { "id": "A", "label": "Endpoint", "shape": "[]" },
+      { "id": "B", "label": "Handler", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "expectSubgraphs": [{ "id": "API", "label": "API", "hasId": true, "members": ["A", "B"] }],
+    "valid": true,
+    "note": "per-subgraph `direction LR` (mixed-orientation) consumed+ignored; subgraph + members intact"
+  },
+  {
+    "id": "direction-only-no-newline",
+    "category": "directives",
+    "input": "graph TD\nA-->B\ndirection LR",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "trailing `direction` directive with no final newline still consumed"
+  },
+
+  {
+    "id": "comment-trailing-no-newline",
+    "category": "comments",
+    "input": "graph TD\nA-->B\n%% trailing comment",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "final comment line with NO trailing newline must not discard the valid edge above it"
+  },
+  {
+    "id": "comment-only-eof",
+    "category": "comments",
+    "input": "graph TD\n%%",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": true,
+    "note": "comment-only final line `%%` with no newline parses (empty but supported)"
+  },
+  {
+    "id": "comment-fenced-last-line",
+    "category": "comments",
+    "input": "```mermaid\ngraph TD\nA-->B\n%% c\n```",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "fenced block whose last content line is a comment (fence extractor joins without trailing newline)"
+  },
+
+  {
+    "id": "subgraph-id-bracket-nospace",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph one[The One]\n  A-->B\nend",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "expectSubgraphs": [{ "id": "one", "label": "The One", "hasId": true, "members": ["A", "B"] }],
+    "valid": true,
+    "note": "`subgraph id[title]` with NO space → {id, title, hasId:true}, not a free-text id"
+  },
+  {
+    "id": "subgraph-id-paren-nospace",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph one(The One)\n  A-->B\nend",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "expectSubgraphs": [{ "id": "one", "label": "The One", "hasId": true, "members": ["A", "B"] }],
+    "valid": true,
+    "note": "`subgraph id(title)` with NO space → {id, title, hasId:true}"
+  },
+  {
+    "id": "subgraph-id-bracket-quoted-nospace",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph proc[\"Processing\"]\n  A-->B\nend",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "expectSubgraphs": [{ "id": "proc", "label": "Processing", "hasId": true, "members": ["A", "B"] }],
+    "valid": true,
+    "note": "`subgraph id[\"title\"]` no-space quoted form → {id, title, hasId:true}"
+  },
+
+  {
+    "id": "edge-inline-dash-label-left-glued",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- text--> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "one-sided whitespace (no space before -->) → ONE edge A->B label 'text', not a phantom node"
+  },
+  {
+    "id": "edge-inline-dash-label-right-glued",
+    "category": "arrow-forms",
+    "input": "graph TD\nA --text --> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "one-sided whitespace (no space after --) → ONE edge A->B label 'text'"
+  },
+  {
+    "id": "edge-inline-dash-label-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA--text-->B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "zero whitespace compact `A--text-->B` → ONE edge A->B label 'text'"
+  },
+  {
+    "id": "edge-inline-thick-label-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA==text==>B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "text" }],
+    "valid": true,
+    "note": "zero whitespace compact thick-arrow label `A==text==>B` → ONE edge A->B label 'text'"
+  },
+  {
+    "id": "edge-compact-chain-not-mislabelled",
+    "category": "arrow-forms",
+    "input": "graph TD\nA-->B-->C",
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" },
+      { "from": "B", "to": "C" }
+    ],
+    "valid": true,
+    "note": "a plain compact chain must NOT be mis-read as one labelled edge (label would-be '>B')"
+  },
+
+  {
+    "id": "invalid-over-bracketed-asym-rect",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA[[[hello]]",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "asymmetric over-bracket A[[[ (N+1 open / N close) must WARN/refuse, not silently corrupt to label '[hello'"
+  },
+  {
+    "id": "invalid-over-bracketed-asym-subroutine",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA[[x]",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "asymmetric A[[x] (2 open / 1 close) must WARN/refuse, not corrupt to label '[x'"
+  },
+  {
+    "id": "invalid-over-bracketed-asym-circle",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA((x)",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "asymmetric A((x) must WARN/refuse, not corrupt to label '(x'"
+  },
+  {
+    "id": "invalid-over-bracketed-asym-hexagon",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA{{{x}}",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "asymmetric A{{{x}} must WARN/refuse, not corrupt to label '{x'"
+  },
+  {
+    "id": "label-quoted-leading-bracket",
+    "category": "labels",
+    "input": "graph TD\nA[\"[x\"]",
+    "expectNodes": [{ "id": "A", "label": "[x", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "a label that genuinely starts with a bracket is valid WHEN quoted"
+  },
+
+  {
+    "id": "invalid-direction-dt",
+    "category": "invalid-inputs",
+    "input": "graph DT\nA-->B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "`graph DT` (DT is not a real Mermaid direction — TD/TB/BT/LR/RL) must WARN, not be accepted as supported"
   }
 ]

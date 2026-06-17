@@ -124,6 +124,45 @@ test("blockAtLine picks the right block in a multi-block doc", () => {
   assert.equal(second.edges[0].from, "C");
 });
 
+// ── subgraph title spans are content-exclusive (slice === value) ──────────
+
+test("subgraph title-only span excludes quote/bracket delimiters", () => {
+  // Quoted title-only: idStart/idEnd must slice to the content, NOT '"my title"'.
+  const q = 'graph TD\nsubgraph "my title"\n  A\nend';
+  const sgQ = findMermaidBlocks(q, true)[0].subgraphs[0];
+  const lineQ = q.split("\n")[sgQ.line];
+  assert.equal(sgQ.hasId, false);
+  assert.equal(lineQ.slice(sgQ.idStart, sgQ.idEnd), "my title");
+  assert.equal(lineQ.slice(sgQ.titleStart, sgQ.titleEnd), "my title");
+
+  // Bracketed title-only: same content-exclusive invariant.
+  const brk = "graph TD\nsubgraph [my title]\n  A\nend";
+  const sgB = findMermaidBlocks(brk, true)[0].subgraphs[0];
+  const lineB = brk.split("\n")[sgB.line];
+  assert.equal(lineB.slice(sgB.idStart, sgB.idEnd), "my title");
+  assert.equal(lineB.slice(sgB.titleStart, sgB.titleEnd), "my title");
+});
+
+test("subgraph id+title exposes a content-exclusive titleStart/titleEnd", () => {
+  const src = 'graph TD\nsubgraph proc ["the title"]\n  A\nend';
+  const sg = findMermaidBlocks(src, true)[0].subgraphs[0];
+  const line = src.split("\n")[sg.line];
+  assert.equal(sg.hasId, true);
+  assert.equal(line.slice(sg.idStart, sg.idEnd), "proc"); // id span unchanged
+  assert.equal(line.slice(sg.titleStart, sg.titleEnd), "the title"); // content-only
+});
+
+test("subgraph no-space id[title] parses to {id,title,hasId} with correct spans", () => {
+  const src = "graph TD\nsubgraph one[The One]\n  A-->B\nend";
+  const sg = findMermaidBlocks(src, true)[0].subgraphs[0];
+  const line = src.split("\n")[sg.line];
+  assert.equal(sg.id, "one");
+  assert.equal(sg.label, "The One");
+  assert.equal(sg.hasId, true);
+  assert.equal(line.slice(sg.idStart, sg.idEnd), "one");
+  assert.equal(line.slice(sg.titleStart, sg.titleEnd), "The One");
+});
+
 test("never throws on a battery of off-contract / malformed inputs", () => {
   const malformed = [
     "graph TD\nA[Unclosed",
@@ -135,6 +174,10 @@ test("never throws on a battery of off-contract / malformed inputs", () => {
     "",
     "graph TD\n%%%%%%",
     "graph TD\nA-.-.->B",
+    "graph TD\nA[[[hello]]", // asymmetric over-bracket
+    "graph TD\nA((x)",
+    "graph TD\nA{{{x}}",
+    "graph DT\nA-->B", // bogus direction
   ];
   for (const src of malformed) {
     assert.doesNotThrow(() => findMermaidBlocks(src, true));
