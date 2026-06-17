@@ -336,6 +336,32 @@ test('computeIdRename: renames an id in a SPACE-separated `class A, B, C` id-lis
   }
 });
 
+test('computeIdRename: a keyword-CASED id (Graph/Subgraph/...) renames, never silently skipped (R14-1)', () => {
+  // The parser's RESERVED test is case-sensitive, so `Graph` is a real NODE. editor.ts
+  // keyword-skip guards must match that case-sensitivity — a `/i` flag skipped these
+  // lines and silently dropped the rename (false-green ok:true / false "not found").
+  // Manifestation A — declaration + edge refs on separate lines must ALL rename:
+  const a = ['graph TD', 'Graph[Step A]', 'A[Start] --> Graph', 'Graph --> B[Done]'].join('\n');
+  const { block: ba, lines: la } = block(a);
+  const ra = computeIdRename(ba, la, 'Graph', 'step_a');
+  assert.equal(ra.ok, true);
+  const outA = [...la];
+  for (const e of ra.edits) outA[e.line] = e.newText;
+  assert.equal(outA[1], 'step_a[Step A]');       // declaration renamed (was skipped)
+  assert.equal(outA[2], 'A[Start] --> step_a');  // edge target renamed
+  assert.equal(outA[3], 'step_a --> B[Done]');   // edge source renamed (was skipped)
+  assert.ok(!outA.slice(1).join('\n').includes('Graph')); // no orphan / stale id left
+
+  // Manifestation B — declaration + FROM-edge on ONE line must not false-"not found":
+  const b = ['graph TD', 'Subgraph[n1] --> End[n2]'].join('\n');
+  const { block: bb, lines: lb } = block(b);
+  const rb = computeIdRename(bb, lb, 'Subgraph', 'MyNode');
+  assert.equal(rb.ok, true); // was ok:false "Id not found" under /i
+  const outB = [...lb];
+  for (const e of rb.edits) outB[e.line] = e.newText;
+  assert.equal(outB[1], 'MyNode[n1] --> End[n2]'); // End (capital) stays a node, untouched
+});
+
 test('computeLabelEdit: a non-string newLabel returns ok:false (no throw)', () => {
   const r = computeLabelEdit(block('graph TD\nA[x]').block, 'A', null as unknown as string);
   assert.equal(r.ok, false);

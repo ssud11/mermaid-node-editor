@@ -239,10 +239,15 @@ export function computeIdRename(
     // declarations carry keywords / titles, not node references — never rewrite
     // ids there. (Frontmatter is already excluded: block.contentStart sits past
     // it.) This stops a node named `TD`/`LR` from clobbering a `direction TD` line.
+    // These keyword-line guards MUST match the parser's RESERVED test (parser.ts),
+    // which is case-SENSITIVE (lowercase only). The parser treats a capitalised id
+    // like `Graph`/`Subgraph`/`Direction`/`ClassDef`/`LinkStyle` as a real NODE, so a
+    // `/i` flag here would skip that line and silently drop the rename — corrupting the
+    // source with a false-green ok:true (R14-1). Hence NO `/i`.
     if (
-      /^(graph|flowchart)\b/i.test(trimmed) ||
-      /^direction\b/i.test(trimmed) ||
-      /^subgraph\b/i.test(trimmed) ||
+      /^(graph|flowchart)\b/.test(trimmed) ||
+      /^direction\b/.test(trimmed) ||
+      /^subgraph\b/.test(trimmed) ||
       // The bare `end` subgraph closer is a keyword line, not a node ref — never
       // rewrite it, or renaming a node that happens to be named `end` corrupts the
       // closer and leaves the subgraph unclosed. Mirrors the parser's closer test.
@@ -253,7 +258,7 @@ export function computeIdRename(
       /^%%/.test(trimmed) ||
       // classDef / linkStyle statements carry class names + CSS values (not node
       // refs we own) — never rewrite ids inside them.
-      /^(classDef|linkStyle)\b/i.test(trimmed)
+      /^(classDef|linkStyle)\b/.test(trimmed)
     ) {
       continue;
     }
