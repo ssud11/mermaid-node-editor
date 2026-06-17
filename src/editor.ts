@@ -273,9 +273,13 @@ export function computeIdRename(
     // comma-separated ids are node refs (rename them); the trailing class name is a
     // classDef ref, NOT a node — renaming it would orphan it from its classDef. (The
     // bare `class` line is not in the skip-list above precisely so we handle it here.)
-    const classDirective = /^(\s*class\s+)([A-Za-z0-9_,]+)(\s.*)?$/i.exec(original);
+    // The id-list may use spaces around commas (`class A, B, C myClass`), so match a
+    // comma-chain that tolerates surrounding whitespace; the className still lands in
+    // group 3 (a non-comma-joined trailing token) and is never renamed.
+    const classDirective = /^(\s*class\s+)([A-Za-z0-9_]+(?:\s*,\s*[A-Za-z0-9_]+)*)(\s.*)?$/i.exec(original);
     if (classDirective) {
-      const ids = classDirective[2].split(',').map((s) => (s === oldId ? newId : s)).join(',');
+      // Rename each id token in place so whitespace + commas are preserved exactly.
+      const ids = classDirective[2].replace(/[A-Za-z0-9_]+/g, (tok) => (tok === oldId ? newId : tok));
       if (ids !== classDirective[2]) {
         edits.push({ line: ln, startChar: 0, endChar: original.length, newText: `${classDirective[1]}${ids}${classDirective[3] ?? ''}` });
       }

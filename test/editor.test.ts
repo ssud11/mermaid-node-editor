@@ -321,6 +321,21 @@ test('computeIdRename: does not clobber a class NAME equal to a renamed node id'
   assert.equal(out[3], 'class A B'); // class name B preserved (only the id-list is touched)
 });
 
+test('computeIdRename: renames an id in a SPACE-separated `class A, B, C` id-list', () => {
+  // `class A, B, C myCls` uses spaces around the commas. Renaming any id in the list
+  // must follow through — the old regex capped the id-list at the first space, so B/C
+  // were silently left as stale refs (R12-4).
+  const text = ['graph TD', 'A[x] --> B[y] --> C[z]', 'classDef myCls fill:#eee', 'class A, B, C myCls'].join('\n');
+  const { block: b, lines } = block(text);
+  for (const [oldId, newId, expect] of [['A', 'Z', 'class Z, B, C myCls'], ['B', 'Z', 'class A, Z, C myCls'], ['C', 'Z', 'class A, B, Z myCls']] as const) {
+    const r = computeIdRename(b, lines, oldId, newId);
+    assert.equal(r.ok, true);
+    const out = [...lines];
+    for (const e of r.edits) out[e.line] = e.newText;
+    assert.equal(out[3], expect); // spacing + className preserved, target id renamed
+  }
+});
+
 test('computeLabelEdit: a non-string newLabel returns ok:false (no throw)', () => {
   const r = computeLabelEdit(block('graph TD\nA[x]').block, 'A', null as unknown as string);
   assert.equal(r.ok, false);
