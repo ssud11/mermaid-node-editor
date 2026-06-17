@@ -11,7 +11,7 @@
   "mcpServers": {
     "flows": {
       "command": "npx",
-      "args": ["-y", "mermaid-node-editor-flows"]
+      "args": ["-y", "mermaid-node-editor-flows@0.1.0"]
     }
   }
 }
