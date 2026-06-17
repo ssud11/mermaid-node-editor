@@ -97,6 +97,77 @@ test("quoted label span excludes the quotes", () => {
   assert.equal(src.split("\n")[1].slice(a.labelStart, a.labelEnd), "Quoted Label");
 });
 
+test("asymmetric >] quoted label strips quotes with a content-exclusive span", () => {
+  // The >] shape must report quote='"' and a content-only span just like [].
+  const asym = 'flowchart TD\nA>"quoted label"]';
+  const rect = 'flowchart TD\nA["quoted label"]';
+  const na = findMermaidBlocks(asym, true)[0].nodes[0];
+  const nr = findMermaidBlocks(rect, true)[0].nodes[0];
+  assert.equal(na.shape, ">]");
+  assert.equal(na.quote, '"');
+  assert.equal(na.label, "quoted label");
+  // span slices to the content, excluding the surrounding quotes
+  assert.equal(asym.split("\n")[1].slice(na.labelStart, na.labelEnd), "quoted label");
+  // …and the label value matches the rectangle baseline exactly
+  assert.equal(na.label, nr.label);
+  assert.equal(na.quote, nr.quote);
+
+  // single-quoted variant too
+  const sq = findMermaidBlocks("flowchart TD\nA>'sq label']", true)[0].nodes[0];
+  assert.equal(sq.quote, "'");
+  assert.equal(sq.label, "sq label");
+});
+
+test("styling/accessibility directive lines are consumed, not block-fatal", () => {
+  // Each directive keyword on its own line must be ignored, leaving the real
+  // nodes/edges intact (not a whole-block supported:false).
+  const cases = [
+    "style A fill:#f00",
+    "click A href \"u\"",
+    "classDef c fill:red",
+    "class A c",
+    "linkStyle 0 stroke:red",
+    "accTitle: a title",
+    "accDescr: a description",
+  ];
+  for (const directive of cases) {
+    const src = `flowchart TD\nA[Start] --> B[End]\n${directive}`;
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `directive '${directive}' should not fail the block`);
+    assert.deepEqual(b.edges.map((e) => ({ from: e.from, to: e.to })), [{ from: "A", to: "B" }]);
+    assert.equal(b.nodes.length, 2);
+  }
+  // the accDescr brace block spans multiple lines and is consumed through `}`
+  const blockSrc = "flowchart TD\naccDescr {\n  one\n  two\n}\nA --> B";
+  const bb = findMermaidBlocks(blockSrc, true)[0];
+  assert.equal(bb.supported, true);
+  assert.deepEqual(bb.edges.map((e) => ({ from: e.from, to: e.to })), [{ from: "A", to: "B" }]);
+});
+
+test("an id that merely starts with a directive keyword is a real node", () => {
+  // `styleA`/`classroom` are NOT directives — the keyword must be a whole token.
+  const node = findMermaidBlocks("flowchart TD\nstyleA[x] --> B", true)[0];
+  assert.equal(node.nodes[0].id, "styleA");
+  assert.equal(node.edges[0].from, "styleA");
+  const edge = findMermaidBlocks("flowchart TD\nclassroom --> B", true)[0];
+  assert.equal(edge.edges[0].from, "classroom");
+});
+
+test("mixed dash+pipe edge does NOT silently parse with leaked pipe chars", () => {
+  // `A --|label|--> B` is non-standard; the chosen behavior is a graceful WARN
+  // (no live edge) rather than the old false-green label='|label|'.
+  for (const src of ["flowchart TD\nA --|label|--> B", "flowchart TD\nA ==|label|==> B"]) {
+    const b = findMermaidBlocks(src, true)[0];
+    const leaked = (b.edges || []).some((e) => e.label === "|label|");
+    assert.equal(leaked, false, `pipe chars must never leak into the label for: ${src}`);
+    // it warns (supported:false / no live edge), not a silent success
+    assert.equal((b.edges || []).length, 0);
+  }
+  // the canonical forms still produce the clean label
+  assert.equal(findMermaidBlocks("flowchart TD\nA -->|label| B", true)[0].edges[0].label, "label");
+  assert.equal(findMermaidBlocks("flowchart TD\nA -- label --> B", true)[0].edges[0].label, "label");
+});
+
 test("edge span covers from-node start to to-node end", () => {
   const src = "graph TD\nA[Start] --> B[End]";
   const [b] = findMermaidBlocks(src, true);

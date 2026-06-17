@@ -1,5 +1,5 @@
 // ============================================================================
-// mermaid-node-core — Mermaid flowchart grammar (the §2 input contract, as a spec)
+// mermaid-node-core — Mermaid flowchart grammar (the supported input contract, as a spec)
 // ============================================================================
 //
 // This PEG grammar IS the closed specification of the input contract: a Mermaid
@@ -201,6 +201,7 @@ Body
 StmtLine
   = sg:Subgraph                              { return sg; }   // self-terminating, multi-line
   / DirectionStmt                            { return null; }    // `direction LR` — consumed + ignored
+  / DirectiveStmt                            { return null; }    // style/click/classDef/... — consumed + ignored
   / content:SingleLineBody NL                { return content; } // a line ending in a newline
   / content:SingleLineBody EOF               { return content; } // the final line, no NL
   / Sp InlineComment? NL                     { return null; }    // blank / comment-only line
@@ -216,6 +217,31 @@ StmtLine
 // without a following direction keyword still falls through to NodeStmt).
 DirectionStmt
   = Sp "direction" WS Direction Sp InlineComment? (NL / EOF)
+
+// A non-node/edge flowchart statement line — styling, interaction, and
+// accessibility declarations. Each begins with a reserved keyword but produces no
+// node/edge to model, so (like `direction` and comments) the whole line is
+// consumed and ignored — the real nodes/edges around it survive instead of the
+// keyword token falling through to EdgeChain and aborting the WHOLE block.
+//
+// Covered keywords (the complete set of line-leading flowchart directives beyond
+// `direction`/`subgraph`/`end`/`graph`/`flowchart`):
+//   style / class / classDef / linkStyle / click   — styling + interaction
+//   accTitle / accDescr                             — accessibility
+// `accDescr` additionally has a brace-block form (`accDescr { … }`) that spans
+// multiple lines, so that form consumes through its closing `}` line.
+//
+// The keyword must be a WHOLE token: a `!IdChar` boundary after it prevents
+// consuming a real node whose id merely starts with these letters (e.g.
+// `styleA[x]`, `classroom --> X`) — those still fall through to NodeStmt/EdgeChain.
+// `default` is NOT line-leading (it only appears as `classDef default`, consumed
+// by the classDef branch), so it needs no separate rule.
+DirectiveStmt
+  = Sp "accDescr" !IdChar Sp "{" (!"}" .)* "}" RestOfLine (NL / EOF)  // multi-line block form, tried first
+  / Sp DirectiveKeyword !IdChar RestOfLine (NL / EOF)
+
+DirectiveKeyword
+  = "classDef" / "class" / "linkStyle" / "style" / "click" / "accTitle" / "accDescr"
 
 // A single-line statement's payload (no terminator). Requires real content so the
 // final-line (EOF) alternative is never a zero-width match.
@@ -436,8 +462,8 @@ NodeRef
 HERE = "" { return location(); }
 
 // ─── Identifiers ──────────────────────────────────────────────────────────────
-// §2 ids are snake_case: [A-Za-z0-9_]. A hyphenated compound (`receive-order`)
-// is §3 off-contract — we take the prefix `receive` and discard `-order`, but
+// Supported ids are snake_case: [A-Za-z0-9_]. A hyphenated compound (`receive-order`)
+// is off-contract — we take the prefix `receive` and discard `-order`, but
 // ONLY when the hyphen is followed by an id char (so a `-`/`-.` that begins an
 // arrow operator is left for the Link rule).
 
@@ -479,7 +505,7 @@ NodeShape
 // `A{{{x}}`, …): when a multi-char opener like `[[` fails to find its symmetric
 // close, the single-char opener `[` would otherwise backtrack and swallow the
 // leftover `[` as label content (`label:'[hello'`) — a silent corruption that
-// PRODUCT.md §3 forbids. With the guard the whole node shape fails to match, so
+// the contract forbids (off-contract input must be warned, never silently corrupted). With the guard the whole node shape fails to match, so
 // the block is reported `supported:false` + `parseError` (a clean WARN). A label
 // that genuinely starts with a bracket must be quoted (`A["[x"]`), which the
 // quoted alternatives above accept.
@@ -492,8 +518,15 @@ ShapeLabel
 // label can never begin with one (the asymmetric over-bracket corruption guard).
 OpenBracket = "[" / "(" / "{"
 
+// The `>]` (asymmetric) shape, like every other shape, must strip surrounding
+// quotes so a quoted label reports quote='"'/"'" and a content-EXCLUSIVE span —
+// otherwise a relabel honoring labelStart/labelEnd would silently drop the quotes
+// (`A>"x"]` → `A>new]`). Mirror ShapeLabel: try the quoted forms first, then the
+// raw unquoted run.
 AsymLabel
-  = lLoc:HERE c:AsymRun { return labelSpanRaw(c, "", lLoc); }
+  = lLoc:HERE '"' c:DQuoted '"' { return labelSpan(c, '"', lLoc, location()); }
+  / lLoc:HERE "'" c:SQuoted "'" { return labelSpan(c, "'", lLoc, location()); }
+  / lLoc:HERE c:AsymRun { return labelSpanRaw(c, "", lLoc); }
 
 // Raw label runs — opaque text up to the (unquoted) close token / newline.
 // A `%%` inside a label is content, not a comment, so it is NOT excluded here.
@@ -537,12 +570,17 @@ Link "arrow"
 // really the head of a `-->`/`---` arrow, e.g. `A-->B` must NOT be read as
 // `A --[>B]`), and never spans an arrow terminator. This keeps `A--text-->B` a
 // single labelled edge while leaving plain `A-->B-->C` to the bare-arrow rules.
+// The first char also may not be `|`: a `--|label|-->` / `==|label|==>` is the
+// pipe-label form glued to the arrow, NOT an inline-dash label. Excluding `|` here
+// makes the inline-dash branch decline, so the arrow's `PipeLabel?` (`-->|label|`)
+// fires and strips the pipes (label='label') instead of leaking them as content
+// (`label='|label|'`, the silent false-green).
 InlineDashLabel
-  = first:(!(" -->" / "-->" / ">" / "-" / "\n") c:. { return c; })
+  = first:(!(" -->" / "-->" / ">" / "-" / "|" / "\n") c:. { return c; })
     rest:(!(" -->" / "-->" / "\n") c:. { return c; })*
   { return first + rest.join(""); }
 InlineThickLabel
-  = first:(!(" ==>" / "==>" / ">" / "=" / "\n") c:. { return c; })
+  = first:(!(" ==>" / "==>" / ">" / "=" / "|" / "\n") c:. { return c; })
     rest:(!(" ==>" / "==>" / "\n") c:. { return c; })*
   { return first + rest.join(""); }
 

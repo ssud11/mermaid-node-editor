@@ -1105,5 +1105,212 @@
     "expectEdges": [],
     "valid": false,
     "note": "`graph DT` (DT is not a real Mermaid direction — TD/TB/BT/LR/RL) must WARN, not be accepted as supported"
+  },
+
+  {
+    "id": "directive-style",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[Middle] --> C[End]\nstyle A fill:#ff0000",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "Middle", "shape": "[]" },
+      { "id": "C", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }, { "from": "B", "to": "C" }],
+    "valid": true,
+    "note": "a `style` declaration line is consumed+ignored; the nodes and edges around it survive instead of the whole block failing"
+  },
+  {
+    "id": "directive-click",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[End]\nclick A href \"https://example.com\"",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a `click` interaction line is consumed+ignored; nodes/edges still exposed"
+  },
+  {
+    "id": "directive-classdef",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[End]\nclassDef myClass fill:red",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a `classDef` declaration line is consumed+ignored; nodes/edges still exposed"
+  },
+  {
+    "id": "directive-class",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[End]\nclass A myClass",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a `class` assignment line is consumed+ignored; nodes/edges still exposed"
+  },
+  {
+    "id": "directive-linkstyle",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[End]\nlinkStyle 0 stroke:red",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a `linkStyle` declaration line is consumed+ignored; nodes/edges still exposed"
+  },
+  {
+    "id": "directive-acctitle",
+    "category": "directives",
+    "input": "flowchart TD\naccTitle: My Diagram\nA[Start] --> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "an `accTitle:` accessibility line is consumed+ignored; nodes/edges still exposed"
+  },
+  {
+    "id": "directive-accdescr-single",
+    "category": "directives",
+    "input": "flowchart TD\naccDescr: a short description\nA[Start] --> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a single-line `accDescr:` accessibility line is consumed+ignored; nodes/edges still exposed"
+  },
+  {
+    "id": "directive-accdescr-block",
+    "category": "directives",
+    "input": "flowchart TD\naccDescr {\n  first line\n  second line\n}\nA[Start] --> B[End]",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a multi-line `accDescr { ... }` block is consumed+ignored through its closing brace; nodes/edges after it survive"
+  },
+  {
+    "id": "directive-classdef-default",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[End]\nclassDef default fill:blue",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "`classDef default` (the catch-all class form) is consumed+ignored like any other classDef line"
+  },
+  {
+    "id": "directive-multiple-mixed",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[End]\nstyle A fill:red\nclass A foo\nclick A href \"u\"\nlinkStyle 0 stroke:green",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "several directive lines stacked after the diagram are each consumed+ignored; the single edge survives"
+  },
+  {
+    "id": "directive-control-node-id-prefix",
+    "category": "directives",
+    "input": "flowchart TD\nstyleA[x] --> B",
+    "expectNodes": [{ "id": "styleA", "label": "x", "shape": "[]" }],
+    "expectEdges": [{ "from": "styleA", "to": "B" }],
+    "valid": true,
+    "note": "control: an id that merely STARTS with a directive keyword (`styleA`) is a real node, NOT a consumed directive — the keyword must be a whole token"
+  },
+  {
+    "id": "directive-control-edge-id-prefix",
+    "category": "directives",
+    "input": "flowchart TD\nclassroom --> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "classroom", "to": "B" }],
+    "valid": true,
+    "note": "control: an edge endpoint id that starts with a directive keyword (`classroom`) is a real edge, not a consumed `class` directive"
+  },
+
+  {
+    "id": "asym-quoted-double",
+    "category": "node-shapes",
+    "input": "flowchart TD\nA>\"quoted label\"]",
+    "expectNodes": [{ "id": "A", "label": "quoted label", "shape": ">]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "the >] shape strips surrounding double quotes (quote='\"', content-exclusive label) just like the bracket shapes"
+  },
+  {
+    "id": "asym-quoted-single",
+    "category": "node-shapes",
+    "input": "flowchart TD\nA>'sq label']",
+    "expectNodes": [{ "id": "A", "label": "sq label", "shape": ">]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "the >] shape strips surrounding single quotes (quote=\"'\", content-exclusive label)"
+  },
+  {
+    "id": "asym-unquoted-control",
+    "category": "node-shapes",
+    "input": "flowchart TD\nA>plain label]",
+    "expectNodes": [{ "id": "A", "label": "plain label", "shape": ">]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "control: an unquoted >] label still parses as the raw run (quote='') — only the quoted forms strip quotes"
+  },
+
+  {
+    "id": "edge-mixed-dash-pipe-warns",
+    "category": "invalid-inputs",
+    "input": "flowchart TD\nA --|label|--> B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "the mixed dash+pipe form `--|label|-->` is non-standard; it must WARN (no block / no nodes+edges), NOT silently succeed with the pipe chars leaked into the label value"
+  },
+  {
+    "id": "edge-mixed-thick-pipe-warns",
+    "category": "invalid-inputs",
+    "input": "flowchart TD\nA ==|label|==> B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "note": "thick analogue `==|label|==>` of the mixed dash+pipe form must WARN, not leak the pipe chars into the label as a false-green"
+  },
+  {
+    "id": "edge-pipe-label-control",
+    "category": "arrow-forms",
+    "input": "flowchart TD\nA -->|label| B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "label" }],
+    "valid": true,
+    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes → label='label'"
+  },
+  {
+    "id": "edge-inline-dash-label-control",
+    "category": "arrow-forms",
+    "input": "flowchart TD\nA -- label --> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B", "label": "label" }],
+    "valid": true,
+    "note": "control: the canonical inline-dash form `-- label -->` yields label='label'"
   }
 ]
