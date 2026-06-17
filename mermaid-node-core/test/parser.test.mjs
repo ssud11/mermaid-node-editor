@@ -306,6 +306,66 @@ test("diagramType strips a same-line inline comment from the header", () => {
   assert.equal(c.diagramType, "graph TD");
 });
 
+test("bare thick arrow accepts every shaft length, like the bare dash arrow", () => {
+  // The bare (unlabeled) thick arrow must accept any shaft length ending in `>`
+  // — the same length-variant family the bare-dash and labeled-thick forms accept.
+  for (const src of [
+    "graph TD\nA ==> B",
+    "graph TD\nA ===> B",
+    "graph TD\nA ====> B",
+    "graph TD\nA===>B",
+  ]) {
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `parses: ${src}`);
+    assert.equal(b.parseError, undefined, `no parse error: ${src}`);
+    assert.deepEqual(b.edges.map((e) => ({ from: e.from, to: e.to })), [{ from: "A", to: "B" }], `one edge A->B: ${src}`);
+  }
+  // A mixed block keeps both edges — neither line fails the whole block.
+  const mixed = findMermaidBlocks("graph TD\nA-->B\nB===>C", true)[0];
+  assert.deepEqual(mixed.edges.map((e) => ({ from: e.from, to: e.to })), [{ from: "A", to: "B" }, { from: "B", to: "C" }]);
+  // The headless thick link `===`/`====` (no `>`) is still a distinct open link.
+  for (const src of ["graph TD\nA === B", "graph TD\nA ==== B"]) {
+    assert.deepEqual(findMermaidBlocks(src, true)[0].edges.map((e) => ({ from: e.from, to: e.to })), [{ from: "A", to: "B" }], `open link: ${src}`);
+  }
+});
+
+test("a reserved keyword leading an edge does not swallow the same-line destination", () => {
+  // `style[L] --> B[End]` is off-contract (reserved id as edge source). The
+  // directive rule must NOT consume the whole line and silently drop B — the
+  // destination node survives; the reserved-source edge is dropped per the
+  // reserved-id limitation.
+  for (const src of ["flowchart TD\nstyle[Label] --> B[End]", "flowchart TD\nstyle[L] ==> B[End]"]) {
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `still supported: ${src}`);
+    assert.deepEqual(b.nodes.map((n) => n.id), ["B"], `destination B survives: ${src}`);
+    assert.equal(b.edges.length, 0, `reserved-source edge dropped: ${src}`);
+  }
+  // Control: a PLAIN directive line (no edge operator) is still consumed+ignored,
+  // and the real node/edge around it survive — the edge-aware tightening did not
+  // un-fix the directive-class behavior.
+  const plain = findMermaidBlocks(
+    'flowchart TD\nA[Start] --> B[End]\nstyle A fill:red\nclassDef x fill:blue\nclick A href "u"\naccDescr { some text }',
+    true,
+  )[0];
+  assert.equal(plain.supported, true);
+  assert.deepEqual(plain.nodes.map((n) => n.id), ["A", "B"]);
+  assert.deepEqual(plain.edges.map((e) => ({ from: e.from, to: e.to })), [{ from: "A", to: "B" }]);
+});
+
+test("bare subgraph (no id/title) has an in-bounds, non-OOB editable span", () => {
+  // A header-less `subgraph` line must not emit a zero-width span one column past
+  // end-of-line — the span is clamped to the `subgraph` keyword token, so
+  // idStart < idEnd <= line.length and slice(idStart, idEnd) is in-bounds.
+  const src = "flowchart TD\nsubgraph\n A-->B\nend";
+  const sg = findMermaidBlocks(src, true)[0].subgraphs[0];
+  const line = src.split("\n")[sg.line];
+  assert.equal(sg.hasId, false);
+  assert.equal(sg.id, "");
+  assert.ok(sg.idStart >= 0 && sg.idEnd > sg.idStart, "span is non-degenerate");
+  assert.ok(sg.idEnd <= line.length, "span end is in-bounds");
+  assert.equal(line.slice(sg.idStart, sg.idEnd), "subgraph");
+});
+
 test("never throws on a battery of off-contract / malformed inputs", () => {
   const malformed = [
     "graph TD\nA[Unclosed",

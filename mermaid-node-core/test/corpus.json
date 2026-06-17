@@ -1452,5 +1452,98 @@
     "expectEdges": [],
     "valid": true,
     "note": "a bare hyphenated id is truncated to the kept prefix `receive`; the node span ends at the kept id so a span-rename leaves the discarded tail alone (slice===id)"
+  },
+  {
+    "id": "arrow-thick-bare-long-shaft-3",
+    "category": "arrow-forms",
+    "input": "graph TD\nA ===> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a bare (unlabeled) thick arrow with a 3-char shaft parses to one edge A->B, like the bare dash long-shaft form; the extra `=` is a length hint, not a parse error"
+  },
+  {
+    "id": "arrow-thick-bare-long-shaft-4",
+    "category": "arrow-forms",
+    "input": "graph TD\nA ====> B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a bare thick arrow with a 4-char shaft parses to one edge A->B; any shaft length closes cleanly"
+  },
+  {
+    "id": "arrow-thick-bare-long-shaft-compact",
+    "category": "arrow-forms",
+    "input": "graph TD\nA===>B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "the compact (no-space) bare long thick arrow also parses to one edge A->B"
+  },
+  {
+    "id": "arrow-thick-bare-long-mixed-block",
+    "category": "arrow-forms",
+    "input": "graph TD\nA-->B\nB===>C",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }, { "from": "B", "to": "C" }],
+    "valid": true,
+    "note": "a real block mixing a normal arrow with a long thick arrow keeps BOTH edges; neither line fails the whole block"
+  },
+  {
+    "id": "arrow-thick-bare-open-link-control",
+    "category": "arrow-forms",
+    "input": "graph TD\nA === B",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "control: a headless thick link `===` (no `>`) still parses to one edge — the long-thick-arrow path does not shadow the open-link path"
+  },
+  {
+    "id": "directive-source-edge-dest-not-lost",
+    "category": "directives",
+    "input": "flowchart TD\nstyle[Label] --> B[End]",
+    "expectNodes": [{ "id": "B", "label": "End", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "a reserved keyword used as an edge source (`style[Label] --> B`, off-contract) no longer lets the directive rule swallow the rest of the line: the same-line destination node B survives instead of vanishing; the reserved-source edge is dropped per the reserved-id limitation"
+  },
+  {
+    "id": "directive-source-thick-edge-dest-not-lost",
+    "category": "directives",
+    "input": "flowchart TD\nstyle[L] ==> B[End]",
+    "expectNodes": [{ "id": "B", "label": "End", "shape": "[]" }],
+    "expectEdges": [],
+    "valid": true,
+    "note": "same as the dash form for a thick arrow: the destination B is not silently lost when a reserved keyword leads an edge statement"
+  },
+  {
+    "id": "directive-plain-no-edge-still-consumed",
+    "category": "directives",
+    "input": "flowchart TD\nA[Start] --> B[End]\nstyle A fill:red\nclassDef x fill:blue\nclick A href \"u\"",
+    "expectNodes": [
+      { "id": "A", "label": "Start", "shape": "[]" },
+      { "id": "B", "label": "End", "shape": "[]" }
+    ],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "control: plain directive lines with NO edge operator (`style`/`classDef`/`click`) are still consumed+ignored after the edge-aware tightening; the real node/edge around them survive"
+  },
+  {
+    "id": "directive-value-contains-dashes-not-mistaken-for-edge",
+    "category": "directives",
+    "input": "flowchart TD\nA --> B\nclick A \"https://a--b.com\"",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "a `click` directive whose VALUE (a URL) contains `--` is consumed+ignored as a whole-line directive — the `--` in the value is opaque rest-of-line text, not an edge operator; the real `A-->B` edge above survives. (Position-precise guard: `click` is followed by a space, not a bracket, so it parses as a directive.)"
+  },
+  {
+    "id": "directive-acctitle-value-contains-dashes",
+    "category": "directives",
+    "input": "flowchart TD\nA --> B\naccTitle: step1 -- step2",
+    "expectNodes": [],
+    "expectEdges": [{ "from": "A", "to": "B" }],
+    "valid": true,
+    "note": "an `accTitle:` directive whose VALUE contains `--` is still consumed+ignored as a whole line — the `--` is opaque value text, not an edge operator; the `A-->B` edge survives"
   }
 ]

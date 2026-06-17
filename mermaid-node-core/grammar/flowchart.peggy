@@ -247,9 +247,20 @@ DirectionStmt
 // `styleA[x]`, `classroom --> X`) — those still fall through to NodeStmt/EdgeChain.
 // `default` is NOT line-leading (it only appears as `classDef default`, consumed
 // by the classDef branch), so it needs no separate rule.
+// The single-line form additionally requires the keyword NOT be immediately
+// followed by a shape-opening bracket (`!OpenBracket`). That position-precise guard
+// distinguishes a real directive from a reserved keyword being (off-contract) used
+// as a SHAPED node id at the head of an edge statement: `style[L] --> B` is `style`
+// with a `[L]` shape, so the directive rule declines and the line falls through to
+// EdgeChain — where the reserved-id source is dropped per the documented
+// reserved-keyword limitation, but the same-line destination `B` SURVIVES instead
+// of vanishing. A genuine directive (`style A fill:red`, `classDef x ...`,
+// `click A "url--x"`, `accTitle: a -- b`) is keyword + space/`:`, NEVER a bracket,
+// so it still matches and `RestOfLine` consumes the whole line — any `--`/`==>`/`===`
+// inside the directive's VALUE is now irrelevant (it's just opaque rest-of-line text).
 DirectiveStmt
   = Sp "accDescr" !IdChar Sp "{" (!"}" .)* "}" RestOfLine (NL / EOF)  // multi-line block form, tried first
-  / Sp DirectiveKeyword !IdChar RestOfLine (NL / EOF)
+  / Sp DirectiveKeyword !IdChar !OpenBracket RestOfLine (NL / EOF)
 
 DirectiveKeyword
   = "classDef" / "class" / "linkStyle" / "style" / "click" / "accTitle" / "accDescr"
@@ -287,7 +298,7 @@ SingleStmt
 // (nodes/edges/nested subgraphs) are both returned up AND recorded as members.
 
 Subgraph
-  = Sp "subgraph" hdrLoc:HERE header:(WS h:SubgraphHeader { return h; })? Sp InlineComment? NL
+  = Sp kwLoc:HERE "subgraph" hdrLoc:HERE header:(WS h:SubgraphHeader { return h; })? Sp InlineComment? NL
     body:StmtLine*
     Sp "end" !IdChar Sp InlineComment? (NL / EOF)
   {
@@ -325,13 +336,24 @@ Subgraph
     const idSpan = span(h.idLoc);
     const id = h.id != null ? h.id : (h.title != null ? h.title : "");
     const hasId = h.id != null;
+    // The span of the `subgraph` KEYWORD token itself (`{ start: kwLoc, end: hdrLoc }`).
+    // Used as the editable-span fallback for a BARE `subgraph` header (no id AND no
+    // title): h.idLoc there is the zero-width HERE captured one past the keyword, so
+    // its span is zero-width and one column past end-of-line (OOB). Pointing the span
+    // at the keyword token instead keeps idStart < idEnd <= line.length.
+    const kwSpan = span({ start: kwLoc.start, end: hdrLoc.start });
     // The EDITABLE id/title span. With an explicit id, idStart/idEnd point at the
     // id token. Without an id (title-only header) the editable token IS the title,
     // so idStart/idEnd use the title's CONTENT-exclusive span (so the span slices
     // to the label, matching the node labelStart/labelEnd invariant — never the
-    // surrounding quotes/brackets).
-    const idStart = (!hasId && h.titleSpan) ? h.titleSpan.titleStart : idSpan.startChar;
-    const idEnd = (!hasId && h.titleSpan) ? h.titleSpan.titleEnd : idSpan.endChar;
+    // surrounding quotes/brackets). With NEITHER id NOR title (a bare `subgraph`
+    // line) there is no editable token, so the span is clamped to the keyword.
+    const idStart = (!hasId && h.titleSpan) ? h.titleSpan.titleStart
+                  : (!hasId && h.title == null) ? kwSpan.startChar
+                  : idSpan.startChar;
+    const idEnd = (!hasId && h.titleSpan) ? h.titleSpan.titleEnd
+                : (!hasId && h.title == null) ? kwSpan.endChar
+                : idSpan.endChar;
     const sgNode = {
       kind: "subgraph",
       id,
@@ -575,10 +597,13 @@ Link "arrow"
   // Bidirectional (solid only — Mermaid has no `<==>`).
   / "<-->" { return { label: undefined, reversed: false }; }
   / "<--"  { return { label: undefined, reversed: true }; }
-  // Thick.
-  / "==>"  { return { label: undefined, reversed: false }; }
-  / "===" "="* { return { label: undefined, reversed: false }; } // `===`, `====`, …
-  / "==>" "="* { return { label: undefined, reversed: false }; }
+  // Thick, with shaft length variants (`==>`, `===>`, `====>`). Routed through
+  // ThickArrowClose ("==" "="* ">", any shaft length ending in `>`) so the bare
+  // thick arrow accepts every length the labeled-thick form already does — mirror
+  // of the bare-dash `"--" "-"* ">"` path below. (Tried before the headless
+  // `===`/`====` open link so a trailing `>` is always claimed as the arrow head.)
+  / ThickArrowClose { return { label: undefined, reversed: false }; } // `==>`, `===>`, `====>`
+  / "===" "="* { return { label: undefined, reversed: false }; } // `===`, `====`, … (open link, no head)
   // Dotted (length variants `-.->`, `-..->`).
   / "-." "."* "->" { return { label: undefined, reversed: false }; }
   / "-." "."* "-"  { return { label: undefined, reversed: false }; }

@@ -63,6 +63,8 @@ Each `Block` carries:
 | `startLine` / `endLine` | block bounds in the document (fence lines for markdown; whole file for `.mmd`) |
 | `supported` | `false` for a non-flowchart or unparseable block |
 | `diagramType` | the diagram type / first content line |
+| `keyword` | the diagram keyword (`graph` or `flowchart`); `undefined` on an unsupported block |
+| `direction` | the declared layout direction (`TD`/`TB`/`BT`/`LR`/`RL`); `null` when none was declared, `undefined` on an unsupported block |
 | `nodes` | each with `id`, `label`, `shape`, `open`/`close`/`quote`, and `{ line, startChar, endChar, labelStart, labelEnd }` |
 | `edges` | each with `from`, `to`, optional `label`, and `{ line, startChar, endChar }` |
 | `subgraphs` | each with `id`, `label`, `hasId`, `quote`, `members[]`, and `{ line, idStart, idEnd }` |
@@ -70,7 +72,8 @@ Each `Block` carries:
 
 Supported flowchart forms: node shapes `[]` `()` `([])` `[[]]` `[()]` `(())`
 `{}` `{{}}` `>]`; quoted and unquoted labels; edges `-->`, `-->|label|`,
-`-- label -->`, `---`, `==>`, `===`, `-.->`, `-.-`, `<-->`, `<--` in compact
+`-- label -->`, `---`, `==>`, `===`, `-.->`, `-.-`, `<-->`, `<--` (with
+length variants such as `--->`, `===>` accepted as the same edge) in compact
 (`A-->B`), spaced (`A --> B`) and one-side-glued forms; chained edges; subgraphs
 with an id and/or title; `;`-separated statements; inline and own-line `%%`
 comments; YAML frontmatter; markdown fenced blocks and whole `.mmd` files.
