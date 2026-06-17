@@ -39,13 +39,21 @@ for (const tc of corpus) {
       const edges = blocks.flatMap((b) => b.edges || []);
       assert.equal(nodes.length, 0, "off-contract input must not produce live nodes");
       assert.equal(edges.length, 0, "off-contract input must not produce live edges");
+      // UN-MASK (supported axis): pin it when the case asks. Default for
+      // valid:false leaves the axis open (a graceful-skip block may be
+      // supported:true with an empty model, e.g. a dropped reserved endpoint).
+      if (tc.expectSupported !== undefined) {
+        for (const b of blocks) assert.equal(b.supported, tc.expectSupported, `valid:false supported axis (${tc.id})`);
+      }
       return;
     }
 
     let nodes = [];
     let edges = [];
     let subs = [];
+    let supBlocks = [];
     if (tc.combineBlocks) {
+      supBlocks = blocks;
       for (const b of blocks) {
         nodes.push(...(b.nodes || []));
         edges.push(...(b.edges || []));
@@ -54,10 +62,19 @@ for (const tc of corpus) {
     } else {
       const b = blocks[0];
       assert.ok(b, "a valid case must return a block");
+      supBlocks = [b];
       nodes = b.nodes;
       edges = b.edges;
       subs = b.subgraphs;
     }
+
+    // UN-MASK (supported axis): the block(s) under check MUST be supported:true
+    // (overridable per case via expectSupported). Previously this data-driven
+    // block asserted only nodes/edges/spans and never referenced b.supported, so
+    // a case whose expectNodes/expectEdges were both [] passed on []==[] even when
+    // the parser had failed the whole block — the same mask run-corpus.mjs had.
+    const wantSupported = tc.expectSupported === undefined ? true : tc.expectSupported;
+    for (const b of supBlocks) assert.equal(b.supported, wantSupported, `valid:true supported axis (${tc.id})`);
 
     assert.deepEqual(normNodes(nodes), tc.expectNodes);
     assert.deepEqual(normEdges(edges), normEdges(tc.expectEdges));
@@ -70,6 +87,17 @@ for (const tc of corpus) {
     }
     for (const e of edges) {
       assert.ok(e.line >= 0 && e.endChar > e.startChar, `edge ${e.from}->${e.to} span`);
+    }
+
+    // Span-CONTENT invariant: a node's [startChar,endChar) must slice to the
+    // expected text (the kept id for a hyphen-truncated id; the whole node text
+    // for a plain shaped id) so a span-edit targets only the kept content.
+    if (tc.expectNodeSpanSlices) {
+      for (const [nodeId, want] of Object.entries(tc.expectNodeSpanSlices)) {
+        const n = nodes.find((x) => x.id === nodeId);
+        assert.ok(n, `expectNodeSpanSlices: node ${nodeId} present (${tc.id})`);
+        assert.equal(lines[n.line].slice(n.startChar, n.endChar), want, `node ${nodeId} span slice (${tc.id})`);
+      }
     }
   });
 }
@@ -385,5 +413,99 @@ test("never throws on a battery of off-contract / malformed inputs", () => {
   for (const src of malformed) {
     assert.doesNotThrow(() => findMermaidBlocks(src, true));
     assert.doesNotThrow(() => findMermaidBlocks(src, false));
+  }
+});
+
+// ── Family invariants (inline-label, reserved-node, hyphenated-span) ───────
+
+// Inline-dash/thick LABELED edge family: {close-kind: arrow vs OPEN} × {shaft 2..5}
+// × {label: quoted/unquoted}. EVERY arm must be exactly ONE labeled edge, never a
+// phantom node from the label text and never a whole-block failure.
+test("inline-label edge family: every close-kind/shaft/quoting arm is ONE labeled edge", () => {
+  const arms = [
+    // [input, expectedLabel]
+    ["A -- lbl --> B", "lbl"], ["A -- lbl ---> B", "lbl"], ["A -- lbl ----> B", "lbl"],
+    ["A -- lbl -- B", "lbl"], ["A -- lbl --- B", "lbl"], ["A -- lbl ---- B", "lbl"], ["A -- lbl ----- B", "lbl"],
+    ["A == lbl ==> B", "lbl"], ["A == lbl ===> B", "lbl"],
+    ["A == lbl == B", "lbl"], ["A == lbl === B", "lbl"], ["A == lbl ==== B", "lbl"],
+    ['A -- "q l" --> B', "q l"], ['A -- "q l" --- B', "q l"], ["A -- 'q l' -- B", "q l"],
+    ['A == "q l" ==> B', "q l"], ['A == "q l" === B', "q l"],
+  ];
+  for (const [body, label] of arms) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, true, `${body}: supported`);
+    assert.equal(b.parseError, undefined, `${body}: no parseError`);
+    assert.equal(b.nodes.length, 0, `${body}: no phantom node`);
+    assert.deepEqual(
+      b.edges.map((e) => ({ from: e.from, to: e.to, label: e.label })),
+      [{ from: "A", to: "B", label }],
+      `${body}: ONE labeled edge A->B`,
+    );
+  }
+});
+
+test("inline-label edge family: an embedded dash run inside a label is preserved (open close is whitespace-delimited)", () => {
+  for (const [body, label] of [["A -- a--b --- B", "a--b"], ["A -- a---b ---- B", "a---b"], ["A -- a--b --> B", "a--b"]]) {
+    const e = findMermaidBlocks(`graph TD\n${body}`, true)[0].edges[0];
+    assert.equal(e.label, label, `${body}: embedded dashes kept`);
+  }
+});
+
+// Reserved-keyword family: {keyword} × {standalone-shaped, edge-endpoint}. A
+// standalone shaped reserved keyword is skipped, the surrounding edges survive
+// (no whole-block data loss); a reserved edge endpoint drops only that edge.
+test("reserved-keyword family: a standalone shaped reserved node is skipped, surroundings survive", () => {
+  for (const kw of ["style", "graph", "flowchart", "subgraph", "direction", "click", "classDef", "class", "linkStyle", "default", "end"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\n${kw}[X]\nC-->D`, true)[0];
+    assert.equal(b.supported, true, `${kw}[X]: block survives (supported)`);
+    assert.equal(b.nodes.length, 0, `${kw}[X]: dropped, no node`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `${kw}[X]: surrounding edges survive`);
+  }
+});
+
+test("reserved-keyword family: a bare `end` still terminates a subgraph (not eaten by recovery)", () => {
+  const b = findMermaidBlocks("graph TD\nsubgraph S\nA-->B\nend\nC-->D", true)[0];
+  assert.equal(b.supported, true);
+  assert.deepEqual(b.subgraphs.map((s) => s.id), ["S"]);
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"]);
+  // and a SHAPED end[X] inside a subgraph is dropped while the bare end still closes it
+  const b2 = findMermaidBlocks("graph TD\nsubgraph S\nA-->B\nend[X]\nend\nC-->D", true)[0];
+  assert.equal(b2.supported, true);
+  assert.deepEqual(b2.subgraphs.map((s) => s.id), ["S"]);
+  assert.deepEqual(b2.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"]);
+});
+
+test("reserved-keyword family: a reserved edge endpoint drops only that edge, surroundings survive", () => {
+  for (const kw of ["end", "style", "class", "graph"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\nX-->${kw}\nC-->D`, true)[0];
+    assert.equal(b.supported, true, `X-->${kw}: block survives`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `X-->${kw}: only that edge dropped`);
+  }
+});
+
+// Hyphenated-span family: {bare, shaped} × {hyphenated, plain}. The node span must
+// slice to the kept id for a hyphen-truncated id (so a span-edit can't overwrite
+// the discarded tail), and to the whole node text for a plain shaped id.
+test("hyphenated-span family: a SHAPED hyphenated id's span is bounded to the kept id (slice === id)", () => {
+  for (const body of ["send-email[Label]", "send-email(R)", "send-email{D}", "send-email([S])", "send-email[[Sub]]"]) {
+    const src = `graph TD\n${body}`;
+    const n = findMermaidBlocks(src, true)[0].nodes[0];
+    assert.equal(n.id, "send", `${body}: id truncated to send`);
+    assert.equal(src.split("\n")[n.line].slice(n.startChar, n.endChar), "send", `${body}: span slices to kept id, not the discarded tail`);
+  }
+  // multi-hyphen
+  const n2 = findMermaidBlocks("graph TD\na-b-c-d[Z]", true)[0].nodes[0];
+  assert.equal("graph TD\na-b-c-d[Z]".split("\n")[n2.line].slice(n2.startChar, n2.endChar), "a");
+  // as an edge source
+  const b3 = findMermaidBlocks("graph TD\nsend-email[L] --> B", true)[0];
+  const ns = b3.nodes.find((x) => x.id === "send");
+  assert.equal("graph TD\nsend-email[L] --> B".split("\n")[ns.line].slice(ns.startChar, ns.endChar), "send");
+});
+
+test("hyphenated-span family: a PLAIN (non-truncated) shaped id keeps the WHOLE-node-text span", () => {
+  for (const [body, slice] of [["plain[X]", "plain[X]"], ["node_1((c))", "node_1((c))"], ['A["Q"]', 'A["Q"]']]) {
+    const src = `graph TD\n${body}`;
+    const n = findMermaidBlocks(src, true)[0].nodes[0];
+    assert.equal(src.split("\n")[n.line].slice(n.startChar, n.endChar), slice, `${body}: whole-text span`);
   }
 });

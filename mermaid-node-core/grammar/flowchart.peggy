@@ -43,15 +43,54 @@
     };
   }
 
-  function makeNode(id, shapeInfo, loc) {
+  function makeNode(id, shapeInfo, loc, shapeLoc) {
     const s = span(loc);
-    // For a BARE id (no shape) the node text IS the kept id, so the span must end
-    // exactly at startChar + id.length — NOT at the matched-rule end, which for an
-    // off-contract hyphenated id (`receive-order` → kept id `receive`) runs past the
-    // discarded `-order` tail. Bounding the bare-node span to the kept id keeps the
-    // content-exclusive invariant (`source.slice(startChar,endChar) === id`), so a
-    // span-rename targets only the kept id and leaves the discarded tail untouched.
-    const bareEnd = shapeInfo ? s.endChar : s.startChar + id.length;
+    // The node span must end exactly at the kept content, NEVER spanning a
+    // discarded off-contract hyphen tail (`receive-order` → kept id `receive`;
+    // `send-email[Label]` → kept id `send`). This upholds the content-exclusive
+    // invariant so a span-rename / relabel targets only the kept text and leaves
+    // the discarded tail untouched — a span that ran past it would let an edit
+    // silently overwrite `-order`/`-email`.
+    //
+    //   - BARE id (no shape): the node text IS the kept id, so endChar =
+    //     startChar + id.length (`slice(startChar,endChar) === id`).
+    //   - SHAPED id: the node text is `id` + shape. For a NON-truncated id the
+    //     kept id sits flush against the shape opener, so endChar = the matched
+    //     rule end (the whole `A[Start]`). For a hyphen-TRUNCATED shaped id the
+    //     discarded tail sits BETWEEN the kept id and the shape (`send` ┃-email┃
+    //     `[Label]`), so a single contiguous span can't cover both the kept id
+    //     and the shape without also covering the discarded tail. We bound the
+    //     span to the kept id alone (like the bare arm) — the off-contract
+    //     `-email[Label]` remainder is left for the consumer to warn on, and
+    //     `slice(startChar,endChar) === id` holds for the truncated case too,
+    //     matching the bare-truncated arm the corpus already certifies.
+    //
+    // Truncation is detected positionally: shapeLoc is captured right AFTER the
+    // consumed id (incl. any discarded hyphen tail) and right BEFORE the shape
+    // opener, so a gap between `startChar + id.length` and the shape-open column
+    // means the id was truncated.
+    let endChar;
+    let labelStart;
+    let labelEnd;
+    if (!shapeInfo) {
+      endChar = s.startChar + id.length;
+      labelStart = s.startChar;
+      labelEnd = endChar;
+    } else {
+      const keptIdEnd = s.startChar + id.length;
+      const shapeOpenCol = shapeLoc ? shapeLoc.start.column - 1 : keptIdEnd;
+      const truncated = shapeOpenCol > keptIdEnd;
+      if (truncated) {
+        // Hyphen-truncated shaped id — bound to the kept id, like the bare arm.
+        endChar = keptIdEnd;
+        labelStart = keptIdEnd;
+        labelEnd = keptIdEnd;
+      } else {
+        endChar = s.endChar;
+        labelStart = shapeInfo.labelStart;
+        labelEnd = shapeInfo.labelEnd;
+      }
+    }
     return {
       kind: "node",
       id,
@@ -62,10 +101,9 @@
       quote: shapeInfo ? shapeInfo.quote : "",
       line: s.line,
       startChar: s.startChar,
-      endChar: bareEnd,
-      // label content span — for an unbracketed bare id the label IS the id span.
-      labelStart: shapeInfo ? shapeInfo.labelStart : s.startChar,
-      labelEnd: shapeInfo ? shapeInfo.labelEnd : bareEnd,
+      endChar,
+      labelStart,
+      labelEnd,
     };
   }
 
@@ -215,9 +253,46 @@ StmtLine
   / DirectiveStmt                            { return null; }    // style/click/classDef/... — consumed + ignored
   / content:SingleLineBody NL                { return content; } // a line ending in a newline
   / content:SingleLineBody EOF               { return content; } // the final line, no NL
+  / ReservedNodeStmt                         { return null; }    // standalone reserved-keyword node — dropped, surroundings survive
   / Sp InlineComment? NL                     { return null; }    // blank / comment-only line
   / Sp InlineComment EOF                     { return null; }    // final comment-only line, no NL
   / WS EOF                                   { return null; }    // final whitespace-only line, no NL
+
+// A standalone reserved-keyword node on its own line — `end[Node]`, `style(x)`,
+// `graph` (bare), etc. A reserved keyword may never be a node id (the input
+// contract), so EdgeChain (which drops a reserved ENDPOINT but keeps the edge's
+// other end) and NodeStmt (which declines a reserved id) both leave such a line
+// unconsumed — and an unconsumed line fails the WHOLE block via Document's EOF,
+// SILENTLY LOSING every valid statement around it. This recovery alternative
+// consumes-and-DROPS the line (returns null → contributes no node/edge), the same
+// skip-and-survive intent EdgeChain already applies to a reserved edge endpoint,
+// so the surrounding valid statements parse. It is the LAST content alternative
+// (after EdgeChain/NodeStmt have declined), so a real edge that merely begins with
+// a reserved keyword (`end --> A`, dropped to an empty-but-surviving edge by
+// EdgeChain) is matched there first and never reaches here. The `!IdChar` boundary
+// keeps a real node whose id only STARTS with a keyword (`ending[X]`, `classy`,
+// `styles --> A`) out of this rule — those are valid ids and stay live.
+//
+// CRITICAL ORDERING WITH `end`: a BARE `end` is the SUBGRAPH terminator. Inside a
+// subgraph body (`StmtLine*` followed by `Sp "end"`), recovering a bare `end` here
+// would EAT the closing `end` and the subgraph would never terminate. So bare `end`
+// is EXCLUDED from recovery — it is left for the Subgraph rule's terminator (and a
+// stray bare `end` with no open subgraph falls through to an honest whole-block
+// warn, unchanged from before). A SHAPED `end[X]` is unambiguous (the terminator is
+// always bare `end`), so it IS recovered. Every OTHER reserved keyword is recovered
+// bare or shaped.
+//
+// Generalizes the reserved-keyword family: {every reserved keyword except bare
+// `end`} × {standalone bare / standalone shaped} skip-and-preserve-surroundings
+// here, while {reserved as an edge endpoint} drops-the-edge-keep-surroundings in
+// EdgeChain.
+ReservedNodeStmt
+  = Sp "end" !IdChar NodeShape Sp InlineComment? (NL / EOF)         // shaped `end[X]` only (bare `end` = subgraph terminator)
+  / Sp NonEndReservedKeyword !IdChar NodeShape? Sp InlineComment? (NL / EOF)
+
+NonEndReservedKeyword
+  = "graph" / "flowchart" / "subgraph" / "direction"
+  / "click" / "classDef" / "class" / "linkStyle" / "style" / "default"
 
 // A per-(sub)graph layout directive — `direction LR` / `direction TD` etc. It
 // carries no node/edge to model, so (like a comment) it is consumed and ignored.
@@ -437,7 +512,7 @@ EdgeChain
     const out = { nodes: [], edges: [], subgraphs: [] };
     const emitNode = (ref) => {
       if (ref.shapeInfo && !isReserved(ref.id)) {
-        out.nodes.push(makeNode(ref.id, ref.shapeInfo, ref.loc));
+        out.nodes.push(makeNode(ref.id, ref.shapeInfo, ref.loc, ref.shapeLoc));
       }
     };
     emitNode(first);
@@ -479,14 +554,14 @@ PipeRun = chars:(!("|" / "\n") c:. { return c; })* { return chars.join(""); }
 NodeStmt
   = ref:NodeRef &{ return !isReserved(ref.id); }
   {
-    return { nodes: [makeNode(ref.id, ref.shapeInfo, ref.loc)], edges: [], subgraphs: [] };
+    return { nodes: [makeNode(ref.id, ref.shapeInfo, ref.loc, ref.shapeLoc)], edges: [], subgraphs: [] };
   }
 
 // ─── Node reference (id, optionally with a shape) ─────────────────────────────
 
 NodeRef
-  = loc:HERE id:NodeId shape:NodeShape
-    { return { id, shapeInfo: shape, loc: { start: loc.start, end: location().end } }; }
+  = loc:HERE id:NodeId shapeLoc:HERE shape:NodeShape
+    { return { id, shapeInfo: shape, shapeLoc, loc: { start: loc.start, end: location().end } }; }
   / loc:HERE id:NodeId
     { return { id, shapeInfo: null, loc: { start: loc.start, end: location().end } }; }
 
@@ -594,6 +669,22 @@ Link "arrow"
   // whole `--->` and the shaft chars never leak into the label.
   = "--" WS? l:InlineDashLabel WS? DashArrowClose { return { label: l, reversed: false }; }
   / "==" WS? l:InlineThickLabel WS? ThickArrowClose { return { label: l, reversed: false }; }
+  // Labeled OPEN-link (NO arrowhead): `A -- label --- B`, `A -- label -- B`,
+  // `A -- label ---- B` (and the thick `A == label === B` variants). Mirrors the
+  // labeled-arrow branches above, but the CLOSE is a head-less dash/equals run
+  // (`DashOpenClose`/`ThickOpenClose` = `-- -* !">"` / `== =* !">"`). Without these
+  // branches the labeled-open-link FALSE-GREENED: the labeled-arrow branch needs a
+  // trailing `>`, so it declined; Peggy backtracked to the bare `--` open link and
+  // re-read the single-token label as a NodeRef — fabricating a phantom node + two
+  // edges (`A→label`, `label→B`) with NO warning. Emitting ONE labeled open-link
+  // edge here keeps the model correct. The close must be whitespace-delimited from
+  // the label (the label-run lookahead requires `WS DashOpenClose`), so an embedded
+  // `--`/`---` glued inside the label (`a--b`, `a---b`) is preserved, not read as a
+  // close. GENERALIZES the inline-dash family across {close-kind: arrow vs open} ×
+  // {shaft-length 2..5} × {label: quoted/unquoted} — every arm now parses to ONE
+  // labeled edge instead of phantom-noding.
+  / "--" WS? l:InlineDashLabel WS DashOpenClose { return { label: l, reversed: false }; }
+  / "==" WS? l:InlineThickLabel WS ThickOpenClose { return { label: l, reversed: false }; }
   // Bidirectional (solid only — Mermaid has no `<==>`).
   / "<-->" { return { label: undefined, reversed: false }; }
   / "<--"  { return { label: undefined, reversed: true }; }
@@ -623,6 +714,16 @@ Link "arrow"
 DashArrowClose  = "--" "-"* ">"
 ThickArrowClose = "==" "="* ">"
 
+// The HEAD-LESS closing run of a labeled OPEN link (`---`, `--`, `----`, … /
+// `===`, `==`, `====`, …) — a full-length dash/equals shaft with NO trailing `>`.
+// The `!">"` after the greedy shaft run is what distinguishes an open-link close
+// from an arrow close: a run that DOES reach `>` is an arrow and is claimed by
+// DashArrowClose/ThickArrowClose (tried first in Link). Used both to consume the
+// close in the labeled-open-link Link branch and as the label-run terminator
+// lookahead (whitespace-delimited, so an embedded `--` inside a label is kept).
+DashOpenClose  = "--" "-"* !">"
+ThickOpenClose = "==" "="* !">"
+
 // An inline-dash / inline-thick edge label: a QUOTED run (quotes stripped, like
 // PipeLabel) or a raw unquoted run. The raw form may not START with the head of
 // the closing arrow (`>`/`-` for dash, `>`/`=` for thick — that would mean the
@@ -636,17 +737,24 @@ ThickArrowClose = "==" "="* ">"
 // `PipeLabel?` (`-->|label|`) fires and strips the pipes instead of leaking them.
 // Quoted forms (`-- "label" -->`, `== 'label' ==>`) strip the surrounding quotes,
 // mirroring PipeLabel, so a quoted inline label never keeps its quote chars.
+// The label stops at the closing shaft run. Two terminator shapes:
+//   - `Sp DashArrowClose` — an arrow close (`-->`), any spacing incl. glued, as
+//     before (the `>` makes it unambiguous even with no space).
+//   - `WS DashOpenClose`  — a head-less open close (`---`), which MUST be
+//     whitespace-delimited from the label. Requiring `WS` (not `Sp`) here is what
+//     keeps an embedded `--`/`---` glued inside the label (`a--b`, `a---b`) from
+//     being misread as a close — only a whitespace-separated dash run terminates.
 InlineDashLabel
   = '"' c:DQuoted '"' { return c; }
   / "'" c:SQuoted "'" { return c; }
-  / first:(!(Sp DashArrowClose) !(">" / "-" / "|" / "\n") c:. { return c; })
-    rest:(!(Sp DashArrowClose) !"\n" c:. { return c; })*
+  / first:(!(Sp DashArrowClose) !(WS DashOpenClose) !(">" / "-" / "|" / "\n") c:. { return c; })
+    rest:(!(Sp DashArrowClose) !(WS DashOpenClose) !"\n" c:. { return c; })*
   { return (first + rest.join("")).trim(); }
 InlineThickLabel
   = '"' c:DQuoted '"' { return c; }
   / "'" c:SQuoted "'" { return c; }
-  / first:(!(Sp ThickArrowClose) !(">" / "=" / "|" / "\n") c:. { return c; })
-    rest:(!(Sp ThickArrowClose) !"\n" c:. { return c; })*
+  / first:(!(Sp ThickArrowClose) !(WS ThickOpenClose) !(">" / "=" / "|" / "\n") c:. { return c; })
+    rest:(!(Sp ThickArrowClose) !(WS ThickOpenClose) !"\n" c:. { return c; })*
   { return (first + rest.join("")).trim(); }
 
 // ─── Whitespace / lines ─────────────────────────────────────────────────────────
