@@ -134,7 +134,14 @@ function parseBlockContent(content, lineOffset) {
   // field is always present (an empty array = no advisory) before the offset shift.
   if (!parsed.warnings) parsed.warnings = [];
   applyLineOffset(parsed, lineOffset);
-  parsed.parseError = undefined;
+  // The grammar itself may report a block supported:false when it parsed a
+  // best-effort model but the input contains a construct REAL Mermaid REJECTS
+  // (the contract — a Mermaid parse error is fatal to the whole diagram, so the
+  // honest block-level signal is supported:false + a "won't render" parseError, with
+  // the best-effort model still exposed for editing). A clean parse leaves
+  // supported:true / parseError undefined.
+  if (parsed.supported === undefined) parsed.supported = true;
+  if (parsed.parseError === undefined) parsed.parseError = undefined;
   return parsed;
 }
 

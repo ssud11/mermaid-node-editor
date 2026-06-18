@@ -48,6 +48,36 @@
     return { code, message, line: loc.start.line - 1 };
   }
 
+  // A FATAL warning marks a construct that REAL Mermaid REJECTS (a parse error,
+  // fatal to the WHOLE diagram). Per the contract the block keeps a best-effort
+  // model for editing but is reported `supported:false` with a clear "won't render"
+  // reason — NEVER a false `supported:true`. The `fatal` + `reason` riders survive
+  // the warning-harvest (Body.addWarn strips only `_dedup`); the Document action
+  // scans the committed warnings, and if any is fatal, sets supported:false +
+  // parseError. This is distinct from an advisory (yellow-lint) warning on a form
+  // Mermaid RENDERS — those keep supported:true.
+  function fatalWarn(code, message, reason, loc) {
+    return { code, message, line: loc.start.line - 1, fatal: true, reason };
+  }
+
+  // The "won't render" reason for a PAREN-form subgraph title (Mermaid rejects it).
+  function subgraphParenReason() {
+    return "a parenthesized subgraph title `(...)` — won't render in Mermaid (use `[title]` or a quoted title)";
+  }
+
+  // A reserved-keyword-as-node FATAL warning. Mermaid parse-errors the whole diagram
+  // when a reserved keyword is used as a node id, so this is supported:false.
+  function fatalReservedWarn(kw, loc) {
+    const w = fatalWarn(
+      "reserved-id",
+      `"${kw}" is a reserved keyword and cannot be a node id`,
+      `"${kw}" is a reserved Mermaid keyword used as a node id — won't render in Mermaid`,
+      loc,
+    );
+    w._dedup = kw; // case-sensitive token (the exact reserved lowercase form)
+    return w;
+  }
+
   // A `reserved-id` warning that rides the offending keyword (lower-cased) as its
   // `_dedup` distinguisher, so two DISTINCT reserved keywords skipped on ONE line
   // (e.g. a `;`-chain `end[X]; style[Y]`) each surface — the bare code|line key
@@ -133,7 +163,7 @@
         labelEnd = shapeInfo.labelEnd;
       }
     }
-    return {
+    const node = {
       kind: "node",
       id,
       label: shapeInfo ? shapeInfo.label : id,
@@ -147,6 +177,13 @@
       labelStart,
       labelEnd,
     };
+    // v1.6 #3 — a shape REAL Mermaid rejects (empty label / unquoted bracket in label)
+    // rides a FATAL warning on the node, so Body harvests it and the Document reports
+    // the block supported:false. The node itself is still emitted (best-effort model).
+    if (shapeInfo && shapeInfo.fatalReason) {
+      node._warn = fatalWarn("invalid-label", shapeInfo.fatalReason, shapeInfo.fatalReason, loc);
+    }
+    return node;
   }
 
   // ADDITIVE edge metadata (head / stroke / bidirectional / length) is carried
@@ -218,19 +255,44 @@
     return d;
   }
 
-  // The set of flowchart keywords that may never be a node id (per the input
-  // contract: ids are never a reserved keyword). Matched case-insensitively.
+  // The set of flowchart keywords that may never be a node id, because REAL Mermaid
+  // (FlowDB) parse-ERRORS the whole diagram when one is used as a shaped node id.
+  // Verified directly against mermaid@11.15.0's flow grammar (`<kw>[X]` rejected):
+  // only these eight. CASE-SENSITIVE — Mermaid reserves the EXACT lowercase tokens,
+  // so `End`/`STYLE`/`Graph` are ORDINARY ids (Mermaid keeps them as normal nodes),
+  // matching the contract ("reserved keywords are case-sensitive").
+  //
+  // NOT reserved (Mermaid renders `<kw>[X]` as a normal node — oracle-confirmed):
+  //   direction, click, default, href, call, link, accTitle, accDescr.
+  // These still have their own line-leading directive rules (DirectionStmt /
+  // DirectiveStmt) for the `direction LR` / `click A "url"` statement forms; only
+  // their use as a NODE id is unreserved here.
   const RESERVED = new Set([
-    "graph", "flowchart", "subgraph", "end", "direction",
-    "click", "class", "classdef", "style", "linkstyle", "default",
+    "graph", "flowchart", "subgraph", "end",
+    "class", "classDef", "style", "linkStyle",
   ]);
   function isReserved(id) {
-    return RESERVED.has(id.toLowerCase());
+    return RESERVED.has(id); // case-SENSITIVE: only the exact lowercase Mermaid token
   }
 
   // Build a shape descriptor from open/close tokens + a label result. `l` is the
   // { value, quote, labelStart, labelEnd } from a per-shape label / AsymLabel rule.
+  //
+  // v1.6 #3 — detect the two label forms REAL Mermaid REJECTS (oracle-confirmed parse
+  // errors), recording a `fatalReason` so the node carries a fatal warning (the block
+  // is reported supported:false; the best-effort model is still exposed for editing):
+  //   - EMPTY label: `A[]` / `A[""]` → reject (but `A[ ]`, a single space, RENDERS —
+  //     so the trigger is an EMPTY value, not a whitespace-only one);
+  //   - UNQUOTED label containing a BRACKET char `()[]{}`: `A[Order (Pending)]`,
+  //     `A(read [x])` → reject. Other punctuation (`<`,`&`,`:`,`/`,`-`,`.`) renders, so
+  //     ONLY bracket chars trip it. A QUOTED label may contain anything (it renders).
   function shape(open, close, l) {
+    let fatalReason;
+    if (l.value === "") {
+      fatalReason = `empty ${open}${close} label — won't render in Mermaid`;
+    } else if (l.quote === "" && /[()\[\]{}]/.test(l.value)) {
+      fatalReason = `unquoted bracket character inside a ${open}${close} label — won't render in Mermaid (quote the label)`;
+    }
     return {
       open,
       close,
@@ -239,6 +301,7 @@
       quote: l.quote,
       labelStart: l.labelStart,
       labelEnd: l.labelEnd,
+      fatalReason,
     };
   }
 
@@ -294,15 +357,33 @@
 Document
   = _nl Frontmatter? _nl header:DiagramHeader body:Body EOF
   {
+    // A FATAL warning marks a construct REAL Mermaid REJECTS (a parse error fatal to
+    // the whole diagram). Per the contract: such a block keeps its best-effort
+    // model (for editing) but is reported supported:false + a clear "won't render"
+    // reason — never a false supported:true. The `fatal`/`reason` riders are stripped
+    // from the public warning shape here so {code,message,line} stays clean; the
+    // honest signal is carried on the block via supported + parseError.
+    let supported = true;
+    let parseError;
+    const publicWarnings = [];
+    for (const w of body.warnings) {
+      if (w.fatal) {
+        supported = false;
+        if (parseError === undefined && w.reason) parseError = w.reason;
+      }
+      const { fatal, reason, ...pub } = w;
+      publicWarnings.push(pub);
+    }
     return {
-      supported: true,
+      supported,
+      parseError,
       diagramType: header.raw,
       keyword: header.keyword,
       direction: header.direction,
       nodes: body.nodes,
       edges: body.edges,
       subgraphs: body.subgraphs,
-      warnings: body.warnings,
+      warnings: publicWarnings,
     };
   }
 
@@ -406,23 +487,23 @@ StmtLine
 // here, while {reserved as an edge endpoint} drops-the-edge-keep-surroundings in
 // EdgeChain.
 //
-// CASE-INSENSITIVE: the keywords match case-insensitively (`End[X]`, `STYLE[x]`),
-// matching how `isReserved` lowercases — Mermaid renders a mixed-case reserved id
-// as a node, so per the renders-it rule we recover the line (skip block-local) and
-// attach a `reserved-id` warning, instead of letting the mixed-case form fall
-// through to a whole-block hard-fail (the pre-v1.4 behavior). The recovered line
-// returns no model object, so the warning rides on the StmtLine result's
-// `warnings[]` (harvested by Body). The skip itself preserves the surrounding
-// statements exactly as the lowercase form already did.
+// CASE-SENSITIVE (v1.6): the keywords match the EXACT lowercase Mermaid token only.
+// Mermaid parse-ERRORS the whole diagram for a lowercase-reserved id (`style[X]` →
+// Parse error), so this is a Mermaid-REJECTS form: per the contract the line is
+// matched, a best-effort skip is recorded, and a FATAL `reserved-id` warning is
+// attached so the envelope marks the WHOLE block `supported:false` (a Mermaid parse
+// error is fatal to the whole diagram). A capitalized/mixed-case variant (`End[X]`,
+// `STYLE[x]`) is NOT reserved — it falls through to NodeStmt and becomes a normal
+// node, exactly as Mermaid renders it.
 ReservedNodeStmt
-  = Sp kw:"end"i !IdChar NodeShape Sp InlineComment? (NL / EOF)   // shaped `end[X]` only (bare `end` = subgraph terminator)
-    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
+  = Sp kw:"end" !IdChar NodeShape Sp InlineComment? (NL / EOF)   // shaped `end[X]` only (bare `end` = subgraph terminator)
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [fatalReservedWarn(kw, location())] }; }
   / Sp kw:NonEndReservedKeyword !IdChar NodeShape? Sp InlineComment? (NL / EOF)
-    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [fatalReservedWarn(kw, location())] }; }
 
 NonEndReservedKeyword
-  = "graph"i / "flowchart"i / "subgraph"i / "direction"i
-  / "click"i / "classDef"i / "class"i / "linkStyle"i / "style"i / "default"i
+  = "graph" / "flowchart" / "subgraph"
+  / "classDef" / "class" / "linkStyle" / "style"
 
 // A per-(sub)graph layout directive — `direction LR` / `direction TD` etc. It
 // carries no node/edge to model, so (like a comment) it is consumed and ignored.
@@ -472,8 +553,26 @@ DirectiveKeyword
 
 // A single-line statement's payload (no terminator). Requires real content so the
 // final-line (EOF) alternative is never a zero-width match.
+//
+// v1.6 #3 — a trailing inline `%%` comment AFTER statement content on the same line is
+// a Mermaid-REJECTS form (oracle: `A --> B %% c` / `A[x] %% c` → Parse error; an
+// OWN-LINE `%% c`, a TRAILING comment-only line, and `%%` at EOF all RENDER and are
+// handled by the separate comment-only StmtLine alternatives). The `cLoc:HERE` captures
+// the comment's position; a fatal warning is attached so the block is supported:false
+// while the statement's best-effort nodes/edges stay in the model.
 SingleLineBody
-  = Sp content:StmtContent Sp InlineComment? { return content; }
+  = Sp content:StmtContent Sp cmt:(cLoc:HERE InlineComment { return cLoc; })?
+  {
+    if (cmt) {
+      content.warnings = [...(content.warnings || []), fatalWarn(
+        "inline-comment",
+        "an inline `%%` comment after content on the same line — won't render in Mermaid (put the comment on its own line)",
+        "an inline `%%` comment after content on the same line — won't render in Mermaid",
+        cmt,
+      )];
+    }
+    return content;
+  }
 
 StmtContent
   = SemicolonStmts
@@ -508,10 +607,10 @@ SingleStmt
 // there first). Shaped `end[X]` only — bare `end` stays the subgraph terminator and
 // is excluded here so it never gets swallowed as a chain segment.
 ReservedNodeSeg
-  = kw:"end"i !IdChar NodeShape
-    { return { nodes: [], edges: [], subgraphs: [], warnings: [reservedSkipWarn(kw, location())] }; }
+  = kw:"end" !IdChar NodeShape
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [fatalReservedWarn(kw, location())] }; }
   / kw:NonEndReservedKeyword !IdChar NodeShape?
-    { return { nodes: [], edges: [], subgraphs: [], warnings: [reservedSkipWarn(kw, location())] }; }
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [fatalReservedWarn(kw, location())] }; }
 
 // ─── Subgraph ────────────────────────────────────────────────────────────────
 // `subgraph [id] [title]` ... `end`. The header carries its own positions (for
@@ -630,6 +729,11 @@ Subgraph
         h.idLoc,
       ));
     }
+    // v1.6 #3 — a PAREN-form subgraph title is Mermaid-REJECTS → fatal (block
+    // supported:false; the best-effort subgraph model is still exposed).
+    if (header && header.fatalReason) {
+      warnings.push(fatalWarn("invalid-subgraph-title", header.fatalReason, header.fatalReason, h.idLoc));
+    }
     return { nodes, edges, subgraphs: [sgNode, ...subgraphs], warnings };
   }
 
@@ -650,9 +754,12 @@ Subgraph
 // `subgraph My Group` still falls through to the FreeTitle catch-all.
 SubgraphHeader
   = idl:PlainIdLocated WS? title:SubgraphTitle &EndOfHeader
-    { return { id: idl.value, title: title.value, quote: title.quote, idLoc: idl.loc, titleSpan: title.span }; }
+    { return { id: idl.value, title: title.value, quote: title.quote, idLoc: idl.loc, titleSpan: title.span, fatalReason: title.fatalReason }; }
   / t:SubgraphTitle &EndOfHeader
-    { return { id: null, title: t.value, quote: t.quote, idLoc: t.loc, titleSpan: t.span }; }
+    // A PAREN title (`subgraph (x)`) is Mermaid-REJECTS even title-only → carry the
+    // fatalReason. (A bracket/quoted title-only header is left as-is — not in the v1.6
+    // over-lenient target set; the focused unit tests pin those as supported.)
+    { return { id: null, title: t.value, quote: t.quote, idLoc: t.loc, titleSpan: t.span, fatalReason: t.fatalReason }; }
   / idl:PlainIdLocated &EndOfHeader
     { return { id: idl.value, title: null, quote: "", idLoc: idl.loc, titleSpan: null }; }
   / t:FreeTitleLocated
@@ -670,13 +777,19 @@ EndOfHeader = Sp ("%%" / "\n" / "\r" / !.)
 // header) `loc` (the whole-token location, used as the editable id span fallback).
 // `cLoc:HERE` captures the column of the first CONTENT char so the span excludes
 // the surrounding bracket/quote delimiters.
+// v1.6 #3 — the PAREN title forms (`(title)`, `("title")`, `('title')`) are
+// Mermaid-REJECTS (oracle: `subgraph one(The One)`, `subgraph 2nd ("Second Group")`,
+// `subgraph proc (the title)` → Parse error); only the BRACKET (`[title]`, `["title"]`)
+// and bare-QUOTED title forms render (with an id). The paren alternatives carry a
+// `fatalReason` so the Subgraph action emits a fatal warning (block supported:false);
+// the best-effort subgraph model is still exposed.
 SubgraphTitle
   = "[" cLoc:HERE '"' c:DQuoted '"' "]" { return { value: c, quote: '"', span: contentSpan(c, cLoc), loc: location() }; }
   / "[" cLoc:HERE "'" c:SQuoted "'" "]" { return { value: c, quote: "'", span: contentSpan(c, cLoc), loc: location() }; }
   / "[" cLoc:HERE c:SquareRun "]"       { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location() }; }
-  / "(" cLoc:HERE '"' c:DQuoted '"' ")" { return { value: c, quote: '"', span: contentSpan(c, cLoc), loc: location() }; }
-  / "(" cLoc:HERE "'" c:SQuoted "'" ")" { return { value: c, quote: "'", span: contentSpan(c, cLoc), loc: location() }; }
-  / "(" cLoc:HERE c:ParenRun ")"        { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location() }; }
+  / "(" cLoc:HERE '"' c:DQuoted '"' ")" { return { value: c, quote: '"', span: contentSpan(c, cLoc), loc: location(), fatalReason: subgraphParenReason() }; }
+  / "(" cLoc:HERE "'" c:SQuoted "'" ")" { return { value: c, quote: "'", span: contentSpan(c, cLoc), loc: location(), fatalReason: subgraphParenReason() }; }
+  / "(" cLoc:HERE c:ParenRun ")"        { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location(), fatalReason: subgraphParenReason() }; }
   / cLoc:HERE '"' c:DQuoted '"'         { return { value: c, quote: '"', span: contentSpan(c, cLoc, 1), loc: location() }; }
   / cLoc:HERE "'" c:SQuoted "'"         { return { value: c, quote: "'", span: contentSpan(c, cLoc, 1), loc: location() }; }
 
@@ -734,12 +847,31 @@ EdgeChain
     };
     // Whether any group in the chain has more than one node (a real fan-out/fan-in).
     let sawFanout = first.refs.length > 1;
-    for (const ref of first.refs) { emitNode(ref); noteTruncation(ref); }
+    // v1.6 #3 — a bare `x`/`o` source glued to an arrow (`x==>B`/`o-->B`) is a
+    // Mermaid-REJECTS form → fatal (block supported:false). Only the FIRST group's refs
+    // (the chain source) can carry this; a later group is preceded by an arrow + space.
+    const noteGluedXO = (ref) => {
+      if (ref.gluedXO) {
+        pushWarn(fatalWarn(
+          "invalid-edge",
+          `a bare "${ref.id}" glued to an arrow is ambiguous with an arrow head`,
+          `a bare "${ref.id}" source glued to an arrow operator — won't render in Mermaid (add a space or rename the node)`,
+          ref.idLoc,
+        ));
+      }
+    };
+    for (const ref of first.refs) { emitNode(ref); noteTruncation(ref); noteGluedXO(ref); }
     let prevGroup = first;
     for (const seg of rest) {
       if (seg.group.refs.length > 1) sawFanout = true;
       for (const ref of seg.group.refs) { emitNode(ref); noteTruncation(ref); }
       const link = seg.link;
+      // v1.6 #3 — an unquoted pipe label with a bracket is a Mermaid-REJECTS form →
+      // FATAL warning (block supported:false). The edge is still emitted below (the
+      // best-effort model is exposed for editing).
+      if (link.pipeFatalReason) {
+        pushWarn(fatalWarn("invalid-label", link.pipeFatalReason, link.pipeFatalReason, location()));
+      }
       // A non-canonical inline-dash label on this segment → one advisory (per line).
       if (link.inlineDash && link.label !== undefined && link.label !== null) {
         pushWarn(warn("inline-dash-label", "inline-dash edge label is non-canonical; prefer the pipe form `-->|label|`", location()));
@@ -750,15 +882,29 @@ EdgeChain
       if (link.inlineDot && link.label !== undefined && link.label !== null) {
         pushWarn(warn("inline-dot-label", "inline-dot edge label is non-canonical; prefer the pipe form `-.->|label|`", location()));
       }
-      // FIX C — per-construct `unsupported-arrow` SKIP-WARN recovery. A connector that
-      // is ARROW-SHAPED (matched by an UnsupportedArrow alt of the Link rule) but is
-      // recognized-but-not-modeled OR Mermaid-rejected (`-->o`, `-->x`) is dropped
-      // BLOCK-LOCALLY: this one segment emits NO edge + a single `unsupported-arrow`
-      // advisory, and the surrounding valid edges of the chain survive. This is the
-      // structural backstop: after this, no arrow form can ever discard the whole
-      // block (the maximal silent-loss class). Mirrors the reserved-id / ReservedNodeSeg
-      // skip-and-survive intent. The metadata `head: 'arrow'` defaulting in makeEdge is
-      // irrelevant here — no edge is produced.
+      // Per-construct `unsupported-arrow` recovery, with the v1.6 RENDERS-vs-REJECTS
+      // split. A connector matched as an UnsupportedArrow alt of the Link rule emits NO
+      // edge for this segment + one `unsupported-arrow` warning; the surrounding edges
+      // survive. The warning's FATALITY follows real Mermaid:
+      //   - `unsupportedFatal` (Mermaid REJECTS the whole diagram — `-->o`/`-->x`/`==>o`/
+      //     `-.->x`, dangling `==`, `<==`, `o==`/`x==`): the warning is FATAL → the block
+      //     is supported:false + "won't render" (best-effort model still exposed).
+      //   - `unsupported` (Mermaid RENDERS but we don't model the irregular metadata —
+      //     quirky leading-head `o--x`/`o==>`/`o---`, dangling `--` via line-merge): the
+      //     warning is a GENTLE advisory, block stays supported:true.
+      // This is the structural backstop: no arrow form discards the whole block silently
+      // (the maximal silent-loss class) — a reject is an honest supported:false, a render
+      // is a skip-warn.
+      if (link.unsupportedFatal) {
+        pushWarn(fatalWarn(
+          "unsupported-arrow",
+          "this arrow form is not valid; the edge is skipped",
+          "an arrow form Mermaid rejects — won't render in Mermaid",
+          location(),
+        ));
+        prevGroup = seg.group;
+        continue;
+      }
       if (link.unsupported) {
         pushWarn(warn("unsupported-arrow", "this arrow form is not modeled; the edge is skipped (surrounding edges are kept)", location()));
         prevGroup = seg.group;
@@ -782,11 +928,19 @@ EdgeChain
       for (const pRef of prevGroup.refs) {
         for (const nRef of seg.group.refs) {
           if (isReserved(pRef.id) || isReserved(nRef.id)) {
-            // A reserved endpoint drops THIS edge but never the surrounding ones —
-            // warn so the drop is visible (v1.4: never silently drop an edge).
+            // A reserved endpoint is a Mermaid-REJECTS form — Mermaid parse-errors the
+            // whole diagram. Per the contract we keep a best-effort model (this edge is
+            // dropped, surroundings stay) but emit a FATAL warning so the envelope
+            // reports the block supported:false. (Case-sensitive: only the exact
+            // lowercase reserved tokens hit this; `End`/`STYLE` are normal ids.)
             const resId = isReserved(pRef.id) ? pRef.id : nRef.id;
-            const rw = warn("reserved-id", `edge endpoint "${resId}" is a reserved keyword; this edge is dropped`, { start: pRef.loc.start, end: nRef.loc.end });
-            rw._dedup = resId.toLowerCase();
+            const rw = fatalWarn(
+              "reserved-id",
+              `edge endpoint "${resId}" is a reserved keyword; this edge is dropped`,
+              `reserved Mermaid keyword "${resId}" used as an edge endpoint — won't render in Mermaid`,
+              { start: pRef.loc.start, end: nRef.loc.end },
+            );
+            rw._dedup = resId; // case-sensitive exact reserved token
             pushWarn(rw);
             continue;
           }
@@ -816,7 +970,10 @@ EdgeSegGroup
   = Sp link:Link Sp pipe:PipeLabel? Sp group:NodeGroup
   {
     const hasPipe = pipe !== null && pipe !== undefined;
-    const label = hasPipe ? pipe : link.label;
+    const label = hasPipe ? pipe.value : link.label;
+    // v1.6 #3 — an unquoted pipe label with a bracket is Mermaid-rejected; carry its
+    // fatal reason so EdgeChain emits a fatal warning (block supported:false).
+    const pipeFatalReason = hasPipe ? pipe.fatalReason : undefined;
     // The inline-dash label form (`-- text -->`) is non-canonical (prefer the pipe
     // form `-->|text|`); flag it for an advisory. A pipe label takes precedence and
     // is canonical, so it never carries the inline-dash flag.
@@ -839,16 +996,31 @@ EdgeSegGroup
         bidirectional: link.bidirectional,
         length: link.length,
         unsupported: link.unsupported === true,
+        unsupportedFatal: link.unsupportedFatal === true,
         leadingHead: link.leadingHead === true,
+        pipeFatalReason,
       },
       group,
     };
   }
 
+// A pipe edge label `-->|text|`. Returns { value, fatalReason }. v1.6 #3: an UNQUOTED
+// pipe label containing a BRACKET char `()[]{}` is a Mermaid-REJECTS form (oracle:
+// `A -->|check(x)| B` → Parse error; quoted `|"check(x)"|` and other punctuation
+// render), so it carries a fatalReason → the block is reported supported:false (the
+// edge + its label are still exposed for editing). Same bracket rule the shape labels
+// use (only brackets trip it; `<`,`&`,`:`,`/`,`-`,`.` render).
 PipeLabel
-  = "|" '"' c:DQuoted '"' "|" { return c; }
-  / "|" "'" c:SQuoted "'" "|" { return c; }
-  / "|" c:PipeRun "|"         { return c.trim(); }
+  = "|" '"' c:DQuoted '"' "|" { return { value: c }; }
+  / "|" "'" c:SQuoted "'" "|" { return { value: c }; }
+  / "|" c:PipeRun "|"
+    {
+      const v = c.trim();
+      const fatalReason = /[()\[\]{}]/.test(v)
+        ? `unquoted bracket character inside a pipe edge label — won't render in Mermaid (quote the label)`
+        : undefined;
+      return { value: v, fatalReason };
+    }
 
 PipeRun = chars:(!("|" / "\n") c:. { return c; })* { return chars.join(""); }
 
@@ -874,8 +1046,18 @@ NodeStmt
 NodeRef
   = loc:HERE idr:NodeIdRef shapeLoc:HERE shape:NodeShape
     { return { id: idr.id, truncated: idr.truncated, idLoc: idr.loc, shapeInfo: shape, shapeLoc, loc: { start: loc.start, end: location().end } }; }
-  / loc:HERE idr:NodeIdRef
-    { return { id: idr.id, truncated: idr.truncated, idLoc: idr.loc, shapeInfo: null, loc: { start: loc.start, end: location().end } }; }
+  / loc:HERE idr:NodeIdRef glued:(&("==" / "--" / "-.") { return true; })?
+    {
+      // v1.6 #3 — a bare single-char `x`/`o` source GLUED (no space) to an arrow operator
+      // is a Mermaid-REJECTS form: `x==>B`, `o-->B`, `x-.->B` → Parse error (the lexer
+      // reads the leading `x`/`o` as part of the arrow). A SPACE (`x ==> B`) renders, and
+      // any longer/other id (`xy==>B`, `y==>B`) renders — only a lone `x`/`o` abutting
+      // `==`/`--`/`-.` trips it. The zero-width `&(...)` lookahead detects the abutting
+      // arrow shaft without consuming it (EdgeChain still parses the link normally); the
+      // ref carries `gluedXO` so EdgeChain emits a fatal (block supported:false).
+      const gluedXO = glued === true && (idr.id === "x" || idr.id === "o") && !idr.truncated;
+      return { id: idr.id, truncated: idr.truncated, idLoc: idr.loc, shapeInfo: null, gluedXO, loc: { start: loc.start, end: location().end } };
+    }
 
 // A node id plus whether a hyphen tail was consumed-and-DISCARDED (`send-email` →
 // id `send`, truncated:true). The discarded off-contract tail RENDERS in Mermaid as
@@ -1035,19 +1217,25 @@ Link "arrow"
   // Labeled OPEN-link (NO arrowhead): `A -- label --- B`, `A -- label -- B`,
   // `A -- label ---- B` (and the thick `A == label === B` variants). Mirrors the
   // labeled-arrow branches above, but the CLOSE is a head-less dash/equals run
-  // (`DashOpenClose`/`ThickOpenClose` = `-- -* !">"` / `== =* !">"`). Without these
-  // branches the labeled-open-link FALSE-GREENED: the labeled-arrow branch needs a
-  // trailing `>`, so it declined; Peggy backtracked to the bare `--` open link and
-  // re-read the single-token label as a NodeRef — fabricating a phantom node + two
-  // edges (`A→label`, `label→B`) with NO warning. Emitting ONE labeled open-link
-  // edge here keeps the model correct. The close must be whitespace-delimited from
-  // the label (the label-run lookahead requires `WS DashOpenClose`), so an embedded
-  // `--`/`---` glued inside the label (`a--b`, `a---b`) is preserved, not read as a
-  // close. GENERALIZES the inline-dash family across {close-kind: arrow vs open} ×
-  // {shaft-length 2..5} × {label: quoted/unquoted} — every arm now parses to ONE
-  // labeled edge instead of phantom-noding.
-  / "--" WS? l:InlineDashLabel WS DashOpenClose { return link(l, false, "open", "solid", false, 1, { inlineDash: true }); }
-  / "==" WS? l:InlineThickLabel WS ThickOpenClose { return link(l, false, "open", "thick", false, 1, { inlineDash: true }); }
+  // (`InlineDashOpenClose`/`InlineThickOpenClose` = `--- -* !">"` / `=== =* !">"`).
+  // Without these branches the labeled-open-link FALSE-GREENED: the labeled-arrow
+  // branch needs a trailing `>`, so it declined; Peggy backtracked to the bare `--`
+  // open link and re-read the single-token label as a NodeRef — fabricating a phantom
+  // node + two edges (`A→label`, `label→B`) with NO warning. Emitting ONE labeled
+  // open-link edge here keeps the model correct.
+  //
+  // v1.6 #1b — the open close requires ≥3 dash/equals chars (`---`/`===`), NOT 2.
+  // REAL Mermaid REJECTS a 2-char head-less close on a labeled edge (`A -- lbl -- B`,
+  // `A == lbl == B` → Parse/Lexical error), while a 3+-char close renders (`A -- lbl
+  // --- B` → A→B label lbl). And an embedded GLUED 3+-dash run inside the label is a
+  // LINK to Mermaid, not label text (`A -- a---b ---- B` → A -[label a]-> b, b → B —
+  // a chained edge with a middle node, NOT one edge labeled `a---b`). The
+  // InlineDashLabel run therefore stops at ANY glued/spaced dash run of length ≥2
+  // (`InlineDashLink` lookahead) so: a 3+-dash run becomes the close (label `a`, node
+  // `b`); a 2-dash run fails the close (needs ≥3) → the whole inline arm declines →
+  // the block is supported:false, matching Mermaid's reject of `a--b`.
+  / "--" WS? l:InlineDashLabel Sp InlineDashOpenClose { return link(l, false, "open", "solid", false, 1, { inlineDash: true }); }
+  / "==" WS? l:InlineThickLabel Sp InlineThickOpenClose { return link(l, false, "open", "thick", false, 1, { inlineDash: true }); }
   // Inline DOTTED label: `A -. text .-> B` (dotted arrow close) and `A -. text .- B`
   // (dotted head-less close). Real Mermaid renders these as ONE labeled dotted edge,
   // so per the renders-it rule we emit ONE labeled edge (carrying the label + an
@@ -1105,13 +1293,17 @@ Link "arrow"
   //   - `&WS` → it is followed by whitespace + another node (the `C -->o D` shape),
   //     NOT end-of-line (bare `a-->x`, where `x` IS the target node).
   // When the arm declines (`a-->x2`, `a-->x`), the line falls through to the plain
-  // `-->` arrow + a normal NodeRef target. Per fix C we do NOT hard-fail even the
-  // genuine rejected form — we MATCH it and mark `unsupported` so EdgeChain drops just
-  // this edge + an `unsupported-arrow` advisory (gentler than Mermaid, never
-  // whole-block loss).
-  / "--" "-"* ">" ("o" / "x") !IdChar &WS   { return link(undefined, false, "arrow", "solid",   false, 1, { unsupported: true }); }
-  / "==" "="* ">" ("o" / "x") !IdChar &WS   { return link(undefined, false, "arrow", "thick",   false, 1, { unsupported: true }); }
-  / "-." "."* "->" ("o" / "x") !IdChar &WS  { return link(undefined, false, "arrow", "dotted",  false, 1, { unsupported: true }); }
+  // `-->` arrow + a normal NodeRef target. v1.6 #3: a standalone trailing-head-after-
+  // arrow (`-->o`/`-->x`/`==>o`/`-.->x`) is a Mermaid-REJECTS form (oracle-confirmed
+  // Parse error — REJECTS the WHOLE diagram). So we MATCH it and mark it
+  // `unsupportedFatal`: EdgeChain drops this edge + emits a FATAL `unsupported-arrow`
+  // warning, so the block is reported supported:false + "won't render" (the best-effort
+  // model — the surrounding edges — is still exposed for editing). This is the
+  // RENDERS-vs-REJECTS split of the old skip-warn backstop: a Mermaid-rejected arrow
+  // is supported:false (not the gentler supported:true skip the renders forms get).
+  / "--" "-"* ">" ("o" / "x") !IdChar &WS   { return link(undefined, false, "arrow", "solid",   false, 1, { unsupportedFatal: true }); }
+  / "==" "="* ">" ("o" / "x") !IdChar &WS   { return link(undefined, false, "arrow", "thick",   false, 1, { unsupportedFatal: true }); }
+  / "-." "."* "->" ("o" / "x") !IdChar &WS  { return link(undefined, false, "arrow", "dotted",  false, 1, { unsupportedFatal: true }); }
 
   // (2) BIDIRECTIONAL — a head on both ends → Mermaid's double_arrow_* family.
   //   solid arrow:  `<-->`, `<--->`, `<---->` (variadic) → double_arrow_point.
@@ -1147,8 +1339,18 @@ Link "arrow"
   // reverse-only (a left head, no right head): `<--`, `<---`, `<----` (variadic).
   // Oracle: arrow_open, reversed (caller swaps from/to). Tried AFTER the bidir `<-->`
   // arm so the trailing `>` is always claimed as the second head first.
-  / "<--" "-"*                { return link(undefined, true,  "open",   "solid",  false, linkLen(text(), "solid", true), {}); }
-  / "<==" "="*                { return link(undefined, true,  "open",   "thick",  false, linkLen(text(), "thick", true), {}); }
+  // `<---`+ (≥3 dashes reverse) RENDERS in Mermaid (reversed open edge). Bare `<--`
+  // (exactly 2 dashes) is a Mermaid-REJECTS form standalone (`A <-- B` → Parse error)
+  // but RENDERS embedded via the same line-merge quirk as bare `--`, so — exactly like
+  // bare `--` — it is the GENTLE non-fatal `unsupported` skip (drop this edge, keep
+  // surroundings, block supported:true) rather than a FATAL: a fatal here would
+  // regress the embedded multi-edge case (silently losing the surrounding edges, a the contract
+  // violation). A standalone bare `<--` thus yields an empty/best-effort block.
+  / "<--" "-"+                { return link(undefined, true,  "open",   "solid",  false, linkLen(text(), "solid", true), {}); }
+  / "<--"                     { return link(undefined, false, "open",   "solid",  false, 1, { unsupported: true }); }
+  // `<===`+ (≥3 equals reverse) RENDERS; bare `<==` (exactly 2) → FATAL (v1.6 #3).
+  / "<==" "="+                { return link(undefined, true,  "open",   "thick",  false, linkLen(text(), "thick", true), {}); }
+  / "<=="                     { return link(undefined, false, "open",   "thick",  false, 1, { unsupportedFatal: true }); }
   / "<-." "."* "-"            { return link(undefined, true,  "open",   "dotted", false, linkLen(text(), "dotted", true), {}); }
 
   // INVISIBLE link `~~~` / `~~~~` (≥3 tildes; `~~` is a Mermaid lexical error).
@@ -1174,7 +1376,34 @@ Link "arrow"
   / "--" "-"* "x"             { return link(undefined, false, "cross",  "solid",  false, linkLen(text(), "solid", true), {}); } // `--x`, `---x`, `----x`
   / "--" "-"* "o"             { return link(undefined, false, "circle", "solid",  false, linkLen(text(), "solid", true), {}); } // `--o`, `---o`, `----o`
   / "--" "-"+                  { return link(undefined, false, "open",   "solid",  false, linkLen(text(), "solid", false), {}); } // `---`, `----`
-  / "--"                       { return link(undefined, false, "open",   "solid",  false, 1, {}); } // bare open `--`
+  // v1.6 #1b — a bare `--` / `==` (length-1 head-less link) is NOT a valid standalone
+  // edge in REAL Mermaid (`A -- B` / `A == B` → Parse error; the minimum head-less
+  // open link is `---` / `===`, handled above). It is matched here LAST and marked
+  // `unsupported` so EdgeChain drops THIS edge block-locally (an `unsupported-arrow`
+  // advisory) instead of either (a) FALSE-GREENing `A -- lbl -- B` into two phantom
+  // edges [if it were a normal open link] or (b) failing the WHOLE block and silently
+  // losing the surrounding on-contract edges [if it had no arm at all] — the latter is
+  // the the contract "never silently drop a surrounding edge" violation a multi-line block hits
+  // (`P0-->A / A -- B / B-->P1`, which Mermaid renders via line-merge). Tried after the
+  // labeled-inline arms (top of Link) so a real labeled edge is claimed first; only a
+  // dangling bare `--`/`==` with no label/close reaches here.
+  // Dangling `==` (length-1 thick open) is a Mermaid-REJECTS form even embedded
+  // (`A == B` → Parse error, no line-merge rescue) → FATAL (supported:false).
+  / "==" !("=" / ">" / "x" / "o")  { return link(undefined, false, "open",   "thick",  false, 1, { unsupportedFatal: true }); }
+  // Dangling `--` (length-1 dash open) is the ONE exception: REAL Mermaid RENDERS it
+  // embedded via a line-merge quirk (`P0-->A / A -- B / B-->P1` → P0->A, A->P1), so a
+  // FATAL here would silently lose the surrounding on-contract edges (the contract violation).
+  // Mark it the GENTLER non-fatal `unsupported` (skip this edge, keep surroundings,
+  // block stays supported:true). Standalone `A -- B` then yields an empty supported
+  // block, which the differential coverage treats identically to a reject (∅ == ∅).
+  / "--" !("-" / ">" / "x" / "o")  { return link(undefined, false, "open",   "solid",  false, 1, { unsupported: true }); }
+
+  // v1.6 #3 — a bare LEADING-head thick `o==` / `x==` (exactly 2 equals, NO trailing
+  // head/extra equals) is a Mermaid-REJECTS form (oracle: `A o== B` / `A x== B` →
+  // Parse error, even embedded) → FATAL. The longer / trailing-head variants
+  // (`o===`, `x==o`, `o==>`) RENDER and fall to the non-fatal skip catch-all below.
+  / ("o" / "x") "==" !("=" / ">" / "x" / "o")
+    { return link(undefined, false, "open", "thick", false, 1, { unsupportedFatal: true }); }
 
   // FIX C catch-all — a LEADING circle/cross head (`o`/`x`) on a shaft whose
   // TRAILING combination is NOT one of the cleanly-modeled forms above (e.g.
@@ -1210,6 +1439,25 @@ ThickArrowClose = "==" "="* ">"
 // lookahead (whitespace-delimited, so an embedded `--` inside a label is kept).
 DashOpenClose  = "--" "-"* !">"
 ThickOpenClose = "==" "="* !">"
+
+// v1.6 #1b — the HEAD-LESS close of a LABELED inline edge requires ≥3 dash/equals
+// chars (`---`/`===`+), NOT 2. REAL Mermaid rejects a 2-char head-less close on a
+// labeled edge (`A -- lbl -- B` → error) but renders a 3+-char one (`A -- lbl --- B`).
+// Distinct from the bare-arrow `DashOpenClose` (`--`+, used by the unlabeled open
+// link `A --- B`) — only the labeled inline form has the ≥3 minimum.
+InlineDashOpenClose  = "--" "-"+ !">"
+InlineThickOpenClose = "==" "="+ !">"
+
+// v1.6 #1b — the inline-label run terminator: an upcoming dash/equals run of ≥2 chars
+// (whether glued or spaced). REAL Mermaid lexes a 2+-dash run inside what looks like a
+// label as a LINK, not label text. `A -- a---b ---- B` → the glued `---` after `a` is a
+// link: the label is `a`, `b` is the next node (A -[a]-> b, b → B). `A -- a--b --- B` →
+// the glued `--` after `a` is a 2-dash run that is neither a ≥3 open close nor an arrow
+// → the inline arm fails → reject (Mermaid rejects it too). A SINGLE dash (`a-b`) is
+// label text and does NOT terminate. The leading `Sp` lets a spaced close terminate
+// (`A -- lbl --- B`). The close arms (InlineDash{Arrow,Open}Close) then claim the run.
+InlineDashLink  = Sp "--"
+InlineThickLink = Sp "=="
 
 // The CLOSE half of an inline-dotted labeled edge — a dotted-shaft run that BEGINS
 // with `.` (the label having consumed everything between the `-.` opener and here).
@@ -1250,24 +1498,27 @@ MixedShaftLabel
 // `PipeLabel?` (`-->|label|`) fires and strips the pipes instead of leaking them.
 // Quoted forms (`-- "label" -->`, `== 'label' ==>`) strip the surrounding quotes,
 // mirroring PipeLabel, so a quoted inline label never keeps its quote chars.
-// The label stops at the closing shaft run. Two terminator shapes:
-//   - `Sp DashArrowClose` — an arrow close (`-->`), any spacing incl. glued, as
-//     before (the `>` makes it unambiguous even with no space).
-//   - `WS DashOpenClose`  — a head-less open close (`---`), which MUST be
-//     whitespace-delimited from the label. Requiring `WS` (not `Sp`) here is what
-//     keeps an embedded `--`/`---` glued inside the label (`a--b`, `a---b`) from
-//     being misread as a close — only a whitespace-separated dash run terminates.
+// The label stops at the closing shaft run. The terminator is `InlineDashLink`
+// (`Sp "--"`) — ANY dash run of ≥2 chars, glued OR spaced (v1.6 #1b). This makes the
+// run stop at a glued embedded link the way Mermaid lexes it: `A -- a---b ---- B` →
+// the glued `---` after `a` is a link, so the label is `a` and `b` is the next node
+// (NOT one edge labeled `a---b`); `A -- a--b --- B` → the glued `--` is a 2-dash run
+// that fails the ≥3 open close (and is no arrow) → the arm declines → reject, exactly
+// like Mermaid. A SINGLE dash (`a-b`) does NOT terminate (it is 1 char, not `--`), so
+// internal single hyphens are kept. The first raw char also may not be `>`/`-`/`|`/NL:
+// a leading `-` would belong to the close; a leading `>` is the arrow head; a leading
+// `|` is the pipe-label form (`-->|label|`) the arrow's `PipeLabel?` must claim.
 InlineDashLabel
   = '"' c:DQuoted '"' { return c; }
   / "'" c:SQuoted "'" { return c; }
-  / first:(!(Sp DashArrowClose) !(WS DashOpenClose) !(">" / "-" / "|" / "\n") c:. { return c; })
-    rest:(!(Sp DashArrowClose) !(WS DashOpenClose) !"\n" c:. { return c; })*
+  / first:(!InlineDashLink !(">" / "-" / "|" / "\n") c:. { return c; })
+    rest:(!InlineDashLink !"\n" c:. { return c; })*
   { return (first + rest.join("")).trim(); }
 InlineThickLabel
   = '"' c:DQuoted '"' { return c; }
   / "'" c:SQuoted "'" { return c; }
-  / first:(!(Sp ThickArrowClose) !(WS ThickOpenClose) !(">" / "=" / "|" / "\n") c:. { return c; })
-    rest:(!(Sp ThickArrowClose) !(WS ThickOpenClose) !"\n" c:. { return c; })*
+  / first:(!InlineThickLink !(">" / "=" / "|" / "\n") c:. { return c; })
+    rest:(!InlineThickLink !"\n" c:. { return c; })*
   { return (first + rest.join("")).trim(); }
 // The inline-DOTTED edge label between a `-.` opener and a `.->`/`.-` close, the exact
 // parallel of InlineDashLabel for the dotted shaft. QUOTED forms strip the surrounding

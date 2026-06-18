@@ -80,6 +80,34 @@ function coverageOld(input, isMmd) {
   return coverageFromBlocks(findOld(input, isMmd));
 }
 
+// Real Mermaid's rendering pipeline PREPROCESSES the diagram text before the flow
+// grammar sees it: it strips a leading YAML `--- … ---` frontmatter block and removes
+// `%%` comment lines. The raw flow grammar (`mmParser.parse`) does NOT do this, so on
+// frontmatter / own-line / trailing-comment input the bare grammar wrongly throws while
+// real `mermaid.parse()` renders it (verified against mermaid@11.15.0). To make this
+// ground-truth column reflect what Mermaid ACTUALLY renders — not an artifact of calling
+// the grammar without its front-end — we apply the same preprocessing here.
+//
+//   - Frontmatter: a first non-blank line `---` … up to the next `---` is dropped.
+//   - Comments: every line whose first non-space chars are `%%` is dropped (an inline
+//     `%%` AFTER content is NOT stripped — Mermaid itself rejects that, so leaving it
+//     in keeps the grammar's reject, matching real Mermaid).
+//   - If preprocessing leaves only the header (no statements), Mermaid renders an EMPTY
+//     diagram (∅ coverage) — the bare grammar throws on a header-only body, so we treat
+//     that specific throw as empty rather than "rejected".
+function mermaidPreprocess(text) {
+  let lines = text.split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  if (i < lines.length && lines[i].trim() === "---") {
+    let j = i + 1;
+    while (j < lines.length && lines[j].trim() !== "---") j++;
+    if (j < lines.length) lines = lines.slice(j + 1);
+  }
+  lines = lines.filter((l) => !/^\s*%%/.test(l));
+  return lines.join("\n");
+}
+
 // Real Mermaid: parse the document's flowchart blocks the same way the others do —
 // for a whole .mmd it's the whole text; for markdown, extract each ```mermaid fence
 // and parse them independently, unioning coverage. Mermaid throws on input it
@@ -87,7 +115,7 @@ function coverageOld(input, isMmd) {
 function coverageMermaid(input, isMmd) {
   const nodeIds = new Set();
   const edges = new Set();
-  const chunks = isMmd ? [input] : extractMermaidFences(input);
+  const chunks = (isMmd ? [input] : extractMermaidFences(input)).map(mermaidPreprocess);
   for (const chunk of chunks) {
     let verts, evs;
     try {

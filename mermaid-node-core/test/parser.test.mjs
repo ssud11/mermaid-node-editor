@@ -392,13 +392,13 @@ test("bare thick arrow accepts every shaft length, like the bare dash arrow", ()
 });
 
 test("a reserved keyword leading an edge does not swallow the same-line destination", () => {
-  // `style[L] --> B[End]` is off-contract (reserved id as edge source). The
-  // directive rule must NOT consume the whole line and silently drop B — the
-  // destination node survives; the reserved-source edge is dropped per the
-  // reserved-id limitation.
+  // `style[L] --> B[End]` is off-contract (reserved id as edge source). The directive
+  // rule must NOT consume the whole line and silently drop B — the destination node
+  // survives in the best-effort model. v1.6 #3: a reserved edge endpoint is Mermaid-
+  // rejected, so the block is supported:false (the edge is dropped, B kept).
   for (const src of ["flowchart TD\nstyle[Label] --> B[End]", "flowchart TD\nstyle[L] ==> B[End]"]) {
     const b = findMermaidBlocks(src, true)[0];
-    assert.equal(b.supported, true, `still supported: ${src}`);
+    assert.equal(b.supported, false, `reserved source → supported:false: ${src}`);
     assert.deepEqual(b.nodes.map((n) => n.id), ["B"], `destination B survives: ${src}`);
     assert.equal(b.edges.length, 0, `reserved-source edge dropped: ${src}`);
   }
@@ -455,14 +455,15 @@ test("never throws on a battery of off-contract / malformed inputs", () => {
 // Inline-dash/thick LABELED edge family: {close-kind: arrow vs OPEN} × {shaft 2..5}
 // × {label: quoted/unquoted}. EVERY arm must be exactly ONE labeled edge, never a
 // phantom node from the label text and never a whole-block failure.
-test("inline-label edge family: every close-kind/shaft/quoting arm is ONE labeled edge", () => {
+test("inline-label edge family (v1.6): an arrow-close or ≥3-char open-close arm is ONE labeled edge", () => {
+  // RENDERS arms only — an ARROW close (`-->`), or a HEAD-LESS open close of ≥3
+  // dash/equals (`---`/`===`+). Each is ONE labeled edge A->B.
   const arms = [
-    // [input, expectedLabel]
     ["A -- lbl --> B", "lbl"], ["A -- lbl ---> B", "lbl"], ["A -- lbl ----> B", "lbl"],
-    ["A -- lbl -- B", "lbl"], ["A -- lbl --- B", "lbl"], ["A -- lbl ---- B", "lbl"], ["A -- lbl ----- B", "lbl"],
+    ["A -- lbl --- B", "lbl"], ["A -- lbl ---- B", "lbl"], ["A -- lbl ----- B", "lbl"],
     ["A == lbl ==> B", "lbl"], ["A == lbl ===> B", "lbl"],
-    ["A == lbl == B", "lbl"], ["A == lbl === B", "lbl"], ["A == lbl ==== B", "lbl"],
-    ['A -- "q l" --> B', "q l"], ['A -- "q l" --- B', "q l"], ["A -- 'q l' -- B", "q l"],
+    ["A == lbl === B", "lbl"], ["A == lbl ==== B", "lbl"],
+    ['A -- "q l" --> B', "q l"], ['A -- "q l" --- B', "q l"],
     ['A == "q l" ==> B', "q l"], ['A == "q l" === B', "q l"],
   ];
   for (const [body, label] of arms) {
@@ -478,22 +479,59 @@ test("inline-label edge family: every close-kind/shaft/quoting arm is ONE labele
   }
 });
 
-test("inline-label edge family: an embedded dash run inside a label is preserved (open close is whitespace-delimited)", () => {
-  for (const [body, label] of [["A -- a--b --- B", "a--b"], ["A -- a---b ---- B", "a---b"], ["A -- a--b --> B", "a--b"]]) {
-    const e = findMermaidBlocks(`graph TD\n${body}`, true)[0].edges[0];
-    assert.equal(e.label, label, `${body}: embedded dashes kept`);
+test("inline-label edge family (v1.6): a 2-char head-less open close is Mermaid-rejected → no labeled edge", () => {
+  // v1.6 #1b — REAL Mermaid REJECTS a labeled edge whose head-less close is only 2
+  // dash/equals chars (`A -- lbl -- B`, `A == lbl == B`, `A -- 'q l' -- B` → Parse /
+  // Lexical error; the minimum head-less open close is `---`/`===`). No phantom labeled
+  // edge is fabricated. (The bare `--` close degrades to a non-fatal skip so a multi-
+  // line block isn't nuked; the standalone forms here carry no live A->B labeled edge.)
+  for (const body of ["A -- lbl -- B", "A -- 'q l' -- B"]) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.edges.length, 0, `${body}: no fabricated labeled edge`);
   }
+  // the thick 2-char close is honestly supported:false
+  const thick = findMermaidBlocks("graph TD\nA == lbl == B", true)[0];
+  assert.equal(thick.supported, false, "A == lbl == B: Mermaid-rejects → supported:false");
+  assert.equal(thick.edges.length, 0, "no fabricated labeled edge");
+});
+
+test("inline-label edge family (v1.6): a glued embedded ≥3-dash run splits into a middle node (matches Mermaid)", () => {
+  // REAL Mermaid lexes a glued `---` (3+ dashes) inside what looks like a label as a
+  // LINK: `A -- a---b ---- B` → A -[label a]-> b, b -> B (a middle node `b`), NOT one
+  // edge labeled `a---b`. A glued `--` (2 dashes) — `A -- a--b --- B` — is Mermaid-
+  // rejected (the 2-dash run is neither a ≥3 open close nor an arrow). Both pinned.
+  const triple = findMermaidBlocks("graph TD\nA -- a---b ---- B", true)[0];
+  assert.deepEqual(
+    triple.edges.map((e) => `${e.from}->${e.to}`),
+    ["A->b", "b->B"],
+    "A -- a---b ---- B: chained edge through middle node b",
+  );
+  assert.equal(triple.edges.find((e) => e.from === "A" && e.to === "b").label, "a", "first edge label is `a`");
+  // the glued `--` (2-dash) form does not fabricate a single edge labeled `a--b`
+  const dbl = findMermaidBlocks("graph TD\nA -- a--b --- B", true)[0];
+  assert.equal(dbl.edges.every((e) => e.label !== "a--b"), true, "no edge labeled `a--b` (Mermaid rejects this form)");
 });
 
 // Reserved-keyword family: {keyword} × {standalone-shaped, edge-endpoint}. A
 // standalone shaped reserved keyword is skipped, the surrounding edges survive
 // (no whole-block data loss); a reserved edge endpoint drops only that edge.
-test("reserved-keyword family: a standalone shaped reserved node is skipped, surroundings survive", () => {
-  for (const kw of ["style", "graph", "flowchart", "subgraph", "direction", "click", "classDef", "class", "linkStyle", "default", "end"]) {
+test("reserved-keyword family (v1.6): a standalone lowercase-reserved shaped node is supported:false; an unreserved keyword is a normal node", () => {
+  // v1.6 #1a/#3 — REAL Mermaid REJECTS only the EXACT lowercase reserved tokens as a
+  // shaped node id (`style[X]`, `graph[X]`, … → Parse error), so the block is
+  // supported:false (best-effort: no node, surrounding edges kept). `direction`,
+  // `click`, `default` are NOT reserved (Mermaid renders `direction[X]` as a node), so
+  // they parse as ordinary nodes — supported:true.
+  for (const kw of ["style", "graph", "flowchart", "subgraph", "classDef", "class", "linkStyle", "end"]) {
     const b = findMermaidBlocks(`graph TD\nA-->B\n${kw}[X]\nC-->D`, true)[0];
-    assert.equal(b.supported, true, `${kw}[X]: block survives (supported)`);
+    assert.equal(b.supported, false, `${kw}[X]: Mermaid-rejects → supported:false`);
     assert.equal(b.nodes.length, 0, `${kw}[X]: dropped, no node`);
-    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `${kw}[X]: surrounding edges survive`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `${kw}[X]: surrounding edges survive in the best-effort model`);
+  }
+  for (const kw of ["direction", "click", "default"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\n${kw}[X]\nC-->D`, true)[0];
+    assert.equal(b.supported, true, `${kw}[X]: not reserved (renders) → supported:true`);
+    assert.deepEqual(b.nodes.map((n) => n.id), [kw], `${kw}[X]: a normal node`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `${kw}[X]: edges`);
   }
 });
 
@@ -502,17 +540,23 @@ test("reserved-keyword family: a bare `end` still terminates a subgraph (not eat
   assert.equal(b.supported, true);
   assert.deepEqual(b.subgraphs.map((s) => s.id), ["S"]);
   assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"]);
-  // and a SHAPED end[X] inside a subgraph is dropped while the bare end still closes it
+  // and a SHAPED end[X] inside a subgraph is recovered (no node) while the bare end
+  // still closes it — but `end[X]` is a Mermaid-REJECTS form, so the block is now
+  // supported:false (v1.6 #3). The bare `end` terminator + surrounding edges are
+  // still correctly modelled (best-effort).
   const b2 = findMermaidBlocks("graph TD\nsubgraph S\nA-->B\nend[X]\nend\nC-->D", true)[0];
-  assert.equal(b2.supported, true);
+  assert.equal(b2.supported, false);
   assert.deepEqual(b2.subgraphs.map((s) => s.id), ["S"]);
   assert.deepEqual(b2.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"]);
 });
 
-test("reserved-keyword family: a reserved edge endpoint drops only that edge, surroundings survive", () => {
+test("reserved-keyword family (v1.6): a reserved edge endpoint makes the block supported:false; surrounding edges stay in the model", () => {
+  // v1.6 #3 — a reserved keyword as an edge endpoint is a Mermaid-REJECTS form (Parse
+  // error). The block is supported:false; the best-effort model still drops only that
+  // edge and keeps the surrounding A->B / C->D.
   for (const kw of ["end", "style", "class", "graph"]) {
     const b = findMermaidBlocks(`graph TD\nA-->B\nX-->${kw}\nC-->D`, true)[0];
-    assert.equal(b.supported, true, `X-->${kw}: block survives`);
+    assert.equal(b.supported, false, `X-->${kw}: Mermaid-rejects → supported:false`);
     assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `X-->${kw}: only that edge dropped`);
   }
 });
@@ -557,33 +601,42 @@ test("warnings channel: supported block carries an empty array on a clean parse"
 });
 
 test("warnings channel: a fenced-block warning line is absolute in the document", () => {
-  // The reserved-id skip is on the 5th line (0-based 4) of the document.
-  const src = "# Doc\n\n```mermaid\ngraph TD\nEnd[X]\n```";
+  // A lowercase-reserved shaped node (`end[X]`) on the 5th line (0-based 4) of the
+  // document. v1.6: `end[X]` is Mermaid-rejected → the block is supported:false and the
+  // reserved-id warning's line is the ABSOLUTE document line. (`End[X]` would now be a
+  // normal node — case-sensitive #1a — so this pins the exact lowercase token.)
+  const src = "# Doc\n\n```mermaid\ngraph TD\nend[X]\n```";
   const b = findMermaidBlocks(src, false)[0];
-  assert.equal(b.supported, true);
+  assert.equal(b.supported, false);
   const w = (b.warnings || []).find((x) => x.code === "reserved-id");
   assert.ok(w, "reserved-id warning present");
-  assert.equal(w.line, 4, "warning line is the absolute document line of End[X]");
+  assert.equal(w.line, 4, "warning line is the absolute document line of end[X]");
 });
 
-// B1 — reserved-keyword node id recovery is CASE-INSENSITIVE.
-test("v1.4 B1: a mixed/upper-case reserved node id is recovered case-insensitively + warned, never block-fatal", () => {
+// v1.6 #1a — reserved-keyword node id matching is CASE-SENSITIVE: only the EXACT
+// lowercase Mermaid tokens are reserved. A capitalized/mixed-case variant (`End[X]`,
+// `STYLE[x]`, `Graph[x]`) is an ORDINARY node — REAL Mermaid renders it as a node, so
+// the block is supported:true with the node present, NOT a reserved-id skip.
+test("v1.6 #1a: a capitalized/mixed-case reserved-looking node id is an ordinary node (case-sensitive)", () => {
   for (const kw of ["End", "STYLE", "Graph", "ClassDef", "SUBGRAPH", "Direction"]) {
     const b = findMermaidBlocks(`graph TD\nA-->B\n${kw}[X]\nC-->D`, true)[0];
-    assert.equal(b.supported, true, `${kw}[X]: block survives (supported)`);
-    assert.equal(b.nodes.length, 0, `${kw}[X]: skipped, no node`);
-    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `${kw}[X]: surrounding edges survive`);
-    assert.deepEqual(codesOf(b), ["reserved-id"], `${kw}[X]: reserved-id warning`);
+    assert.equal(b.supported, true, `${kw}[X]: ordinary node → supported:true`);
+    assert.deepEqual(b.nodes.map((n) => n.id), [kw], `${kw}[X]: a normal node, NOT skipped`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `${kw}[X]: edges`);
+    assert.deepEqual(codesOf(b), [], `${kw}[X]: no reserved-id warning (not reserved)`);
   }
-  // a mixed-case bare `End` still must NOT be recovered as a shaped node when bare
-  // (no shape) — but a mixed-case SHAPED end[X] is recovered like the others above.
+  // the EXACT lowercase token IS reserved — Mermaid rejects it → supported:false.
+  const low = findMermaidBlocks("graph TD\nA-->B\nstyle[X]\nC-->D", true)[0];
+  assert.equal(low.supported, false, "style[X]: lowercase reserved → supported:false");
+  assert.deepEqual(codesOf(low), ["reserved-id"]);
 });
 
-// B2 — a reserved keyword as a subgraph id is kept + warned; the edge referencing
-// it is dropped with its own warning (never silently).
-test("v1.4 B2: reserved keyword as a subgraph id is kept + warned, the referencing edge drop is advised", () => {
+// B2 (v1.6) — a reserved keyword as a subgraph id is kept in the best-effort model +
+// warned; an edge REFERENCING the reserved id is a Mermaid-REJECTS endpoint, so the
+// block is supported:false (Mermaid Parse-errors `C --> graph`).
+test("v1.6 B2: a reserved keyword subgraph id with a referencing edge is supported:false; model kept", () => {
   const b = findMermaidBlocks("graph TD\nsubgraph graph[Title]\n  C --> graph\nend", true)[0];
-  assert.equal(b.supported, true);
+  assert.equal(b.supported, false, "the C-->graph reserved-endpoint edge → supported:false");
   assert.deepEqual(b.subgraphs.map((s) => ({ id: s.id, label: s.label })), [{ id: "graph", label: "Title" }]);
   assert.equal(b.edges.length, 0, "the C-->graph edge (reserved endpoint) is dropped");
   assert.deepEqual(codesOf(b), ["reserved-id", "reserved-id-subgraph"]);
@@ -610,9 +663,12 @@ test("v1.4 B3: & fan-out/fan-in splits into the real pairwise edges, never block
   assert.deepEqual(codesOf(r), ["fanout-split", "reserved-id"]);
 });
 
-// B4 — a FOREIGN close-bracket inside an unquoted label is kept as content (it
-// renders in Mermaid); the over-bracket guard still hard-fails.
-test("v1.4 B4: a foreign close-bracket inside an unquoted label is part of the label", () => {
+// B4 (v1.6 #3) — an UNQUOTED bracket char inside a label is a Mermaid-REJECTS form
+// (oracle: `A[Order (Pending)]`, `A(read [x])` → Parse error; the v1.4 "keep it as
+// content" behavior was over-lenient). The block is supported:false + an `invalid-label`
+// warning; the best-effort node (with the bracket kept in the label, content-exclusive
+// span intact) is still exposed for editing. A QUOTED label with brackets renders.
+test("v1.6 B4: an unquoted bracket inside a label is supported:false; a quoted one renders", () => {
   const cases = [
     ["A[Order (Pending)]", "Order (Pending)", "[]"],
     ["A[Status {x}]", "Status {x}", "[]"],
@@ -626,13 +682,20 @@ test("v1.4 B4: a foreign close-bracket inside an unquoted label is part of the l
   for (const [body, label, shape] of cases) {
     const src = `graph TD\n${body}`;
     const b = findMermaidBlocks(src, true)[0];
-    assert.equal(b.supported, true, `${body}: supported`);
+    assert.equal(b.supported, false, `${body}: unquoted bracket in label → supported:false`);
     const n = b.nodes[0];
-    assert.equal(n.label, label, `${body}: label keeps the foreign bracket`);
+    assert.equal(n.label, label, `${body}: best-effort node keeps the bracket in the label`);
     assert.equal(n.shape, shape, `${body}: shape`);
     // span-content invariant: the label span still slices to exactly the label
     assert.equal(src.split("\n")[n.line].slice(n.labelStart, n.labelEnd), label, `${body}: label span slices to content`);
-    assert.deepEqual(codesOf(b), [], `${body}: a parsed canonical-shape label carries no warning`);
+    assert.deepEqual(codesOf(b), ["invalid-label"], `${body}: invalid-label warning`);
+  }
+  // a QUOTED label containing brackets RENDERS (supported:true, no warning).
+  for (const [body, label] of [['A["Order (Pending)"]', "Order (Pending)"], ['A("read [x]")', "read [x]"]]) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, true, `${body}: quoted bracket label renders`);
+    assert.equal(b.nodes[0].label, label, `${body}: label`);
+    assert.deepEqual(codesOf(b), [], `${body}: no warning`);
   }
   // the ASYMMETRIC over-bracket guard is unchanged — these still hard-fail.
   for (const src of ["graph TD\nA[[[hello]]", "graph TD\nA((x)", "graph TD\nA{{{x}}", "graph TD\nA[[x]"]) {
@@ -663,12 +726,13 @@ test("v1.4 C: a hyphen-truncated id carries the id-truncated advisory (bare, sha
   assert.deepEqual(codesOf(findMermaidBlocks("graph TD\nplain --> B", true)[0]), []);
 });
 
-test("v1.4: a backtracked speculative path leaves NO spurious warning (model-attached, not a shared array)", () => {
-  // `A -- a--b --- B` exercises the inline-dash label path with an embedded dash run;
-  // the parser backtracks across several Link alternatives before committing. Exactly
-  // one inline-dash-label advisory must survive — not one per speculative attempt.
-  const b = findMermaidBlocks("graph TD\nA -- a--b --- B", true)[0];
-  assert.equal(b.edges[0].label, "a--b");
+test("a backtracked speculative path leaves NO spurious warning (model-attached, not a shared array)", () => {
+  // `A -- a---b ---- B` exercises the inline-dash label path with a glued embedded link
+  // run; the parser backtracks across several Link alternatives before committing on the
+  // Mermaid-faithful split (A -[a]-> b, b -> B). Exactly ONE inline-dash-label advisory
+  // must survive — not one per speculative attempt.
+  const b = findMermaidBlocks("graph TD\nA -- a---b ---- B", true)[0];
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->b", "b->B"]);
   assert.deepEqual(codesOf(b), ["inline-dash-label"]);
   // and a clean canonical chain after a fan-out line keeps warnings scoped per block
   const b2 = findMermaidBlocks("graph TD\nA --> B & C\nD --> E", true)[0];
@@ -679,21 +743,23 @@ test("v1.4: a backtracked speculative path leaves NO spurious warning (model-att
 // A reserved-keyword SHAPED node as one segment of a `;` chain is recovered
 // (dropped + reserved-id warned) so the surrounding chain edges survive — the same
 // graceful skip the own-line form already does, never a whole-block hard-fail.
-test("a reserved shaped node in a `;` chain is dropped + warned; the surrounding edges survive", () => {
+test("a reserved shaped node in a `;` chain is recovered block-locally; surrounding edges stay (supported:false)", () => {
+  // v1.6 #3 — `end[X]` is a Mermaid-REJECTS form, so the block is supported:false; the
+  // best-effort model still drops only the reserved segment and keeps the surrounding
+  // chain edges (no whole-block data loss in the model).
   const b = findMermaidBlocks("graph TD\nA --> B; end[X]; C --> D\n", true)[0];
-  assert.equal(b.supported, true, "block parses (not a whole-block hard-fail)");
-  assert.equal(b.parseError, undefined, "no parseError");
-  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], "both on-contract edges survive");
+  assert.equal(b.supported, false, "reserved shaped chain segment → supported:false");
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], "both on-contract edges survive in the model");
   assert.equal(b.nodes.length, 0, "the reserved shaped node is not emitted");
   assert.deepEqual(codesOf(b), ["reserved-id"], "the drop is advised");
-  // it matches the own-line form exactly (same model, same advisory)
+  // it matches the own-line form exactly (same model, same advisory, same supported)
   const own = findMermaidBlocks("graph TD\nA --> B\nend[X]\nC --> D\n", true)[0];
+  assert.equal(own.supported, false);
   assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), own.edges.map((e) => `${e.from}->${e.to}`));
   assert.deepEqual(codesOf(b), codesOf(own));
-  // a non-`end` reserved keyword (bare or shaped) recovers in a chain too; bare `end`
-  // is NOT recovered here (it is the subgraph terminator) — only shaped `end[X]` is.
+  // a non-`end` reserved keyword recovers in a chain too (also supported:false).
   const b2 = findMermaidBlocks("graph TD\nA --> B; style[X]; C --> D\n", true)[0];
-  assert.equal(b2.supported, true, "non-end reserved shaped segment recovers");
+  assert.equal(b2.supported, false, "non-end reserved shaped segment → supported:false");
   assert.deepEqual(b2.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"]);
 });
 
@@ -702,8 +768,8 @@ test("a reserved shaped node in a `;` chain is dropped + warned; the surrounding
 // silently drop the rest. Same-id same-line re-warns are still suppressed.
 test("multiple distinct reserved ids on one line each emit a reserved-id advisory", () => {
   const b = findMermaidBlocks("graph TD\nend & style --> B\nA --> C\n", true)[0];
-  assert.equal(b.supported, true, "block parses");
-  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->C"], "only the on-contract edge survives");
+  assert.equal(b.supported, false, "reserved endpoints → supported:false (v1.6 #3)");
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->C"], "only the on-contract edge survives in the model");
   const reserved = (b.warnings || []).filter((w) => w.code === "reserved-id");
   assert.equal(reserved.length, 2, "both `end` and `style` warn (distinct)");
   const ids = reserved.map((w) => /"([^"]+)"/.exec(w.message)[1]).sort();
@@ -988,19 +1054,23 @@ test("warn-best-effort arrow forms parse + a non-canonical-arrow advisory", () =
 // arrow is dropped BLOCK-LOCALLY with an `unsupported-arrow` advisory; the block
 // stays supported:true and EVERY surrounding valid edge survives. After this, no
 // arrow form can EVER discard the whole block (the maximal silent-loss class).
-test("unsupported-arrow skip-warn: a bad arrow never nukes the block; surroundings survive", () => {
-  // Mermaid-REJECTED forms (`-->o`/`-->x` as a standalone token before a node).
+test("unsupported-arrow (v1.6): a Mermaid-REJECTED arrow → supported:false; a renders-but-unmodeled arrow → supported:true; both keep surroundings", () => {
+  // v1.6 #3 RENDERS-vs-REJECTS split. Mermaid-REJECTED forms (`-->o`/`-->x`/`==>o`/
+  // `-.->x` → Parse error) are supported:false; the best-effort model still drops only
+  // the bad edge and keeps the surrounding A->B / E->F. The block is never whole-block
+  // empty (the maximal silent-loss class is still killed — surroundings survive).
   for (const op of ["-->o", "-->x", "==>o", "-.->x"]) {
     const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
-    assert.equal(b.supported, true, `${op}: block survives (not whole-block fail)`);
+    assert.equal(b.supported, false, `${op}: Mermaid-rejects → supported:false`);
     assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "E->F"], `${op}: surrounding edges kept, bad edge skipped`);
     assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
   }
-  // Quirky leading-head forms with irregular Mermaid metadata (`o--x`, `x--o`,
-  // `o==>`, `o---`) — also skip-warn rather than model their irregular metadata.
+  // Quirky leading-head forms that REAL Mermaid RENDERS (`o--x`, `x--o`, `o==>`,
+  // `o---`, `x==o` → render as an edge C->D) but whose irregular metadata we do not
+  // model — these stay supported:true (a gentle skip-warn, no whole-block loss).
   for (const op of ["o--x", "x--o", "o==>", "o---", "x==o"]) {
     const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
-    assert.equal(b.supported, true, `${op}: block survives`);
+    assert.equal(b.supported, true, `${op}: renders in Mermaid → supported:true`);
     assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "E->F"], `${op}: surroundings kept`);
     assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
   }
