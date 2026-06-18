@@ -47,6 +47,13 @@ import { parse as parseFlowchart, SyntaxError as PeggySyntaxError } from "./gene
  * @property {number} line
  * @property {number} idStart   0-based start column of the id/title token
  * @property {number} idEnd     0-based exclusive-end column of the id/title token
+ * @property {number} titleStart 0-based start column of the title CONTENT (exclusive
+ *   of any quotes/brackets). ALWAYS present: with an explicit title it spans that
+ *   content; with an id and no title it equals the id span; for a bare `subgraph`
+ *   header (no id, no title) it is a zero-width span. The invariant
+ *   `source.slice(titleStart, titleEnd) === label` always holds, so a consumer may
+ *   slice unconditionally without first checking for a title.
+ * @property {number} titleEnd  0-based exclusive-end column of the title content
  * @property {string[]} members ids declared/referenced directly inside, in order
  *
  * @typedef {Object} Block

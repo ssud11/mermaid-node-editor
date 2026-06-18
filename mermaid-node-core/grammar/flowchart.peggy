@@ -48,6 +48,18 @@
     return { code, message, line: loc.start.line - 1 };
   }
 
+  // A `reserved-id` warning that rides the offending keyword (lower-cased) as its
+  // `_dedup` distinguisher, so two DISTINCT reserved keywords skipped on ONE line
+  // (e.g. a `;`-chain `end[X]; style[Y]`) each surface — the bare code|line key
+  // would collapse them to one. A SAME keyword repeated on the line (`end[X];
+  // end[Y]`) still collapses (same key), matching the edge-endpoint reserved-id
+  // path which already rides `_dedup`.
+  function reservedSkipWarn(kw, loc) {
+    const w = warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, loc);
+    w._dedup = kw.toLowerCase();
+    return w;
+  }
+
   // --- model constructors -------------------------------------------------
 
   // 0-based line + 0-based exclusive-end column from a peggy location().
@@ -441,9 +453,9 @@ SingleStmt
 // is excluded here so it never gets swallowed as a chain segment.
 ReservedNodeSeg
   = kw:"end"i !IdChar NodeShape
-    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [reservedSkipWarn(kw, location())] }; }
   / kw:NonEndReservedKeyword !IdChar NodeShape?
-    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [reservedSkipWarn(kw, location())] }; }
 
 // ─── Subgraph ────────────────────────────────────────────────────────────────
 // `subgraph [id] [title]` ... `end`. The header carries its own positions (for
@@ -525,11 +537,29 @@ Subgraph
       idEnd,
       members,
     };
-    // A positioned, content-exclusive span for the title content (when the header
-    // has a title) — for a title editor to target without rebuilding the line.
+    // A positioned, content-exclusive span for the title content. ALWAYS emitted so a
+    // consumer can `slice(titleStart, titleEnd)` unconditionally and get the editable
+    // label content — never undefined (which an unguarded slice would turn into
+    // full-line garbage) and never out of sync with `label`. Three sources, all
+    // upholding `source.slice(titleStart, titleEnd) === label`:
+    //   - explicit title  → the content-exclusive title span (excludes quotes/brackets);
+    //   - id, no title    → the id span (label === id there, so the slice === label);
+    //   - no id, no title → a ZERO-WIDTH span at the editable-token start (label is "",
+    //                       so the slice must be ""; the id span there points at the
+    //                       `subgraph` keyword, which would NOT slice to "").
     if (h.titleSpan) {
       sgNode.titleStart = h.titleSpan.titleStart;
       sgNode.titleEnd = h.titleSpan.titleEnd;
+    } else if (sgNode.label.length > 0) {
+      // hasId with no title (or a free-text title that landed in idStart/idEnd): the
+      // editable id/title span IS the label span here.
+      sgNode.titleStart = idStart;
+      sgNode.titleEnd = idEnd;
+    } else {
+      // Bare `subgraph` header (no id, no title): empty label → a zero-width span at
+      // the editable-token start so the slice is exactly "".
+      sgNode.titleStart = idStart;
+      sgNode.titleEnd = idStart;
     }
     // A reserved keyword used as a subgraph id (`subgraph graph[Title]`,
     // `subgraph end[Title]`) RENDERS in real Mermaid, so per the renders-it rule we
@@ -636,7 +666,14 @@ EdgeChain
     // ref in any group (deduped per code|line).
     const noteTruncation = (ref) => {
       if (ref.truncated) {
-        pushWarn(warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc));
+        // Two DISTINCT truncated ids on one line (`foo-bar --> baz-qux`) must EACH
+        // warn — the bare code|line key would collapse them to one (the baz
+        // truncation went silent). Ride the kept id as `_dedup` so the key widens to
+        // code@line@keptId; a SAME kept-id repeat (PEG backtracking, or `foo-bar -->
+        // foo-qux`) still collapses (same key), matching the reserved-id endpoint path.
+        const tw = warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc);
+        tw._dedup = ref.id;
+        pushWarn(tw);
       }
     };
     // Whether any group in the chain has more than one node (a real fan-out/fan-in).
@@ -650,6 +687,12 @@ EdgeChain
       // A non-canonical inline-dash label on this segment → one advisory (per line).
       if (link.inlineDash && link.label !== undefined && link.label !== null) {
         pushWarn(warn("inline-dash-label", "inline-dash edge label is non-canonical; prefer the pipe form `-->|label|`", location()));
+      }
+      // A non-canonical inline-DOTTED label on this segment → one advisory (per line),
+      // parallel to inline-dash. The pipe form `-.->|label|` is the canonical dotted
+      // labeled edge; the inline-dot form is rendered but off-canonical.
+      if (link.inlineDot && link.label !== undefined && link.label !== null) {
+        pushWarn(warn("inline-dot-label", "inline-dot edge label is non-canonical; prefer the pipe form `-.->|label|`", location()));
       }
       // Cartesian product of (prev group) × (this group) — one edge per pair, in
       // source order (every prev node against the first next node, then the second…).
@@ -695,7 +738,11 @@ EdgeSegGroup
     // form `-->|text|`); flag it for an advisory. A pipe label takes precedence and
     // is canonical, so it never carries the inline-dash flag.
     const inlineDash = !hasPipe && link.inlineDash === true;
-    return { link: { label, reversed: link.reversed, inlineDash }, group };
+    // The inline-DOTTED label form (`-. text .-> `) gets its own advisory code
+    // (`inline-dot-label`), parallel to inline-dash. A pipe label takes precedence
+    // and is canonical, so it clears the dot flag too.
+    const inlineDot = !hasPipe && link.inlineDot === true;
+    return { link: { label, reversed: link.reversed, inlineDash, inlineDot }, group };
   }
 
 PipeLabel
@@ -712,7 +759,12 @@ NodeStmt
   {
     const warnings = [];
     if (ref.truncated) {
-      warnings.push(warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc));
+      // Two truncated bare nodes in one `;` chain (`foo-bar; baz-qux`) are distinct
+      // same-line truncations — ride the kept id as `_dedup` so each surfaces (the
+      // bare code|line key collapsed them to one). Same-id repeats still collapse.
+      const tw = warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc);
+      tw._dedup = ref.id;
+      warnings.push(tw);
     }
     return { nodes: [makeNode(ref.id, ref.shapeInfo, ref.loc, ref.shapeLoc)], edges: [], subgraphs: [], warnings };
   }
@@ -891,6 +943,23 @@ Link "arrow"
   // labeled edge instead of phantom-noding.
   / "--" WS? l:InlineDashLabel WS DashOpenClose { return { label: l, reversed: false, inlineDash: true }; }
   / "==" WS? l:InlineThickLabel WS ThickOpenClose { return { label: l, reversed: false, inlineDash: true }; }
+  // Inline DOTTED label: `A -. text .-> B` (dotted arrow close) and `A -. text .- B`
+  // (dotted head-less close). Real Mermaid renders these as ONE labeled dotted edge,
+  // so per the renders-it rule we emit ONE labeled edge (carrying the label + an
+  // `inline-dot-label` advisory) instead of hard-failing the whole block — the exact
+  // parallel of the InlineDashLabel / InlineThickLabel arms above, for the dotted
+  // shaft. The OPEN token is `-.` (the same dotted opener the bare dotted arrows
+  // `-." "."* "->"` / `-." "."* "-"` use); the CLOSE is a dotted-shaft run that begins
+  // with `.` (`DotArrowClose` = `. .* ->`, any extra-dot length; `DotOpenClose` =
+  // `. .* - !">"`, head-less). The arrow close ends in `>` so it is unambiguous even
+  // glued (`Sp DotArrowClose`); the head-less close MUST be whitespace-delimited
+  // (`WS DotOpenClose`) so a `.-`/`-.` glued INSIDE the label is preserved, not read
+  // as a close — mirroring the dash open-link reasoning. Tried before the bare dotted
+  // arrows below so a labeled dotted edge is claimed here, and before the dotted
+  // entries in the MIXED-SHAFT branches never apply (those openers are `--`/`==`, not
+  // `-.`), so a dotted open + dotted close is correctly a MATCHED-shaft edge, not mixed.
+  / "-." WS? l:InlineDotLabel WS? DotArrowClose { return { label: l, reversed: false, inlineDot: true }; }
+  / "-." WS? l:InlineDotLabel WS DotOpenClose { return { label: l, reversed: false, inlineDot: true }; }
   // MIXED-SHAFT labeled inline edge → honest hard-fail. Real Mermaid REJECTS an edge
   // whose OPEN shaft and CLOSE shaft differ in style (a dash open `--` with a thick or
   // dotted close `===`/`.->`, or vice-versa). These branches are reached ONLY when every
@@ -945,6 +1014,17 @@ ThickArrowClose = "==" "="* ">"
 DashOpenClose  = "--" "-"* !">"
 ThickOpenClose = "==" "="* !">"
 
+// The CLOSE half of an inline-dotted labeled edge — a dotted-shaft run that BEGINS
+// with `.` (the label having consumed everything between the `-.` opener and here).
+// DotArrowClose (`.->`, `..->`, …) ends in `>` so it is unambiguous even glued to the
+// label; DotOpenClose (`.-`, `..-`, …) is head-less (`!">"`) and so MUST be
+// whitespace-delimited from the label (enforced by the `WS DotOpenClose` lookahead in
+// InlineDotLabel + the Link arm) so a `.-` glued inside the label is kept as content.
+// These are SEPARATE from the bare-dotted Link arms (`-." "."* "->"`) — there the `-.`
+// opener and the close are one contiguous shaft; here the label splits them.
+DotArrowClose = "." "."* "->"
+DotOpenClose  = "." "."* "-" !">"
+
 // A DOTTED close shaft (`.->`, `.-`, `..->`, …) — the close half of a dotted edge,
 // as the bare-arrow rules accept it (`-." "."* "->"` / `"-." "."* "-"`). Used ONLY by
 // the mixed-shaft detection branches as the "foreign close is dotted" case (e.g.
@@ -991,6 +1071,21 @@ InlineThickLabel
   / "'" c:SQuoted "'" { return c; }
   / first:(!(Sp ThickArrowClose) !(WS ThickOpenClose) !(">" / "=" / "|" / "\n") c:. { return c; })
     rest:(!(Sp ThickArrowClose) !(WS ThickOpenClose) !"\n" c:. { return c; })*
+  { return (first + rest.join("")).trim(); }
+// The inline-DOTTED edge label between a `-.` opener and a `.->`/`.-` close, the exact
+// parallel of InlineDashLabel for the dotted shaft. QUOTED forms strip the surrounding
+// quotes (mirroring PipeLabel). The raw form may not START with `>`/`.`/`-`/`|`: a
+// leading `.`/`-` would belong to the closing dotted shaft (so `-.-> B` is NOT read as
+// `-.[ -> B ]`), a leading `>` is the arrow head, and a leading `|` is the pipe-label
+// form (`-.->|label|`) which the arrow's `PipeLabel?` must claim instead. The run never
+// spans a terminator: it stops at the first char of the close — `Sp DotArrowClose` (the
+// `>` makes the arrow close unambiguous even glued) or `WS DotOpenClose` (the head-less
+// close MUST be whitespace-delimited so a `.-` glued inside the label is preserved).
+InlineDotLabel
+  = '"' c:DQuoted '"' { return c; }
+  / "'" c:SQuoted "'" { return c; }
+  / first:(!(Sp DotArrowClose) !(WS DotOpenClose) !(">" / "." / "-" / "|" / "\n") c:. { return c; })
+    rest:(!(Sp DotArrowClose) !(WS DotOpenClose) !"\n" c:. { return c; })*
   { return (first + rest.join("")).trim(); }
 
 // ─── Whitespace / lines ─────────────────────────────────────────────────────────

@@ -752,3 +752,130 @@ test("a mixed-shaft labeled inline edge hard-fails honestly (no silent phantom)"
     assert.equal(b.edges.length, 1, `${body}: one edge`);
   }
 });
+
+// rank1 — DOTTED inline-label `-. text .->` renders in real Mermaid as ONE labeled
+// dotted edge; it must NOT hard-fail the whole block. Parallels the inline-dash arm:
+// one labeled edge + an `inline-dot-label` advisory, surroundings intact.
+test("inline-dot edge label `-. text .->` is one labeled dotted edge + inline-dot-label advisory", () => {
+  for (const body of [
+    "A -. text .-> B",          // dotted ARROW close
+    "A -. text .- B",           // dotted HEAD-LESS (open) close
+    "A -. text ..-> B",         // longer dotted close
+    "A -. a-b .-> B",           // internal hyphen preserved
+    'A -. "q lbl" .-> B',       // double-quoted label, quotes stripped
+    "A -. 'q lbl' .-> B",       // single-quoted label
+  ]) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, true, `${body}: parses (no whole-block hard-fail)`);
+    assert.equal(b.parseError, undefined, `${body}: no parseError`);
+    assert.equal(b.edges.length, 1, `${body}: ONE labeled edge`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B"], `${body}: endpoints A->B`);
+    assert.deepEqual(codesOf(b), ["inline-dot-label"], `${body}: inline-dot-label advisory`);
+  }
+  // quoted-label content is exactly the unquoted text
+  const q = findMermaidBlocks('graph TD\nA -. "q lbl" .-> B', true)[0];
+  assert.equal(q.edges[0].label, "q lbl");
+  // SURROUNDINGS survive: a dotted-inline edge between two plain edges keeps all three
+  const surr = findMermaidBlocks("graph TD\nA --> B\nB -. error .-> C\nC --> D", true)[0];
+  assert.equal(surr.supported, true, "surrounding block survives");
+  assert.deepEqual(surr.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "B->C", "C->D"]);
+  assert.equal(surr.edges.find((e) => e.from === "B" && e.to === "C").label, "error", "labeled edge carries the label");
+  assert.deepEqual(codesOf(surr), ["inline-dot-label"], "exactly the one advisory");
+  // shaped endpoints emit their nodes plus the one labeled edge
+  const shaped = findMermaidBlocks("graph TD\nA[S] -. go .-> B[E]", true)[0];
+  assert.deepEqual(shaped.nodes.map((n) => n.id), ["A", "B"]);
+  assert.equal(shaped.edges.length, 1);
+  assert.equal(shaped.edges[0].label, "go");
+  // the canonical dotted pipe form `-.->|label|` is NOT an inline-dot label (no advisory)
+  const pipe = findMermaidBlocks("graph TD\nA -.->|go| B", true)[0];
+  assert.equal(pipe.edges[0].label, "go");
+  assert.deepEqual(codesOf(pipe), [], "pipe form is canonical, no advisory");
+});
+
+// rank1 REGRESSION PIN — a 3+-shaft opener does NOT open an inline label in real
+// Mermaid: `A --- text --> B` is the genuine node `text` with two bare edges
+// (A->text, text->B), and `A === text ===> B` likewise. This MATCHES real Mermaid;
+// the dotted-inline fix must NOT have been over-generalized into a 3+-shaft inline
+// label arm (that would DIVERGE). Pin both the dash and thick forms to the
+// two-bare-edge model so a future round cannot "re-fix" them into a bug.
+test("rank1 regression: a 3+-shaft opener is two bare edges (genuine middle node), NOT an inline label", () => {
+  const dash = findMermaidBlocks("graph TD\nA --- text --> B", true)[0];
+  assert.equal(dash.supported, true);
+  assert.deepEqual(dash.edges.map((e) => `${e.from}->${e.to}`), ["A->text", "text->B"], "dash 3-shaft → two bare edges");
+  assert.equal(dash.edges.every((e) => e.label === undefined), true, "no inline label fabricated");
+  assert.deepEqual(codesOf(dash), [], "no inline-label advisory on the 3-shaft form");
+
+  const thick = findMermaidBlocks("graph TD\nA === text ===> B", true)[0];
+  assert.equal(thick.supported, true);
+  assert.deepEqual(thick.edges.map((e) => `${e.from}->${e.to}`), ["A->text", "text->B"], "thick 3-shaft → two bare edges");
+  assert.equal(thick.edges.every((e) => e.label === undefined), true, "no inline label fabricated");
+  assert.deepEqual(codesOf(thick), [], "no inline-label advisory on the 3-shaft thick form");
+});
+
+// rank3 — the same-line warning-dedup CLASS. Every same-line multi-warning callsite
+// (id-truncation in an edge chain, in a `;` chain, and reserved-keyword skips in a
+// `;` chain) must surface ONE warning PER DISTINCT token, while a SAME-token repeat
+// (incl. PEG-backtracking re-emits) collapses to one. This is a warning-COUNT test:
+// it asserts EXACTLY N warnings, which the corpus harness (code-SET only) can't pin.
+test("rank3: same-line warnings dedupe per DISTINCT token, not per (code,line)", () => {
+  const countOf = (b, code) => (b.warnings || []).filter((w) => w.code === code).length;
+
+  // two DISTINCT truncated ids on one edge line → TWO id-truncated warnings
+  const twoEdge = findMermaidBlocks("graph TD\nfoo-bar --> baz-qux", true)[0];
+  assert.deepEqual(twoEdge.edges.map((e) => `${e.from}->${e.to}`), ["foo->baz"]);
+  assert.equal(countOf(twoEdge, "id-truncated"), 2, "foo + baz each warn");
+
+  // SAME kept id on one line → ONE warning (foo-bar --> foo-qux both keep `foo`)
+  const sameEdge = findMermaidBlocks("graph TD\nfoo-bar --> foo-qux", true)[0];
+  assert.equal(countOf(sameEdge, "id-truncated"), 1, "same kept id collapses to one");
+
+  // a 3-link chain with three distinct kept ids → THREE warnings
+  const threeChain = findMermaidBlocks("graph TD\nfoo-bar --> baz-qux --> qux-zap", true)[0];
+  assert.equal(countOf(threeChain, "id-truncated"), 3, "three distinct kept ids → three warnings");
+
+  // two truncated bare nodes in a `;` chain → TWO warnings
+  const twoSemi = findMermaidBlocks("graph TD\nfoo-bar; baz-qux", true)[0];
+  assert.equal(countOf(twoSemi, "id-truncated"), 2, "two distinct NodeStmt truncations in a ; chain");
+  // same kept id in a `;` chain → ONE
+  const sameSemi = findMermaidBlocks("graph TD\nfoo-bar; foo-qux", true)[0];
+  assert.equal(countOf(sameSemi, "id-truncated"), 1, "same kept id in a ; chain collapses");
+
+  // two DISTINCT reserved keywords skipped in a `;` chain → TWO reserved-id warnings
+  const twoReserved = findMermaidBlocks("graph TD\nend[X]; style[Y]", true)[0];
+  assert.equal(countOf(twoReserved, "reserved-id"), 2, "end + style each warn");
+  // the SAME reserved keyword twice → ONE
+  const sameReserved = findMermaidBlocks("graph TD\nend[X]; end[Y]", true)[0];
+  assert.equal(countOf(sameReserved, "reserved-id"), 1, "same reserved keyword collapses");
+
+  // the `_dedup` rider must NOT leak into the public warning shape on ANY of these
+  for (const b of [twoEdge, twoSemi, twoReserved]) {
+    for (const w of b.warnings) {
+      assert.deepEqual(Object.keys(w).sort(), ["code", "line", "message"], "clean public warning shape (no _dedup)");
+    }
+  }
+});
+
+// rank4 — `titleStart`/`titleEnd` are ALWAYS present on a subgraph (cleaner option),
+// upholding `slice(titleStart, titleEnd) === label` for every header form, so a
+// consumer can slice unconditionally without an unguarded slice returning full-line
+// garbage on an id-only or bare header.
+test("rank4: subgraph titleStart/titleEnd are always present and slice to the label", () => {
+  const cases = [
+    { src: "subgraph S1[My Title]\nA --> B\nend", label: "My Title" },  // id + title
+    { src: "subgraph S1\nA --> B\nend", label: "S1" },                   // id, NO title
+    { src: "subgraph My Group\nA --> B\nend", label: "My Group" },       // free title, no id
+    { src: 'subgraph "Quoted"\nA --> B\nend', label: "Quoted" },         // quoted title-only
+    { src: "subgraph\nA --> B\nend", label: "" },                        // bare: no id, no title
+  ];
+  for (const { src, label } of cases) {
+    const text = `graph TD\n${src}`;
+    const lines = text.split("\n");
+    const sg = findMermaidBlocks(text, true)[0].subgraphs[0];
+    assert.equal(typeof sg.titleStart, "number", `${src}: titleStart present`);
+    assert.equal(typeof sg.titleEnd, "number", `${src}: titleEnd present`);
+    assert.ok(sg.titleStart >= 0 && sg.titleEnd >= sg.titleStart, `${src}: span non-negative + ordered`);
+    assert.ok(sg.titleEnd <= lines[sg.line].length, `${src}: span in-range`);
+    assert.equal(lines[sg.line].slice(sg.titleStart, sg.titleEnd), label, `${src}: slice === label ${JSON.stringify(label)}`);
+    assert.equal(sg.label, label, `${src}: label`);
+  }
+});

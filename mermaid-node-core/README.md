@@ -67,13 +67,13 @@ Each `Block` carries:
 | `direction` | the declared layout direction (`TD`/`TB`/`BT`/`LR`/`RL`); `null` when none was declared, `undefined` on an unsupported block |
 | `nodes` | each with `id`, `label`, `shape`, `open`/`close`/`quote`, and `{ line, startChar, endChar, labelStart, labelEnd }` |
 | `edges` | each with `from`, `to`, optional `label`, and `{ line, startChar, endChar }` |
-| `subgraphs` | each with `id`, `label`, `hasId`, `quote`, `members[]`, and `{ line, idStart, idEnd }` |
-| `warnings` | advisory yellow-lints — an array of `{ code, message, line }`. The block is still `supported: true`; each warning flags a form that **renders** but is off-canonical and was parsed best-effort, split, or skipped block-locally (e.g. a reserved-keyword node id, an `&` fan-out edge that was split, a non-canonical inline-dash label). Empty when there is nothing to advise. Distinct from `parseError`. |
+| `subgraphs` | each with `id`, `label`, `hasId`, `quote`, `members[]`, and `{ line, idStart, idEnd, titleStart, titleEnd }`. `idStart`/`idEnd` span the editable id/title token; `titleStart`/`titleEnd` span the title **content** (exclusive of any quotes/brackets) and are **always present** — with an explicit title they span that content, with an id and no title they equal the id span, and for a bare `subgraph` header they are a zero-width span — so `source.slice(titleStart, titleEnd) === label` always holds and a consumer may slice unconditionally. |
+| `warnings` | advisory yellow-lints — an array of `{ code, message, line }`. The block is still `supported: true`; each warning flags a form that **renders** but is off-canonical and was parsed best-effort, split, or skipped block-locally (e.g. a reserved-keyword node id, an `&` fan-out edge that was split, a non-canonical inline-dash or inline-dot label). Empty when there is nothing to advise. Distinct from `parseError`. |
 | `parseError` | the parse-error message when the block did not parse (no exception is thrown) |
 
 Supported flowchart forms: node shapes `[]` `()` `([])` `[[]]` `[()]` `(())`
 `{}` `{{}}` `>]`; quoted and unquoted labels; edges `-->`, `-->|label|`,
-`-- label -->`, `---`, `==>`, `===`, `-.->`, `-.-`, `<-->`, `<--` (with
+`-- label -->`, `-. label .->`, `---`, `==>`, `===`, `-.->`, `-.-`, `<-->`, `<--` (with
 length variants such as `--->`, `===>` accepted as the same edge) in compact
 (`A-->B`), spaced (`A --> B`) and one-side-glued forms; chained edges; subgraphs
 with an id and/or title; `;`-separated statements; inline and own-line `%%`
