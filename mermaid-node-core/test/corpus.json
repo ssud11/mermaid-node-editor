@@ -233,7 +233,7 @@
       }
     ],
     "valid": true,
-    "note": "Solid arrow, COMPACT (no spaces) — the compact (no-space) in-contract case"
+    "note": "Solid arrow, COMPACT (no spaces) \u2014 the compact (no-space) in-contract case"
   },
   {
     "id": "arrow-solid-left-glued",
@@ -619,7 +619,7 @@
       }
     ],
     "valid": true,
-    "note": "Quoted pipe edge label — quotes stripped per Mermaid"
+    "note": "Quoted pipe edge label \u2014 quotes stripped per Mermaid"
   },
   {
     "id": "arrow-inline-dash-label",
@@ -850,7 +850,7 @@
       }
     ],
     "valid": true,
-    "note": "snake_case ids (in-contract) — full id captured"
+    "note": "snake_case ids (in-contract) \u2014 full id captured"
   },
   {
     "id": "compound-id-numeric",
@@ -878,7 +878,7 @@
       }
     ],
     "valid": true,
-    "note": "Hyphenated id (off-contract): truncated at hyphen, remainder discarded — must not crash",
+    "note": "Hyphenated id (off-contract): truncated at hyphen, remainder discarded \u2014 must not crash",
     "expectWarnings": [
       "id-truncated"
     ]
@@ -1102,7 +1102,7 @@
       }
     ],
     "valid": true,
-    "note": "Nested subgraphs — membership across nested end keywords"
+    "note": "Nested subgraphs \u2014 membership across nested end keywords"
   },
   {
     "id": "subgraph-two-siblings",
@@ -1170,7 +1170,7 @@
       }
     ],
     "valid": true,
-    "note": "Fenced ```mermaid in markdown — block detection + line offset"
+    "note": "Fenced ```mermaid in markdown \u2014 block detection + line offset"
   },
   {
     "id": "fenced-tilde-md",
@@ -1213,7 +1213,7 @@
       }
     ],
     "valid": true,
-    "note": "Two mermaid blocks — both returned (combined here), correct absolute lines",
+    "note": "Two mermaid blocks \u2014 both returned (combined here), correct absolute lines",
     "combineBlocks": true
   },
   {
@@ -1441,7 +1441,7 @@
     "expectEdges": [],
     "valid": true,
     "expectSupported": true,
-    "note": "a standalone shaped reserved-keyword line (`end[...]`) is skipped and dropped (no node/edge), and the block still parses supported:true — a graceful skip, not a whole-block failure. expectSupported pins the supported axis so this can never silently re-mask.",
+    "note": "a standalone shaped reserved-keyword line (`end[...]`) is skipped and dropped (no node/edge), and the block still parses supported:true \u2014 a graceful skip, not a whole-block failure. expectSupported pins the supported axis so this can never silently re-mask.",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -1480,7 +1480,7 @@
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "Bare id on its own line — valid node, label==id, no shape"
+    "note": "Bare id on its own line \u2014 valid node, label==id, no shape"
   },
   {
     "id": "bare-id-edge-ref",
@@ -1500,7 +1500,7 @@
       }
     ],
     "valid": true,
-    "note": "Bare id B referenced in edge but not shaped — appears in edges"
+    "note": "Bare id B referenced in edge but not shaped \u2014 appears in edges"
   },
   {
     "id": "semicolon-statements",
@@ -1579,7 +1579,7 @@
       }
     ],
     "valid": true,
-    "note": "Compact-arrow regression: chained compact arrows — B is a real node, both refs"
+    "note": "Compact-arrow regression: chained compact arrows \u2014 B is a real node, both refs"
   },
   {
     "id": "r15-x-arrowhead",
@@ -1631,7 +1631,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Unclosed bracket — must not crash; block is unsupported/parseError"
+    "note": "Unclosed bracket \u2014 must not crash; block is unsupported/parseError"
   },
   {
     "id": "invalid-mid-typed",
@@ -1641,7 +1641,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Mid-typed partial second node — must not crash (no error recovery: whole block unsupported)"
+    "note": "Mid-typed partial second node \u2014 must not crash (no error recovery: whole block unsupported)"
   },
   {
     "id": "invalid-unclosed-fence",
@@ -1650,7 +1650,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Unterminated ```mermaid fence — must not swallow the file; no block returned",
+    "note": "Unterminated ```mermaid fence \u2014 must not swallow the file; no block returned",
     "expectNoBlocks": true
   },
   {
@@ -1675,7 +1675,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Over-bracketed [[[ shape (off-contract) — must WARN/refuse, not silently corrupt"
+    "note": "Over-bracketed [[[ shape (off-contract) \u2014 must WARN/refuse, not silently corrupt"
   },
   {
     "id": "fanout-ampersand-out-split",
@@ -1840,7 +1840,7 @@
       }
     ],
     "valid": true,
-    "note": "`subgraph id[title]` with NO space → {id, title, hasId:true}, not a free-text id"
+    "note": "`subgraph id[title]` with NO space \u2192 {id, title, hasId:true}, not a free-text id"
   },
   {
     "id": "subgraph-id-paren-nospace",
@@ -1865,7 +1865,7 @@
       }
     ],
     "valid": true,
-    "note": "`subgraph id(title)` with NO space → {id, title, hasId:true}"
+    "note": "`subgraph id(title)` with NO space \u2192 {id, title, hasId:true}"
   },
   {
     "id": "subgraph-id-bracket-quoted-nospace",
@@ -1890,7 +1890,7 @@
       }
     ],
     "valid": true,
-    "note": "`subgraph id[\"title\"]` no-space quoted form → {id, title, hasId:true}"
+    "note": "`subgraph id[\"title\"]` no-space quoted form \u2192 {id, title, hasId:true}"
   },
   {
     "id": "edge-inline-dash-label-left-glued",
@@ -1905,7 +1905,7 @@
       }
     ],
     "valid": true,
-    "note": "one-sided whitespace (no space before -->) → ONE edge A->B label 'text', not a phantom node",
+    "note": "one-sided whitespace (no space before -->) \u2192 ONE edge A->B label 'text', not a phantom node",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -1923,7 +1923,7 @@
       }
     ],
     "valid": true,
-    "note": "one-sided whitespace (no space after --) → ONE edge A->B label 'text'",
+    "note": "one-sided whitespace (no space after --) \u2192 ONE edge A->B label 'text'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -1941,7 +1941,7 @@
       }
     ],
     "valid": true,
-    "note": "zero whitespace compact `A--text-->B` → ONE edge A->B label 'text'",
+    "note": "zero whitespace compact `A--text-->B` \u2192 ONE edge A->B label 'text'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -1959,7 +1959,7 @@
       }
     ],
     "valid": true,
-    "note": "zero whitespace compact thick-arrow label `A==text==>B` → ONE edge A->B label 'text'",
+    "note": "zero whitespace compact thick-arrow label `A==text==>B` \u2192 ONE edge A->B label 'text'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2045,7 +2045,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "`graph DT` (DT is not a real Mermaid direction — TD/TB/BT/LR/RL) must WARN, not be accepted as supported"
+    "note": "`graph DT` (DT is not a real Mermaid direction \u2014 TD/TB/BT/LR/RL) must WARN, not be accepted as supported"
   },
   {
     "id": "directive-style",
@@ -2324,7 +2324,7 @@
       }
     ],
     "valid": true,
-    "note": "control: an id that merely STARTS with a directive keyword (`styleA`) is a real node, NOT a consumed directive — the keyword must be a whole token"
+    "note": "control: an id that merely STARTS with a directive keyword (`styleA`) is a real node, NOT a consumed directive \u2014 the keyword must be a whole token"
   },
   {
     "id": "directive-control-edge-id-prefix",
@@ -2383,7 +2383,7 @@
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "control: an unquoted >] label still parses as the raw run (quote='') — only the quoted forms strip quotes"
+    "note": "control: an unquoted >] label still parses as the raw run (quote='') \u2014 only the quoted forms strip quotes"
   },
   {
     "id": "edge-mixed-dash-pipe-warns",
@@ -2418,7 +2418,7 @@
       }
     ],
     "valid": true,
-    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes → label='label'"
+    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes \u2192 label='label'"
   },
   {
     "id": "edge-inline-dash-label-control",
@@ -2541,7 +2541,7 @@
       }
     ],
     "valid": true,
-    "note": "a double-quoted inline-dash label strips the surrounding quotes → label='q label' (mirrors the pipe form)",
+    "note": "a double-quoted inline-dash label strips the surrounding quotes \u2192 label='q label' (mirrors the pipe form)",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2559,7 +2559,7 @@
       }
     ],
     "valid": true,
-    "note": "a single-quoted inline-dash label strips the surrounding quotes → label='q label'",
+    "note": "a single-quoted inline-dash label strips the surrounding quotes \u2192 label='q label'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2577,7 +2577,7 @@
       }
     ],
     "valid": true,
-    "note": "thick: a double-quoted inline label strips the surrounding quotes → label='q label'",
+    "note": "thick: a double-quoted inline label strips the surrounding quotes \u2192 label='q label'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2595,7 +2595,7 @@
       }
     ],
     "valid": true,
-    "note": "internal hyphens inside the label are preserved — only a shaft run that reaches `>` is a terminator",
+    "note": "internal hyphens inside the label are preserved \u2014 only a shaft run that reaches `>` is a terminator",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2631,7 +2631,7 @@
       }
     ],
     "valid": true,
-    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes → label='label'"
+    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes \u2192 label='label'"
   },
   {
     "id": "invalid-asym-unquoted-open-paren",
@@ -2666,7 +2666,7 @@
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "control: a QUOTED asymmetric label may contain a leading bracket → label='(text)', quotes stripped"
+    "note": "control: a QUOTED asymmetric label may contain a leading bracket \u2192 label='(text)', quotes stripped"
   },
   {
     "id": "bare-hyphenated-id-span-bounds-kept-id",
@@ -2759,7 +2759,7 @@
       }
     ],
     "valid": true,
-    "note": "control: a headless thick link `===` (no `>`) still parses to one edge — the long-thick-arrow path does not shadow the open-link path"
+    "note": "control: a headless thick link `===` (no `>`) still parses to one edge \u2014 the long-thick-arrow path does not shadow the open-link path"
   },
   {
     "id": "directive-source-edge-dest-not-lost",
@@ -2834,7 +2834,7 @@
       }
     ],
     "valid": true,
-    "note": "a `click` directive whose VALUE (a URL) contains `--` is consumed+ignored as a whole-line directive — the `--` in the value is opaque rest-of-line text, not an edge operator; the real `A-->B` edge above survives. (Position-precise guard: `click` is followed by a space, not a bracket, so it parses as a directive.)"
+    "note": "a `click` directive whose VALUE (a URL) contains `--` is consumed+ignored as a whole-line directive \u2014 the `--` in the value is opaque rest-of-line text, not an edge operator; the real `A-->B` edge above survives. (Position-precise guard: `click` is followed by a space, not a bracket, so it parses as a directive.)"
   },
   {
     "id": "directive-acctitle-value-contains-dashes",
@@ -2848,7 +2848,7 @@
       }
     ],
     "valid": true,
-    "note": "an `accTitle:` directive whose VALUE contains `--` is still consumed+ignored as a whole line — the `--` is opaque value text, not an edge operator; the `A-->B` edge survives"
+    "note": "an `accTitle:` directive whose VALUE contains `--` is still consumed+ignored as a whole line \u2014 the `--` is opaque value text, not an edge operator; the `A-->B` edge survives"
   },
   {
     "id": "edge-inline-dash-label-open-shaft-2",
@@ -3139,7 +3139,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `style[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `style[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3162,7 +3162,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `graph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `graph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3185,7 +3185,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `flowchart[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `flowchart[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3208,7 +3208,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `subgraph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `subgraph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3231,7 +3231,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `direction[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `direction[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3254,7 +3254,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `click[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `click[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3277,7 +3277,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `classDef[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `classDef[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3300,7 +3300,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `class[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `class[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3323,7 +3323,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `linkStyle[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `linkStyle[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3346,7 +3346,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `default[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `default[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3369,7 +3369,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `end[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `end[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3650,7 +3650,7 @@
     "expectNodeSpanSlices": {
       "plain": "plain[X]"
     },
-    "note": "plain (non-hyphenated) shaped id: span is the WHOLE node text `plain[X]` (not just the id) — the non-truncated invariant"
+    "note": "plain (non-hyphenated) shaped id: span is the WHOLE node text `plain[X]` (not just the id) \u2014 the non-truncated invariant"
   },
   {
     "id": "plain-shaped-span-circle",
@@ -4333,5 +4333,110 @@
       "id-truncated"
     ],
     "note": "a bare hyphenated id is truncated (kept prefix) and advised with id-truncated"
+  },
+  {
+    "id": "semicolon-chain-reserved-shaped-recovers",
+    "category": "reserved-ids",
+    "input": "graph TD\nA --> B; end[X]; C --> D\n",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B"
+      },
+      {
+        "from": "C",
+        "to": "D"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "reserved-id"
+    ],
+    "note": "a reserved-keyword shaped node (`end[X]`) as one segment of a `;` chain is dropped + reserved-id-warned block-locally; the surrounding chain edges (A->B, C->D) still parse, matching the own-line recovery instead of hard-failing the whole block."
+  },
+  {
+    "id": "reserved-id-multi-distinct-one-line",
+    "category": "reserved-ids",
+    "input": "graph TD\nend & style --> B\nA --> C\n",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "C"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "reserved-id",
+      "fanout-split"
+    ],
+    "note": "two DISTINCT reserved ids on one line (`end` and `style`) each drop their edge; both must surface a reserved-id advisory (the dedup key is widened by the reserved id so neither drop is silent). The corpus asserts the code SET; the exact two-distinct-advisory count is pinned in parser.test.mjs."
+  },
+  {
+    "id": "edge-mixed-shaft-dash-thick-hardfails",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA -- label === B\n",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "expectSupported": false,
+    "note": "a labeled inline edge whose OPEN shaft (dash `--`) differs from its CLOSE shaft (thick `===`) is rejected by real Mermaid; it must be an honest parseError (supported:false), NOT a silent phantom (it previously mis-parsed into A->label, label->B with no warning) \u2014 the sibling of the hard-failed mixed dash+pipe form."
+  },
+  {
+    "id": "edge-mixed-shaft-thick-dash-hardfails",
+    "category": "invalid-inputs",
+    "input": "graph TD\nA == label --> B\n",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "expectSupported": false,
+    "note": "the reverse mixed-shaft case: thick `==` open with a dash `-->` close. Honest parseError, never a silent phantom."
+  },
+  {
+    "id": "edge-matched-shaft-dash-label-parses",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- label --> B\n",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B",
+        "label": "label"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "inline-dash-label"
+    ],
+    "note": "a MATCHED-shaft labeled dash edge still parses to one labeled edge (regression guard for the mixed-shaft hard-fail) \u2014 open and close shafts are both dash."
+  },
+  {
+    "id": "edge-matched-shaft-thick-label-parses",
+    "category": "arrow-forms",
+    "input": "graph TD\nA == label ==> B\n",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B",
+        "label": "label"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "inline-dash-label"
+    ],
+    "note": "a MATCHED-shaft labeled thick edge still parses to one labeled edge (regression guard) \u2014 open and close shafts are both thick."
   }
 ]

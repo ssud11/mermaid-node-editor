@@ -271,7 +271,8 @@ Body
     // object so it never leaks into the public node/edge shape.
     const addWarn = (w) => {
       if (!w) return;
-      const key = w.code + "@" + w.line;
+      const key = w.code + "@" + w.line + (w._dedup !== undefined ? "@" + w._dedup : "");
+      if (w._dedup !== undefined) delete w._dedup;
       if (seenWarn.has(key)) return;
       seenWarn.add(key);
       warnings.push(w);
@@ -428,6 +429,21 @@ SemicolonStmts
 SingleStmt
   = EdgeChain
   / NodeStmt
+  / ReservedNodeSeg
+
+// A reserved-keyword shaped node as ONE SEGMENT of a `;` chain (or a bare single
+// statement that isn't an edge/node). Mirrors the own-line `ReservedNodeStmt` arms
+// but WITHOUT the trailing (NL / EOF) terminator (a `;` chain segment is delimited
+// by `;`, not a newline), so a reserved shaped node inside `A --> B; end[X]; C --> D`
+// is dropped + reserved-id-warned BLOCK-LOCALLY instead of hard-failing the whole
+// chain. Tried only after EdgeChain + NodeStmt decline (a real node/edge is claimed
+// there first). Shaped `end[X]` only — bare `end` stays the subgraph terminator and
+// is excluded here so it never gets swallowed as a chain segment.
+ReservedNodeSeg
+  = kw:"end"i !IdChar NodeShape
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
+  / kw:NonEndReservedKeyword !IdChar NodeShape?
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
 
 // ─── Subgraph ────────────────────────────────────────────────────────────────
 // `subgraph [id] [title]` ... `end`. The header carries its own positions (for
@@ -603,7 +619,11 @@ EdgeChain
     const out = { nodes: [], edges: [], subgraphs: [], warnings: [] };
     const seenWarn = new Set();
     const pushWarn = (w) => {
-      const key = w.code + "@" + w.line;
+      // Honor an optional `_dedup` rider so two DISTINCT reserved ids on one line each
+      // warn (the bare code|line key would collapse them to one). The rider is NOT
+      // stripped here — it survives up to Body.addWarn, which widens its key the same
+      // way and strips it before the warning reaches the public {code,message,line} shape.
+      const key = w.code + "@" + w.line + (w._dedup !== undefined ? "@" + w._dedup : "");
       if (!seenWarn.has(key)) { seenWarn.add(key); out.warnings.push(w); }
     };
     const emitNode = (ref) => {
@@ -639,7 +659,9 @@ EdgeChain
             // A reserved endpoint drops THIS edge but never the surrounding ones —
             // warn so the drop is visible (v1.4: never silently drop an edge).
             const resId = isReserved(pRef.id) ? pRef.id : nRef.id;
-            pushWarn(warn("reserved-id", `edge endpoint "${resId}" is a reserved keyword; this edge is dropped`, { start: pRef.loc.start, end: nRef.loc.end }));
+            const rw = warn("reserved-id", `edge endpoint "${resId}" is a reserved keyword; this edge is dropped`, { start: pRef.loc.start, end: nRef.loc.end });
+            rw._dedup = resId.toLowerCase();
+            pushWarn(rw);
             continue;
           }
           const [from, to] = link.reversed ? [nRef.id, pRef.id] : [pRef.id, nRef.id];
@@ -869,6 +891,21 @@ Link "arrow"
   // labeled edge instead of phantom-noding.
   / "--" WS? l:InlineDashLabel WS DashOpenClose { return { label: l, reversed: false, inlineDash: true }; }
   / "==" WS? l:InlineThickLabel WS ThickOpenClose { return { label: l, reversed: false, inlineDash: true }; }
+  // MIXED-SHAFT labeled inline edge → honest hard-fail. Real Mermaid REJECTS an edge
+  // whose OPEN shaft and CLOSE shaft differ in style (a dash open `--` with a thick or
+  // dotted close `===`/`.->`, or vice-versa). These branches are reached ONLY when every
+  // MATCHED-shaft labeled branch above has declined (a same-style close would have been
+  // claimed there), so the open style here never equals the close style. Detecting it
+  // explicitly turns what used to SILENTLY mis-parse into two phantom edges (`A -- label
+  // === B` → `A→label`, `label→B`, NO warning — a silent mis-parse v1.4 prohibits) into a
+  // clean `parseError` (supported:false). `error()` aborts the parse; the envelope catches
+  // the SyntaxError and reports the block unsupported. The label run (`MixedShaftLabel`)
+  // stops at the first WS-delimited FOREIGN close so the foreign close is matched (and
+  // rejected) rather than swallowed.
+  / "--" WS MixedShaftLabel WS (ThickArrowClose / ThickOpenClose / DotClose)
+    { error("edge shaft styles must match: a dash `--` open with a non-dash close is not a valid edge"); }
+  / "==" WS MixedShaftLabel WS (DashArrowClose / DashOpenClose / DotClose)
+    { error("edge shaft styles must match: a thick `==` open with a non-thick close is not a valid edge"); }
   // Bidirectional (solid only — Mermaid has no `<==>`).
   / "<-->" { return { label: undefined, reversed: false }; }
   / "<--"  { return { label: undefined, reversed: true }; }
@@ -907,6 +944,21 @@ ThickArrowClose = "==" "="* ">"
 // lookahead (whitespace-delimited, so an embedded `--` inside a label is kept).
 DashOpenClose  = "--" "-"* !">"
 ThickOpenClose = "==" "="* !">"
+
+// A DOTTED close shaft (`.->`, `.-`, `..->`, …) — the close half of a dotted edge,
+// as the bare-arrow rules accept it (`-." "."* "->"` / `"-." "."* "-"`). Used ONLY by
+// the mixed-shaft detection branches as the "foreign close is dotted" case (e.g.
+// `A -- label .-> B`). A genuine MATCHED dotted edge (`-.->`) has no separate inline
+// label in this grammar, so DotClose is never a MATCHED-shaft close here.
+DotClose = "." "."* "-" ">"? / "-." "."* "-" ">"?
+
+// The label run for the MIXED-shaft detection branches: any chars up to (but not
+// including) the first WHITESPACE-DELIMITED shaft close of ANY style (dash / thick /
+// dotted) so the foreign close is left for the branch to match (and reject). Stops at
+// a newline so it never spans lines.
+MixedShaftLabel
+  = chars:(!(WS (DashArrowClose / DashOpenClose / ThickArrowClose / ThickOpenClose / DotClose)) !"\n" c:. { return c; })+
+    { return chars.join("").trim(); }
 
 // An inline-dash / inline-thick edge label: a QUOTED run (quotes stripped, like
 // PipeLabel) or a raw unquoted run. The raw form may not START with the head of

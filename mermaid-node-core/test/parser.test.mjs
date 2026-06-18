@@ -675,3 +675,80 @@ test("v1.4: a backtracked speculative path leaves NO spurious warning (model-att
   assert.deepEqual(b2.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "A->C", "D->E"]);
   assert.deepEqual(codesOf(b2), ["fanout-split"]);
 });
+
+// A reserved-keyword SHAPED node as one segment of a `;` chain is recovered
+// (dropped + reserved-id warned) so the surrounding chain edges survive — the same
+// graceful skip the own-line form already does, never a whole-block hard-fail.
+test("a reserved shaped node in a `;` chain is dropped + warned; the surrounding edges survive", () => {
+  const b = findMermaidBlocks("graph TD\nA --> B; end[X]; C --> D\n", true)[0];
+  assert.equal(b.supported, true, "block parses (not a whole-block hard-fail)");
+  assert.equal(b.parseError, undefined, "no parseError");
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], "both on-contract edges survive");
+  assert.equal(b.nodes.length, 0, "the reserved shaped node is not emitted");
+  assert.deepEqual(codesOf(b), ["reserved-id"], "the drop is advised");
+  // it matches the own-line form exactly (same model, same advisory)
+  const own = findMermaidBlocks("graph TD\nA --> B\nend[X]\nC --> D\n", true)[0];
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), own.edges.map((e) => `${e.from}->${e.to}`));
+  assert.deepEqual(codesOf(b), codesOf(own));
+  // a non-`end` reserved keyword (bare or shaped) recovers in a chain too; bare `end`
+  // is NOT recovered here (it is the subgraph terminator) — only shaped `end[X]` is.
+  const b2 = findMermaidBlocks("graph TD\nA --> B; style[X]; C --> D\n", true)[0];
+  assert.equal(b2.supported, true, "non-end reserved shaped segment recovers");
+  assert.deepEqual(b2.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"]);
+});
+
+// Several DISTINCT reserved ids on ONE line each emit their OWN reserved-id
+// advisory — keying the dedup on (code|line) alone would collapse them to one and
+// silently drop the rest. Same-id same-line re-warns are still suppressed.
+test("multiple distinct reserved ids on one line each emit a reserved-id advisory", () => {
+  const b = findMermaidBlocks("graph TD\nend & style --> B\nA --> C\n", true)[0];
+  assert.equal(b.supported, true, "block parses");
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->C"], "only the on-contract edge survives");
+  const reserved = (b.warnings || []).filter((w) => w.code === "reserved-id");
+  assert.equal(reserved.length, 2, "both `end` and `style` warn (distinct)");
+  const ids = reserved.map((w) => /"([^"]+)"/.exec(w.message)[1]).sort();
+  assert.deepEqual(ids, ["end", "style"], "one advisory per distinct reserved id");
+  assert.deepEqual(codesOf(b), ["fanout-split", "reserved-id"], "code set");
+  // no `_dedup` rider leaks into the public warning shape
+  for (const w of b.warnings) {
+    assert.deepEqual(Object.keys(w).sort(), ["code", "line", "message"], "public warning shape is clean");
+  }
+  // same reserved id twice on one line collapses to ONE advisory (backtracking-safe)
+  const same = findMermaidBlocks("graph TD\nend & end --> B\n", true)[0];
+  assert.equal((same.warnings || []).filter((w) => w.code === "reserved-id").length, 1, "same-id same-line warns once");
+});
+
+// A labeled inline edge whose OPEN shaft and CLOSE shaft differ in style is what
+// Mermaid REJECTS — make it an honest parseError (supported:false), NEVER a silent
+// phantom (`A -- label === B` used to mis-parse into A->label, label->B with no
+// warning). Matched-shaft labeled edges keep parsing.
+test("a mixed-shaft labeled inline edge hard-fails honestly (no silent phantom)", () => {
+  const mixed = [
+    "A -- label === B",   // dash open, thick close
+    "A -- label ==> B",   // dash open, thick arrow close
+    "A == label --- B",   // thick open, dash close
+    "A == label --> B",   // thick open, dash arrow close
+    "A -- label -.- B",   // dash open, dotted close
+  ];
+  for (const body of mixed) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, false, `${body}: mixed shaft is supported:false`);
+    assert.ok(b.parseError, `${body}: carries a parseError`);
+    assert.equal(b.nodes.length, 0, `${body}: no phantom node`);
+    assert.equal(b.edges.length, 0, `${body}: no phantom edge`);
+  }
+  // MATCHED-shaft labeled edges still parse to ONE labeled edge.
+  for (const body of ["A -- l --> B", "A == l ==> B", "A -- l --- B", "A == l === B"]) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, true, `${body}: matched shaft still parses`);
+    assert.equal(b.edges.length, 1, `${body}: one edge`);
+    assert.equal(b.edges[0].label, "l", `${body}: label`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B"], `${body}: endpoints`);
+  }
+  // plain (unlabeled) dash/thick/dotted edges are unaffected.
+  for (const body of ["A --> B", "A ==> B", "A -.-> B", "A --- B", "A === B"]) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, true, `${body}: plain edge parses`);
+    assert.equal(b.edges.length, 1, `${body}: one edge`);
+  }
+});
