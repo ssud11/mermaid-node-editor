@@ -337,10 +337,14 @@ export function computeSubgraphLabelEdit(
   // `[ ]`, where spaces are already safe, so it only quotes on real syntax chars.)
   const needsQ = needsQuoting(newLabel) || (!sg.hasId && /\s/.test(newLabel));
   const wrapped = needsQ ? `"${newLabel.replace(/"/g, '#quot;')}"` : newLabel;
+  // Derive the leading indent directly from the source line — sg.indent is no
+  // longer available in the core model (it dropped the field).
+  const original = lines[sg.line] ?? '';
+  const indentMatch = /^(\s*)/.exec(original);
+  const indent = indentMatch ? indentMatch[1] : '';
   const newLine = sg.hasId
-    ? `${sg.indent}subgraph ${sg.id} [${wrapped}]`
-    : `${sg.indent}subgraph ${wrapped}`;
-  const original = lines[sg.line] ?? sg.raw;
+    ? `${indent}subgraph ${sg.id} [${wrapped}]`
+    : `${indent}subgraph ${wrapped}`;
   return {
     ok: true,
     edits: [{ line: sg.line, startChar: 0, endChar: original.length, newText: newLine }],

@@ -1,8 +1,36 @@
 // Bundles the extension entry point into dist/extension.js.
 // `vscode` is provided by the host at runtime, so it stays external.
+//
+// Pre-step: ensures the mermaid-node-core PEG grammar is compiled to
+// generated-parser.js before esbuild bundles it in. A fresh clone / CI runner
+// must run this step before the extension can compile.
 const esbuild = require('esbuild');
+const { execSync } = require('node:child_process');
+const path = require('node:path');
+
+// Build the grammar if the generated file is missing or stale. Using execSync
+// so the build fails loudly if the grammar step fails (not silently left stale).
+const coreDir = path.join(__dirname, 'mermaid-node-core');
+execSync('npm install --prefer-offline --silent 2>/dev/null || npm install', {
+  cwd: coreDir,
+  stdio: ['ignore', 'ignore', 'pipe'],
+});
+execSync('node scripts/build-parser.mjs', { cwd: coreDir, stdio: 'inherit' });
 
 const watch = process.argv.includes('--watch');
+
+// In src/parser.ts the core is required via '../../mermaid-node-core/src/index.js'
+// — a path relative to the COMPILED tsc output (out/src/ → ../../ = project root).
+// At bundle time esbuild resolves from the source file's directory (src/), so
+// '../../' goes outside the project. We intercept the resolution with a plugin.
+const coreResolvePlugin = {
+  name: 'core-remap',
+  setup(build) {
+    build.onResolve({ filter: /mermaid-node-core/ }, (args) => ({
+      path: path.join(coreDir, 'src', 'index.js'),
+    }));
+  },
+};
 
 /** @type {import('esbuild').BuildOptions} */
 const options = {
@@ -16,6 +44,11 @@ const options = {
   sourcemap: true,
   minify: !watch,
   logLevel: 'info',
+  // Signals src/parser.ts to take the static-require path so the core-remap plugin
+  // INLINES mermaid-node-core (the packaged build excludes its source tree). The
+  // runtime parent-dir walk is DCE-dropped from the bundle.
+  define: { __MNE_BUNDLE__: 'true' },
+  plugins: [coreResolvePlugin],
 };
 
 // Phase B (v1.2): the live-preview webview bundle — the real `mermaid` library +

@@ -39,6 +39,37 @@ const DIRECTIVE = /^(graph|flowchart)\b/i;
 const DIRECTION = /^direction\b/i; // `direction TD` — a keyword line, not tags
 const STYLING = /^(style|classDef|linkStyle|click)\b/i; // CSS values / classes / URLs, not tags
 
+/**
+ * The first line of diagram BODY content (the line with `graph`/`flowchart`, or
+ * the first content line after YAML frontmatter). The core does not advance
+ * `block.contentStart` past frontmatter, so callers that need to skip frontmatter
+ * (analysis + findDuplicates) use this instead of `block.contentStart` as the
+ * lower bound for line-scanning.
+ *
+ * Frontmatter is a `--- … ---` block at the very start of the content range.
+ * If no frontmatter is present the result equals `block.contentStart`.
+ */
+function bodyStart(block: MermaidBlock, lines: string[]): number {
+  const { contentStart, contentEnd } = block;
+  // Skip leading blank / comment lines.
+  let i = contentStart;
+  while (i < contentEnd && (lines[i]?.trim() === '' || lines[i]?.trim().startsWith('%%'))) {
+    i++;
+  }
+  if (i >= contentEnd || lines[i]?.trim() !== '---') {
+    return contentStart; // no frontmatter
+  }
+  // Advance past the closing `---`.
+  let j = i + 1;
+  while (j < contentEnd && lines[j]?.trim() !== '---') {
+    j++;
+  }
+  if (j >= contentEnd) {
+    return contentStart; // unterminated — treat as no frontmatter
+  }
+  return j + 1; // first line after the closing `---`
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -75,7 +106,8 @@ export function findTagAtPosition(
   }
   // Only tags inside the diagram body are navigable — not frontmatter, the
   // markdown fence, the diagram directive, or `direction` keyword lines.
-  if (line < block.contentStart || line >= block.contentEnd) {
+  const start = bodyStart(block, lines);
+  if (line < start || line >= block.contentEnd) {
     return undefined;
   }
   const trimmed = text.trim();
@@ -162,7 +194,7 @@ export function findReferences(
   const decl = findDeclaration(block, id);
   const out: Loc[] = [];
   const re = new RegExp(`\\b${escapeRegExp(id)}\\b`, 'g');
-  for (let ln = block.contentStart; ln < block.contentEnd; ln++) {
+  for (let ln = bodyStart(block, lines); ln < block.contentEnd; ln++) {
     const text = lines[ln];
     if (text === undefined) {
       continue;
@@ -214,7 +246,7 @@ export function findReferences(
 export function findDuplicateDeclarations(block: MermaidBlock, lines: string[]): DuplicateGroup[] {
   // All node declarations, including repeats (the block collapses them to first).
   const nodeDecls: MermaidNode[] = [];
-  for (let i = block.contentStart; i < block.contentEnd; i++) {
+  for (let i = bodyStart(block, lines); i < block.contentEnd; i++) {
     const raw = lines[i];
     if (raw === undefined) {
       continue;

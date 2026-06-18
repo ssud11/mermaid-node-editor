@@ -2,7 +2,7 @@
 // server.ts wires these to registerTool. All reuse the vscode-free parser/editor/
 // analysis layer — no logic is duplicated here.
 import { writeFileSync } from 'node:fs';
-import { RESERVED, hasOverBracketedShape, type MermaidBlock } from '../../src/parser';
+import { RESERVED, scanNodes, hasOverBracketedShape, type MermaidBlock } from '../../src/parser';
 import { computeIdRename, computeLabelEdit, computeSubgraphLabelEdit, type EditResult } from '../../src/editor';
 import { collectIds, findDeclaration, findDuplicateDeclarations } from '../../src/analysis';
 import { resolveSource, getBlocks, pickBlock, type FlowSource, type ResolvedSource } from './resolve';
@@ -153,13 +153,27 @@ export function flowOverview(src: FlowSource) {
   };
 }
 
+// Rebuild the nested {stroke, head, bidirectional} kind wrapper from an edge.
+// The core model stores these as flat fields on the edge (e.stroke / e.head /
+// e.bidirectional); the MCP response contract uses the nested form so callers
+// are not broken. Cast via `any` because the core is a plain-JS import with no
+// .d.ts yet (TS sees the fields as `any`).
+function edgeKind(e: any): { stroke: string; head: string; bidirectional: boolean } {
+  // Core flat fields take priority; fall back to the nested `.kind` form for
+  // any edge that already carries it (transition safety, should not occur).
+  if (e.stroke !== undefined) {
+    return { stroke: e.stroke, head: e.head, bidirectional: !!e.bidirectional };
+  }
+  return { stroke: e.kind?.stroke ?? 'solid', head: e.kind?.head ?? 'open', bidirectional: !!e.kind?.bidirectional };
+}
+
 function extractBlock(b: MermaidBlock, index: number) {
   return {
     index,
     diagramType: b.diagramType,
     supported: b.supported,
     nodes: b.nodes.map((n) => ({ id: n.id, label: n.label, shape: shapeOf(n.open), line: n.line })),
-    edges: b.edges.map((e) => ({ from: e.from, to: e.to, label: e.label ?? null, kind: e.kind, line: e.line })),
+    edges: b.edges.map((e) => ({ from: e.from, to: e.to, label: e.label ?? null, kind: edgeKind(e), line: e.line })),
     subgraphs: b.subgraphs.map((s) => ({ id: s.id, title: s.label, members: s.members })),
   };
 }
@@ -196,10 +210,10 @@ export function flowQuery(src: FlowSource, id: string, blockIndex?: number) {
   const known = collectIds(block).has(id);
   const incoming = block.edges
     .filter((e) => e.to === id)
-    .map((e) => ({ from: e.from, label: e.label ?? null, kind: e.kind, line: e.line }));
+    .map((e) => ({ from: e.from, label: e.label ?? null, kind: edgeKind(e), line: e.line }));
   const outgoing = block.edges
     .filter((e) => e.from === id)
-    .map((e) => ({ to: e.to, label: e.label ?? null, kind: e.kind, line: e.line }));
+    .map((e) => ({ to: e.to, label: e.label ?? null, kind: edgeKind(e), line: e.line }));
   const subgraph = block.subgraphs.find((s) => s.members.includes(id))?.id ?? null;
   // The node's OWN label (declared nodes only; a bare/undeclared edge ref has none).
   // Lets a flow-walk read a node's label from this one call instead of a flow_extract
@@ -246,9 +260,16 @@ export function flowValidate(src: FlowSource) {
     };
   }
   const lines = splitLines(r.text);
+  // Regexp matching the two flowchart directive keywords (case-insensitive to match
+  // the Mermaid grammar). Everything else is genuinely unsupported in v1.
+  const isFlowchart = /^(graph|flowchart)\b/i;
   const reports = blocks.map((b, index) => {
     const issues: Issue[] = [];
-    if (!b.supported) {
+    // Blocks whose diagramType is NOT a flowchart are always unsupported — skip probes.
+    // Blocks that ARE a flowchart but have supported:false (parse errors, reserved ids,
+    // over-brackets, empty labels…) still get the line-based probes below so those
+    // constructs surface as named warnings rather than a generic "unsupported" issue.
+    if (!b.supported && !isFlowchart.test(b.diagramType)) {
       issues.push({
         severity: 'info',
         code: 'unsupported',
@@ -269,6 +290,26 @@ export function flowValidate(src: FlowSource) {
       // Warn instead of staying silently clean (relabel itself refuses; R14-2).
       if (hasOverBracketedShape(n)) {
         issues.push({ severity: 'warning', code: 'unsupported-shape', message: `node "${n.id}" uses an over-bracketed shape (e.g. \`(((\`) that is not supported in v1; its label/shape is misread and a relabel would corrupt the source — use a documented shape (e.g. \`((${n.id}))\`)`, line: n.line });
+      }
+    }
+    // When the core rejected the block outright (supported:false) and produced no nodes,
+    // the over-bracket / empty-label probes above have nothing to iterate. Fall back to
+    // the scanNodes-based line scan (same technique used by findDuplicateDeclarations) so
+    // those constructs still surface as named warnings.
+    if (!b.supported && b.nodes.length === 0) {
+      for (let ln = b.contentStart; ln < b.contentEnd; ln++) {
+        const raw = lines[ln];
+        if (raw === undefined) continue;
+        const t = raw.trim();
+        if (t === '' || t.startsWith('%%') || /^(graph|flowchart|subgraph|end|direction)\b/i.test(t)) continue;
+        for (const n of scanNodes(raw, ln)) {
+          if (n.open !== '' && n.label.trim() === '') {
+            issues.push({ severity: 'warning', code: 'empty-label', message: `node "${n.id}" has an empty label`, line: n.line });
+          }
+          if (hasOverBracketedShape(n)) {
+            issues.push({ severity: 'warning', code: 'unsupported-shape', message: `node "${n.id}" uses an over-bracketed shape (e.g. \`(((\`) that is not supported in v1; its label/shape is misread and a relabel would corrupt the source — use a documented shape (e.g. \`((${n.id}))\`)`, line: n.line });
+          }
+        }
       }
     }
     // ids on a `&` fan-out line — their edges aren't parsed, so without this they'd
@@ -411,7 +452,18 @@ export function flowRelabel(src: FlowSource, id: string, newLabel: string, opts?
     return { ok: false, error: noBlockMessage(blocks.length, opts?.block) };
   }
   if (!picked.block.supported) {
-    return { ok: false, error: `block ${picked.index} is not a supported flowchart` };
+    // Surface the parse error when available (e.g. over-bracketed shape, reserved id)
+    // so the caller knows WHY the block can't be edited, not just that it can't.
+    // Check for the over-bracketed case first — the parse error is a PEG syntax
+    // message; we translate it into a user-readable diagnostic.
+    const blockRaw = (picked.block as { parseError?: string });
+    const overBracketed = picked.block.nodes.length === 0 &&
+      (() => { for (let ln = picked.block.contentStart; ln < picked.block.contentEnd; ln++) { const raw = splitLines(r.text)[ln]; if (raw && scanNodes(raw, ln).some(hasOverBracketedShape)) return true; } return false; })();
+    if (overBracketed) {
+      return { ok: false, error: `"${id}" uses an unsupported bracket shape (e.g. \`(((\`); a relabel would corrupt the source — change it to a documented shape first` };
+    }
+    const why = blockRaw.parseError;
+    return { ok: false, error: why ? `block cannot be edited: ${why}` : `block ${picked.index} is not a supported flowchart` };
   }
   // A subgraph TITLE is editable too (the sidebar exposes it, and CLAUDE.md lists it
   // as supported). computeLabelEdit only searches nodes, so dispatch a subgraph id to

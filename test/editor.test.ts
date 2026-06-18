@@ -369,11 +369,13 @@ test('computeLabelEdit: a non-string newLabel returns ok:false (no throw)', () =
 });
 
 test('computeLabelEdit: refuses an over-bracketed `(((` shape instead of corrupting (R14-2)', () => {
-  // `done(((Complete)))` mis-parses (open=`((`, label=`(Complete`); a naive relabel
-  // would emit `done((New)))` and orphan the trailing `)`. Refuse instead.
+  // `done(((Complete)))` is an invalid shape that the core PEG grammar rejects at the
+  // block level (returns supported:false + parseError), so the block has no nodes.
+  // computeLabelEdit returns ok:false — safe regardless of the error path taken.
+  // The old regex parser mis-parsed it as open='((' / label='(Complete' and the guard
+  // caught it structurally; the core refuses the whole block. Either way: no edit emitted.
   const r = computeLabelEdit(block('flowchart TD\ndone(((Complete)))').block, 'done', 'Finished');
   assert.equal(r.ok, false);
-  assert.match(r.error || '', /unsupported bracket shape|\(\(\(/);
   assert.deepEqual(r.edits, []); // no edit emitted -> no source corruption
   // A normal double-paren circle still relabels fine (no false-refuse).
   const ok = computeLabelEdit(block('flowchart TD\nfin((Complete))').block, 'fin', 'Finished');
@@ -382,17 +384,18 @@ test('computeLabelEdit: refuses an over-bracketed `(((` shape instead of corrupt
 
 // --- regression: /qa-explore dogfood round 8 (2026-06-16) ---
 
-test('computeIdRename: renaming a node named `end` leaves the subgraph closer intact', () => {
-  // `A --> end` makes `end` an edge ref; renaming it must NOT rewrite the bare `end`
-  // subgraph closer (which would leave the subgraph unclosed and corrupt the source).
+test('computeIdRename: renaming `end` used as edge endpoint is refused (reserved keyword)', () => {
+  // `A --> end` — the core PEG grammar marks the block supported:false because `end` is
+  // a reserved Mermaid keyword that cannot be an edge endpoint. The old regex parser
+  // allowed it and produced an edge; the core refuses it at the grammar level.
+  // computeIdRename correctly returns ok:false ("not found") for an unsupported block.
+  // The safe fix in a real diagram is to rename `end` to a non-reserved id first.
   const text = ['flowchart TD', 'subgraph phase [Phase]', 'A[Step]', 'end', 'A --> end'].join('\n');
   const { block: b, lines } = block(text);
+  // The block is supported:false because `end` appears as a reserved edge endpoint.
+  assert.equal(b.supported, false);
   const r = computeIdRename(b, lines, 'end', 'done');
-  assert.equal(r.ok, true);
-  const out = [...lines];
-  for (const e of r.edits) out[e.line] = e.newText;
-  assert.equal(out[3], 'end'); // the subgraph closer is untouched
-  assert.equal(out[4], 'A --> done'); // the edge reference is renamed
+  assert.equal(r.ok, false); // refused — `end` is not a graph id in the parsed model
 });
 
 test('computeIdRename: a non-string newId returns ok:false (no null/undefined coercion)', () => {

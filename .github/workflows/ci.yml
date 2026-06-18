@@ -25,6 +25,12 @@ jobs:
           cache: npm
       - name: Install (clean)
         run: npm ci
+      - name: Core — install (mermaid-node-core deps)
+        run: npm ci
+        working-directory: mermaid-node-core
+      - name: Core — build grammar (generated-parser.js)
+        run: npm run build:parser
+        working-directory: mermaid-node-core
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
@@ -57,6 +63,9 @@ jobs:
           cache: npm
       - name: Install (clean)
         run: npm ci
+      - name: Core — install + build grammar
+        run: npm ci && npm run build:parser
+        working-directory: mermaid-node-core
       - name: Compile (the extension bundle the dev host loads)
         run: npm run compile
       - name: Integration tests (real VS Code under Xvfb)
