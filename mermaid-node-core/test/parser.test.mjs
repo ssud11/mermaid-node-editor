@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findMermaidBlocks, blockAtLine } from "../src/index.js";
+import { checkSpans } from "./span-net.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpus = JSON.parse(readFileSync(join(here, "corpus.json"), "utf8"));
@@ -98,6 +99,15 @@ for (const tc of corpus) {
         assert.ok(n, `expectNodeSpanSlices: node ${nodeId} present (${tc.id})`);
         assert.equal(lines[n.line].slice(n.startChar, n.endChar), want, `node ${nodeId} span slice (${tc.id})`);
       }
+    }
+
+    // Universal span-invariant net: on EVERY valid case, every node and subgraph
+    // must have spans that slice to exactly the content the model claims (label,
+    // node decl, id/title) — expected slices computed from the input + parsed
+    // values, never hand-listed. This is the catch-all that proves a span axis
+    // didn't silently degenerate (the zero-width-label-span class), per construct.
+    for (const b of supBlocks) {
+      checkSpans(b, lines, (msg) => assert.fail(`span-net (${tc.id}): ${msg}`));
     }
   });
 }

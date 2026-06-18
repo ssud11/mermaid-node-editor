@@ -1962,5 +1962,89 @@
     "expectSupported": true,
     "expectNodeSpanSlices": {"node_1":"node_1((c))"},
     "note": "plain shaped id, circle shape: span is the whole node text `node_1((c))`"
+  },
+  {
+    "id": "hyphen-shaped-label-cylinder",
+    "category": "ids",
+    "input": "graph TD\nsend-email[(Store)]",
+    "isMmd": true,
+    "expectNodes": [{"id":"send","label":"Store","shape":"[()]"}],
+    "expectEdges": [],
+    "valid": true,
+    "expectSupported": true,
+    "expectNodeSpanSlices": {"send":"send"},
+    "note": "shaped hyphenated id, cylinder shape: node span stays the kept id `send`, while the label span slices to the real in-bracket content `Store` (not zero-width) so a relabel is not a silent no-op"
+  },
+  {
+    "id": "hyphen-shaped-label-circle",
+    "category": "ids",
+    "input": "graph TD\nsend-email((Round))",
+    "isMmd": true,
+    "expectNodes": [{"id":"send","label":"Round","shape":"(())"}],
+    "expectEdges": [],
+    "valid": true,
+    "expectSupported": true,
+    "expectNodeSpanSlices": {"send":"send"},
+    "note": "shaped hyphenated id, circle shape: node span is the kept id `send`, label span slices to `Round`"
+  },
+  {
+    "id": "hyphen-shaped-label-hexagon",
+    "category": "ids",
+    "input": "graph TD\nsend-email{{Hex}}",
+    "isMmd": true,
+    "expectNodes": [{"id":"send","label":"Hex","shape":"{{}}"}],
+    "expectEdges": [],
+    "valid": true,
+    "expectSupported": true,
+    "expectNodeSpanSlices": {"send":"send"},
+    "note": "shaped hyphenated id, hexagon shape: node span is the kept id `send`, label span slices to `Hex`"
+  },
+  {
+    "id": "hyphen-shaped-label-asymmetric",
+    "category": "ids",
+    "input": "graph TD\nsend-email>Asym]",
+    "isMmd": true,
+    "expectNodes": [{"id":"send","label":"Asym","shape":">]"}],
+    "expectEdges": [],
+    "valid": true,
+    "expectSupported": true,
+    "expectNodeSpanSlices": {"send":"send"},
+    "note": "shaped hyphenated id, asymmetric shape: node span is the kept id `send`, label span slices to `Asym`"
+  },
+  {
+    "id": "digit-first-subgraph-id-and-title",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph 1stage[Stage 1]\n  A --> B\nend",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [{"from":"A","to":"B"}],
+    "expectSubgraphs": [{"id":"1stage","label":"Stage 1","hasId":true,"members":["A","B"]}],
+    "valid": true,
+    "expectSupported": true,
+    "note": "digit-first subgraph id `1stage[Stage 1]` parses to {id,title,hasId:true} (symmetric with a digit-first node id), with content-exclusive id and title spans"
+  },
+  {
+    "id": "digit-first-subgraph-id-bare",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph 1stage\n  A --> B\nend",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [{"from":"A","to":"B"}],
+    "expectSubgraphs": [{"id":"1stage","label":"1stage","hasId":true,"members":["A","B"]}],
+    "valid": true,
+    "expectSupported": true,
+    "note": "digit-first subgraph id, bare form `subgraph 1stage` (id only, no title) parses to {id:'1stage',hasId:true}"
+  },
+  {
+    "id": "digit-first-subgraph-id-quoted-title",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph 2nd (\"Second Group\")\n  A --> B\nend",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [{"from":"A","to":"B"}],
+    "expectSubgraphs": [{"id":"2nd","label":"Second Group","hasId":true,"members":["A","B"]}],
+    "valid": true,
+    "expectSupported": true,
+    "note": "digit-first subgraph id `2nd` with a quoted paren title parses to {id,title,hasId:true}; the title span excludes the surrounding quotes/parens"
   }
 ]

@@ -63,7 +63,11 @@
     //     span to the kept id alone (like the bare arm) — the off-contract
     //     `-email[Label]` remainder is left for the consumer to warn on, and
     //     `slice(startChar,endChar) === id` holds for the truncated case too,
-    //     matching the bare-truncated arm the corpus already certifies.
+    //     matching the bare-truncated arm the corpus already certifies. The
+    //     LABEL span (labelStart/labelEnd) is a SEPARATE concern: even when the
+    //     node span is bounded to the kept id, the bracketed label content is
+    //     real and editable, so the label span keeps pointing at that content
+    //     (`slice(labelStart,labelEnd) === label`) rather than being zeroed.
     //
     // Truncation is detected positionally: shapeLoc is captured right AFTER the
     // consumed id (incl. any discarded hyphen tail) and right BEFORE the shape
@@ -81,10 +85,20 @@
       const shapeOpenCol = shapeLoc ? shapeLoc.start.column - 1 : keptIdEnd;
       const truncated = shapeOpenCol > keptIdEnd;
       if (truncated) {
-        // Hyphen-truncated shaped id — bound to the kept id, like the bare arm.
+        // Hyphen-truncated shaped id — bound the NODE span to the kept id (like
+        // the bare arm), so a span-rename can't overwrite the discarded `-email`
+        // tail. But the LABEL span is INDEPENDENT of the node span: the shape's
+        // bracketed content is still present and editable, so the label span must
+        // point at that real in-bracket content (`shapeInfo` carries it, captured
+        // via HERE against the source columns inside the brackets — unaffected by
+        // the truncation). Zeroing it (labelStart === labelEnd) made a relabel a
+        // silent no-op (an empty edit). Keep the node span tight to the kept id,
+        // but let labelStart/labelEnd slice to the real label content so
+        // `source.slice(labelStart,labelEnd) === label` holds for the shaped-
+        // truncated case across every shape.
         endChar = keptIdEnd;
-        labelStart = keptIdEnd;
-        labelEnd = keptIdEnd;
+        labelStart = shapeInfo.labelStart;
+        labelEnd = shapeInfo.labelEnd;
       } else {
         endChar = s.endChar;
         labelStart = shapeInfo.labelStart;
@@ -585,9 +599,15 @@ IdChar = [A-Za-z0-9_]
 HyphenTail = "-" !("-" / ".") IdChar+
 
 // A plain id for subgraph headers (allows internal hyphens since it is not in
-// arrow context).
+// arrow context). The leading-char class is [A-Za-z0-9_] — same as NodeId's —
+// so a DIGIT-FIRST subgraph id (`subgraph 1stage[Stage 1]`) parses to
+// { id, title, hasId:true } symmetrically with a digit-first NODE id (`1stage[X]`,
+// which NodeId already accepts). Without this, PlainId's old [A-Za-z_] leading
+// class declined `1stage`, the whole header fell through to the FreeTitle
+// catch-all, and a real `id[title]` header was mis-read as one free-text title
+// (hasId:false, id = the raw `1stage[Stage 1]` text). the supported id charset permits digit-first ids.
 PlainId "plain id"
-  = first:[A-Za-z_] rest:[A-Za-z0-9_\-]*
+  = first:[A-Za-z0-9_] rest:[A-Za-z0-9_\-]*
   { return first + rest.join(""); }
 
 // ─── Node shapes ──────────────────────────────────────────────────────────────
