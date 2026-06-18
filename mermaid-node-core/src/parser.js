@@ -34,6 +34,17 @@ import { parse as parseFlowchart, SyntaxError as PeggySyntaxError } from "./gene
  * @property {string} from
  * @property {string} to
  * @property {string|undefined} label
+ * @property {"arrow"|"open"|"circle"|"cross"} head  arrow metadata: the arrowhead at
+ *   the `to` end — `arrow` (`-->`), `open` (`---`, no head), `circle` (`--o`),
+ *   `cross` (`--x`). For a reversed connector (`<--`) the head is normalised onto
+ *   the `to` end after from/to are swapped to source→target order.
+ * @property {"solid"|"thick"|"dotted"} stroke  arrow metadata: line style —
+ *   `solid` (`--`), `thick` (`==`), `dotted` (`-.-`).
+ * @property {boolean} bidirectional  arrow metadata: true for a two-headed connector
+ *   (`<-->`, `o--o`, `x--x`); these exist only in the solid stroke.
+ * @property {number} length  arrow metadata: the rendered shaft length (1 for the
+ *   base form `-->`/`==>`/`-.->`, +1 per extra dash/dot — `--->` is length 2). Length
+ *   only changes the drawn shaft; it does not change the edge's endpoints.
  * @property {number} line
  * @property {number} startChar
  * @property {number} endChar

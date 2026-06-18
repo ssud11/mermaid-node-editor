@@ -48,7 +48,11 @@ b.nodes[0];
 //   labelStart: 2, labelEnd: 7             // "Start"
 // }
 b.edges[0];
-// { kind: "edge", from: "A", to: "B", label: undefined, line: 1, startChar: 0, endChar: 19 }
+// {
+//   kind: "edge", from: "A", to: "B", label: undefined,
+//   head: "arrow", stroke: "solid", bidirectional: false, length: 1,  // arrow metadata
+//   line: 1, startChar: 0, endChar: 19
+// }
 ```
 
 `blockAtLine(blocks, line, isMmd)` returns the block containing a given document
@@ -66,7 +70,7 @@ Each `Block` carries:
 | `keyword` | the diagram keyword (`graph` or `flowchart`); `undefined` on an unsupported block |
 | `direction` | the declared layout direction (`TD`/`TB`/`BT`/`LR`/`RL`); `null` when none was declared, `undefined` on an unsupported block |
 | `nodes` | each with `id`, `label`, `shape`, `open`/`close`/`quote`, and `{ line, startChar, endChar, labelStart, labelEnd }` |
-| `edges` | each with `from`, `to`, optional `label`, and `{ line, startChar, endChar }` |
+| `edges` | each with `from`, `to`, optional `label`, the **arrow metadata** `head` / `stroke` / `bidirectional` / `length`, and `{ line, startChar, endChar }`. `head` is the arrowhead at the `to` end — `"arrow"` (`-->`), `"open"` (`---`, no head), `"circle"` (`--o`), `"cross"` (`--x`); `stroke` is the line style `"solid"` (`--`) / `"thick"` (`==`) / `"dotted"` (`-.-`); `bidirectional` is `true` for a two-headed connector (`<-->`, `o--o`, `x--x`, solid stroke only); `length` is the rendered shaft length (`1` for the base form, `+1` per extra dash/dot — `--->` is `2`). A reversed connector (`<--`) is normalised to source→target order with its head on the `to` end. Arrow metadata describes how the edge is **drawn**; it never changes `from`/`to`. |
 | `subgraphs` | each with `id`, `label`, `hasId`, `quote`, `members[]`, and `{ line, idStart, idEnd, titleStart, titleEnd }`. `idStart`/`idEnd` span the editable id/title token; `titleStart`/`titleEnd` span the title **content** (exclusive of any quotes/brackets) and are **always present** — with an explicit title they span that content, with an id and no title they equal the id span, and for a bare `subgraph` header they are a zero-width span — so `source.slice(titleStart, titleEnd) === label` always holds and a consumer may slice unconditionally. |
 | `warnings` | advisory yellow-lints — an array of `{ code, message, line }`. The block is still `supported: true`; each warning flags a form that **renders** but is off-canonical and was parsed best-effort, split, or skipped block-locally (e.g. a reserved-keyword node id, an `&` fan-out edge that was split, a non-canonical inline-dash or inline-dot label). Empty when there is nothing to advise. Distinct from `parseError`. |
 | `parseError` | the parse-error message when the block did not parse (no exception is thrown) |

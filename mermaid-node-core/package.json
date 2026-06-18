@@ -19,7 +19,8 @@
     "build:parser": "node scripts/build-parser.mjs",
     "build": "npm run build:parser",
     "test": "npm run build:parser && node --test test/*.test.mjs",
-    "corpus": "npm run build:parser && node test/run-corpus.mjs"
+    "corpus": "npm run build:parser && node test/run-corpus.mjs",
+    "differential": "npm run build:parser && node test/differential-oracle.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -37,6 +38,7 @@
     "diagram"
   ],
   "devDependencies": {
+    "mermaid": "^11.15.0",
     "peggy": "^5.1.0"
   }
 }
