@@ -1356,15 +1356,17 @@ Link "arrow"
   // Tried AFTER the bidir `<-->` arm so the trailing `>` is always claimed as the
   // second head first.
   //
-  // Bare `<--` (exactly 2 dashes) is a Mermaid-REJECTS form standalone (`A <-- B`
-  // → Parse error) but RENDERS embedded via the same line-merge quirk as bare `--`,
-  // so — exactly like bare `--` — it is the GENTLE non-fatal `unsupported` skip (drop
-  // this edge, keep surroundings, block supported:true) rather than a FATAL: a fatal
-  // here would silently lose the surrounding on-contract edges (a contract violation).
-  // A standalone bare `<--` thus yields an empty/best-effort block. Bare `<==` (2 equals)
-  // is a Mermaid-REJECTS form even embedded → FATAL (v1.6 #3).
+  // Bare `<--` (exactly 2 dashes) is a Mermaid-REJECTS form — REAL Mermaid parse-errors
+  // the whole diagram for both standalone (`A <-- B`) and embedded usage. The prior gentle
+  // `unsupported` skip (block supported:true) produced confidently-wrong topology in
+  // multi-line contexts by leaving following lines as live the contract edges whose from/to diverge
+  // from the real Mermaid model (which uses a line-merge quirk the grammar cannot replicate,
+  // and which is off-contract per "labels are single-line"). Promoting to `unsupportedFatal`
+  // (block supported:false) is the honest signal: the block contains a form that silently
+  // mis-parses topology, so the edge set cannot be trusted. The best-effort surrounding
+  // the contract edges are still preserved in the model. Bare `<==` (2 equals) is also FATAL.
   / "<--" "-"+                { return link(undefined, false, "open",   "solid",  false, linkLen(text(), "solid", true), {}); }
-  / "<--"                     { return link(undefined, false, "open",   "solid",  false, 1, { unsupported: true }); }
+  / "<--"                     { return link(undefined, false, "open",   "solid",  false, 1, { unsupportedFatal: true }); }
   // `<===`+ (≥3 equals reverse) RENDERS; stroke normalizes to "solid" (oracle); bare `<==` → FATAL (v1.6 #3).
   / "<==" "="+                { return link(undefined, false, "open",   "solid",  false, linkLen(text(), "thick", true), {}); }
   / "<=="                     { return link(undefined, false, "open",   "thick",  false, 1, { unsupportedFatal: true }); }
@@ -1395,25 +1397,25 @@ Link "arrow"
   / "--" "-"+                  { return link(undefined, false, "open",   "solid",  false, linkLen(text(), "solid", false), {}); } // `---`, `----`
   // v1.6 #1b — a bare `--` / `==` (length-1 head-less link) is NOT a valid standalone
   // edge in REAL Mermaid (`A -- B` / `A == B` → Parse error; the minimum head-less
-  // open link is `---` / `===`, handled above). It is matched here LAST and marked
-  // `unsupported` so EdgeChain drops THIS edge block-locally (an `unsupported-arrow`
-  // advisory) instead of either (a) FALSE-GREENing `A -- lbl -- B` into two phantom
-  // edges [if it were a normal open link] or (b) failing the WHOLE block and silently
-  // losing the surrounding on-contract edges [if it had no arm at all] — the latter is
-  // the the contract "never silently drop a surrounding edge" violation a multi-line block hits
-  // (`P0-->A / A -- B / B-->P1`, which Mermaid renders via line-merge). Tried after the
-  // labeled-inline arms (top of Link) so a real labeled edge is claimed first; only a
-  // dangling bare `--`/`==` with no label/close reaches here.
+  // open link is `---` / `===`, handled above). Tried after the labeled-inline arms
+  // (top of Link) so a real labeled edge is claimed first; only a dangling bare
+  // `--`/`==` with no label/close reaches here.
   // Dangling `==` (length-1 thick open) is a Mermaid-REJECTS form even embedded
   // (`A == B` → Parse error, no line-merge rescue) → FATAL (supported:false).
   / "==" !("=" / ">" / "x" / "o")  { return link(undefined, false, "open",   "thick",  false, 1, { unsupportedFatal: true }); }
-  // Dangling `--` (length-1 dash open) is the ONE exception: REAL Mermaid RENDERS it
-  // embedded via a line-merge quirk (`P0-->A / A -- B / B-->P1` → P0->A, A->P1), so a
-  // FATAL here would silently lose the surrounding on-contract edges (the contract violation).
-  // Mark it the GENTLER non-fatal `unsupported` (skip this edge, keep surroundings,
-  // block stays supported:true). Standalone `A -- B` then yields an empty supported
-  // block, which the differential coverage treats identically to a reject (∅ == ∅).
-  / "--" !("-" / ">" / "x" / "o")  { return link(undefined, false, "open",   "solid",  false, 1, { unsupported: true }); }
+  // Dangling `--` (length-1 dash open) — REAL Mermaid REJECTS this form standalone
+  // and renders embedded-only via an off-contract line-merge quirk ("labels are
+  // single-line"). The prior gentle `unsupported` skip (block supported:true) produced
+  // confidently-wrong topology: in a multi-line context like `P0-->A / A -- B / B-->P1`
+  // the following `B-->P1` line runs as a live the contract edge, giving edges=[P0->A, B->P1]
+  // instead of Mermaid's [P0->A, A->P1]. `supported:false` is the honest signal:
+  // the block contains a form that silently mis-parses topology. The surrounding the contract
+  // edges are preserved in the best-effort model; the block simply cannot be trusted
+  // for rename/relabel actions. The glued-label false-green (`A -- a--b --- B`,
+  // which Mermaid REJECTS and which produced a phantom `a->B label:b` under the old
+  // gentle skip) is also resolved: with `unsupportedFatal`, the block is now
+  // supported:false and the caller gets the honest signal.
+  / "--" !("-" / ">" / "x" / "o")  { return link(undefined, false, "open",   "solid",  false, 1, { unsupportedFatal: true }); }
 
   // v1.6 #3 — a bare LEADING-head thick `o==` / `x==` (exactly 2 equals, NO trailing
   // head/extra equals) is a Mermaid-REJECTS form (oracle: `A o== B` / `A x== B` →
@@ -1422,6 +1424,16 @@ Link "arrow"
   / ("o" / "x") "==" !("=" / ">" / "x" / "o")
     { return link(undefined, false, "open", "thick", false, 1, { unsupportedFatal: true }); }
 
+  // A bare LEADING-head solid `o--` / `x--` (exactly 2 dashes, NO trailing head or extra
+  // dashes) is a Mermaid-REJECTS form (oracle: `A o-- B` / `A x-- B` → Parse error).
+  // The longer variants (`o---`, `x----`, `o--x`, `x--o`) RENDER → FIX-C catch-all below.
+  // Without this arm, `o--B` falls into the FIX-C catch-all as `unsupportedRender` and
+  // emits a phantom A->B edge — identical to the bare-`--` mis-parse class (Finding 2).
+  // `unsupportedFatal` is the honest signal: the block has a form real Mermaid rejects;
+  // the surrounding the contract edges are still in the best-effort model.
+  / ("o" / "x") "--" !("-" / ">" / "x" / "o")
+    { return link(undefined, false, "open", "solid", false, 1, { unsupportedFatal: true }); }
+
   // FIX C catch-all — a LEADING circle/cross head (`o`/`x`) on a shaft whose
   // TRAILING combination is NOT one of the cleanly-modeled forms above (e.g.
   // `o--x`, `x--o`, `o==>`, `o---`, `o-.-`, `x----`). Oracle: ALL of these RENDER
@@ -1429,16 +1441,14 @@ Link "arrow"
   // depending on the trailing combination), confirmed via real Mermaid v11 for every
   // sub-family: `o---` RENDERS C->D, `x----` RENDERS C->D, `o-.-` RENDERS C->D,
   // `o==>` RENDERS C->D, `o--x` RENDERS C->D, `x--o` RENDERS C->D, etc.
-  // Per the the contract "renders-it → warn-don't-deny" rule: since these RENDER, the edge
-  // MUST be emitted (not silently dropped) — silent drop is the the contract-prohibited class.
+  // Per the contract "renders-it → warn-don't-deny" rule: since these RENDER, the edge
+  // MUST be emitted (not silently dropped) — silent drop is the contract-prohibited class.
   // The `unsupportedRender` flag signals EdgeChain to emit the from/to edge with an
   // `unsupported-arrow` advisory (renders-but-unmodeled), instead of the full skip.
   // Metadata (head/stroke/bidirectional/length) is not modeled for these forms; the
   // edge still carries the endpoints and the warning. This is distinct from the FATAL
-  // `unsupportedFatal` forms (Mermaid REJECTS) and the gentle `unsupported` skip
-  // (bare `--` / `<--` which render ONLY via a multi-line-label quirk, off-contract
-  // per the contract "labels are single-line"). The shaft run is greedy so it stops at the
-  // first non-shaft/non-head char and cannot swallow the next node.
+  // `unsupportedFatal` forms (Mermaid REJECTS). The shaft run is greedy so it stops at
+  // the first non-shaft/non-head char and cannot swallow the next node.
   / ("o" / "x") ("-" / "=" / ".")+ ("-" / "=" / "." / ">" / "x" / "o")*
     { return link(undefined, false, "arrow", "solid", false, 1, { unsupportedRender: true }); }
 

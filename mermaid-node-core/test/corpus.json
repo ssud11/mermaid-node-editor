@@ -543,8 +543,8 @@
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "Left-pointing <-- reverses: C->B in the model",
-    "expectSupported": true,
+    "note": "Left-pointing `<--` (exactly 2 dashes) is a Mermaid-REJECTS form; the block is supported:false + unsupported-arrow advisory; the shaped nodes survive in the best-effort model",
+    "expectSupported": false,
     "expectWarnings": [
       "unsupported-arrow"
     ]
@@ -2883,8 +2883,8 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": true,
-    "expectSupported": true,
-    "note": "labeled OPEN link, dash shaft-2 (`--`, no arrowhead): ONE labeled edge A->B, no phantom node",
+    "expectSupported": false,
+    "note": "labeled inline edge with a 2-char head-less close (`--`): Mermaid REJECTS (`A -- lbl -- B`); supported:false + unsupported-arrow advisory; no phantom edge fabricated",
     "expectWarnings": [
       "unsupported-arrow"
     ]
@@ -3100,8 +3100,8 @@
       }
     ],
     "valid": true,
-    "expectSupported": true,
-    "note": "label containing a glued `--` keeps it (close is whitespace-delimited): edge label `a--b`, open close `---`",
+    "expectSupported": false,
+    "note": "glued `a--b` inside inline-dash context: Mermaid REJECTS this form (lexical error); supported:false + both advisories; best-effort model exposes the phantom a->B (from the inline-label path after the fatal skip) \u2014 honest with supported:false",
     "expectWarnings": [
       "inline-dash-label",
       "unsupported-arrow"
@@ -5272,5 +5272,250 @@
     "expectSupported": true,
     "expectWarnings": [],
     "note": "oracle: shaped endpoints in a reverse arrow \u2014 A[Start] <--- B[End] \u2192 from=A to=B; both nodes emitted"
+  },
+  {
+    "id": "f1-bare-dash-dash-multiline-solid",
+    "category": "arrow-forms",
+    "input": "graph TD\nP0 --> A\nA -- B\nB --> P1",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "P0",
+        "to": "A"
+      },
+      {
+        "from": "B",
+        "to": "P1"
+      }
+    ],
+    "valid": true,
+    "expectSupported": false,
+    "note": "F1 regression: bare `--` in multi-line context; Mermaid REJECTS; supported:false (honest \u2014 block topology cannot be trusted); best-effort model exposes surrounding \u00a72 edges [P0->A, B->P1] but NOT the real A->P1 Mermaid would produce via line-merge",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f1-bare-lt-dash-dash-multiline-solid",
+    "category": "arrow-forms",
+    "input": "graph TD\nP0 --> A\nA <-- B\nB --> P1",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "P0",
+        "to": "A"
+      },
+      {
+        "from": "B",
+        "to": "P1"
+      }
+    ],
+    "valid": true,
+    "expectSupported": false,
+    "note": "F1 regression: bare `<--` in multi-line context; Mermaid REJECTS; supported:false; best-effort model exposes surrounding \u00a72 edges [P0->A, B->P1] but cannot replicate real Mermaid topology",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f1-bare-dash-dash-standalone",
+    "category": "arrow-forms",
+    "input": "graph TD\nA -- B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "expectSupported": false,
+    "note": "F1 regression: standalone bare `--` is Mermaid-REJECTS; must be supported:false with no phantom edge",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f1-bare-lt-dash-dash-standalone",
+    "category": "arrow-forms",
+    "input": "graph TD\nA <-- B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "expectSupported": false,
+    "note": "F1 regression: standalone bare `<--` is Mermaid-REJECTS; must be supported:false with no phantom edge",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-bare-o-dash-dash-standalone",
+    "category": "arrow-forms",
+    "input": "graph TD\nA o-- B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "expectSupported": false,
+    "note": "F2 regression: bare `o--` (2-dash, no trailing head) is Mermaid-REJECTS; old code fell into FIX-C as unsupportedRender and emitted a phantom A->B; must be supported:false with no edge",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-bare-x-dash-dash-standalone",
+    "category": "arrow-forms",
+    "input": "graph TD\nA x-- B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [],
+    "valid": false,
+    "expectSupported": false,
+    "note": "F2 regression: bare `x--` (2-dash, no trailing head) is Mermaid-REJECTS; old code emitted a phantom A->B; must be supported:false with no edge",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-bare-o-dash-dash-multiline",
+    "category": "arrow-forms",
+    "input": "graph TD\nP0 --> A\nA o-- B\nB --> P1",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "P0",
+        "to": "A"
+      },
+      {
+        "from": "B",
+        "to": "P1"
+      }
+    ],
+    "valid": true,
+    "expectSupported": false,
+    "note": "F2 regression: bare `o--` in multi-line context; Mermaid REJECTS; supported:false; best-effort model exposes surrounding \u00a72 edges [P0->A, B->P1] but no phantom A->B across the rejected operator",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-bare-x-dash-dash-multiline",
+    "category": "arrow-forms",
+    "input": "graph TD\nP0 --> A\nA x-- B\nB --> P1",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "P0",
+        "to": "A"
+      },
+      {
+        "from": "B",
+        "to": "P1"
+      }
+    ],
+    "valid": true,
+    "expectSupported": false,
+    "note": "F2 regression: bare `x--` in multi-line context; Mermaid REJECTS; supported:false; best-effort model exposes surrounding \u00a72 edges [P0->A, B->P1] but no phantom A->B across the rejected operator",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-control-o-triple-dash-renders",
+    "category": "arrow-forms",
+    "input": "graph TD\nA o--- B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "note": "F2 control: `o---` (3-dash, renders in Mermaid) \u2192 FIX-C catch-all, edge emitted, supported:true",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-control-x-triple-dash-renders",
+    "category": "arrow-forms",
+    "input": "graph TD\nA x--- B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "note": "F2 control: `x---` (3-dash, renders in Mermaid) \u2192 FIX-C catch-all, edge emitted, supported:true",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-control-o-dash-dash-x-renders",
+    "category": "arrow-forms",
+    "input": "graph TD\nA o--x B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "note": "F2 control: `o--x` (2-dash + cross close, renders in Mermaid) \u2192 FIX-C catch-all, edge emitted, supported:true",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f2-control-x-dash-dash-o-renders",
+    "category": "arrow-forms",
+    "input": "graph TD\nA x--o B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "note": "F2 control: `x--o` (2-dash + circle close, renders in Mermaid) \u2192 FIX-C catch-all, edge emitted, supported:true",
+    "expectWarnings": [
+      "unsupported-arrow"
+    ]
+  },
+  {
+    "id": "f3-glued-double-dash-label-false-green",
+    "category": "edges",
+    "input": "graph TD\nA -- a--b --- B",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "a",
+        "to": "B",
+        "label": "b"
+      }
+    ],
+    "valid": true,
+    "expectSupported": false,
+    "note": "F3 regression: `A -- a--b --- B` is Mermaid-REJECTS (lexical error); supported:false; best-effort model exposes phantom a->B label:b from partial parse after the FATAL skip \u2014 but the honest block-level signal (supported:false) prevents misuse; the prior false-green was supported:true with no warning",
+    "expectWarnings": [
+      "inline-dash-label",
+      "unsupported-arrow"
+    ]
   }
 ]

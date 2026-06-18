@@ -53,11 +53,17 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 // Reduce a positioned-parser block list (new core OR old parser; identical surface:
 // blocks[].{ supported, nodes[].id, edges[].{from,to}, subgraphs[].{id,members} })
 // to the common coverage shape. Aggregates across ALL blocks in the document.
+//
+// supported:false blocks are INCLUDED in coverage because the contract exposes a
+// best-effort model even for rejected forms (surrounding the contract edges are still real edges
+// the parser recognized). Excluding supported:false would mis-classify correctness
+// improvements (e.g. bare `--` promoted from a false-green gentle-skip to an honest
+// FATAL) as regressions, since the surrounding edges ARE still in the model. The
+// supported flag governs editing trust, not coverage presence.
 function coverageFromBlocks(blocks) {
   const nodeIds = new Set();
   const edges = new Set();
   for (const b of blocks) {
-    if (!b.supported) continue;
     for (const n of b.nodes || []) nodeIds.add(n.id);
     for (const sg of b.subgraphs || []) {
       // subgraph ids + their declared members are part of what the parser "saw"

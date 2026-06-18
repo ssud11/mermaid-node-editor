@@ -1453,19 +1453,170 @@ test("FIX-C renders family: warning line is the absolute document line of the FI
   assert.ok(lines[w.line] !== undefined, "warning line resolves to a real document line");
 });
 
-test("FIX-C renders family: bare `--` and `<--` are still a SKIP (multi-line-label quirk, off-contract)", () => {
-  // `A -- B` and `A <-- B` are Mermaid-REJECTED standalone (not the renders class).
-  // They render ONLY via an off-contract multi-line-label quirk (the contract "labels are
-  // single-line"). These keep the gentle skip-warn behavior: edge dropped, supported:true.
+test("bare `--` and `<--` are now FATAL (supported:false): Mermaid REJECTS them, prior gentle-skip produced wrong topology", () => {
+  // `A -- B` and `A <-- B` are Mermaid-REJECTED standalone AND in embedded multi-line
+  // context. The old gentle skip (supported:true) produced confidently-wrong topology in
+  // the multi-line case: `P0-->A / A -- B / B-->P1` yielded edges=[P0->A, B->P1] instead
+  // of real Mermaid's [P0->A, A->P1]. Honest signal = supported:false + unsupported-arrow
+  // advisory. The best-effort the contract edges from surrounding on-contract lines are still
+  // in the model; only the block-level signal changes.
+  // Oracle: `A -- B` → Mermaid REJECTS (Parse error). `A <-- B` → same.
   for (const op of ["--", "<--"]) {
     const b = findMermaidBlocks(`graph TD\nA ${op} B`, true)[0];
-    assert.equal(b.supported, true, `${op}: gentle skip (not fatal)`);
-    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), [], `${op}: edge NOT emitted (off-contract quirk)`);
+    assert.equal(b.supported, false, `${op}: honest supported:false (not a gentle skip)`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), [], `${op}: edge NOT emitted`);
     assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
   }
-  // Surroundings survive the skip
+  // Surrounding the contract edges are preserved in the best-effort model even with FATAL
   for (const op of ["--", "<--"]) {
     const b = findMermaidBlocks(`graph TD\nP-->A\nA ${op} B\nB-->Q`, true)[0];
-    assert.ok(b.edges.some((e) => e.from === "P" && e.to === "A"), `${op}: surrounding P->A survives`);
+    assert.equal(b.supported, false, `${op} multi-line: supported:false (block cannot be trusted)`);
+    assert.ok(b.edges.some((e) => e.from === "P" && e.to === "A"), `${op}: surrounding P->A is in best-effort model`);
   }
+});
+
+// ─── F1 regression: multi-line 1-shaft dash topology corruption ────────────────
+// Oracle: `graph TD\nP0-->A\nA -- B\nB-->P1` → Mermaid RENDERS nodes={P0,A,P1},
+// edges={P0->A, A->P1} (line-merge quirk). The core cannot replicate the quirk
+// (off-contract: "labels are single-line"), so the honest signal is supported:false.
+// Prior behavior: supported:true, edges=[P0->A, B->P1] — phantom node B, fabricated
+// edge B->P1, silently dropped A->P1. This is the class fix: FATAL not gentle-skip.
+test("F1 regression — arm: A -- B (bare 2-dash open, solid)", () => {
+  // Oracle: `graph TD\nP0-->A\nA -- B\nB-->P1` → Mermaid RENDERS {P0->A, A->P1}
+  // (line-merge quirk). Old behavior: supported:true, edges=[P0->A, B->P1] — fabricates
+  // real B->P1 the contract edge (which IS there as a separate line) but drops the real A->P1 and
+  // the key pathology is the false-green supported:true on a mis-parsed block.
+  // Fix: supported:false. B->P1 still appears in best-effort (it's a valid the contract edge).
+  const b = findMermaidBlocks("graph TD\nP0 --> A\nA -- B\nB --> P1", true)[0];
+  assert.equal(b.supported, false, "supported:false — cannot replicate Mermaid line-merge");
+  // The A->B / B->A edges must NOT appear (the skip must not cross the -- line into a phantom)
+  assert.ok(!b.edges.some((e) => (e.from === "A" && e.to === "B") || (e.from === "B" && e.to === "A")),
+    "no phantom A<->B edge across the rejected operator");
+  assert.ok(b.edges.some((e) => e.from === "P0" && e.to === "A"), "real P0->A edge in best-effort model");
+  assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), "unsupported-arrow advisory");
+});
+
+test("F1 regression — arm: A <-- B (bare 2-dash reverse open, solid)", () => {
+  // Oracle: `graph TD\nP0-->A\nA <-- B\nB-->P1` → Mermaid REJECTS. Old behavior was
+  // supported:true with edges=[P0->A, (A->B skipped), B->P1]. The key pathology was
+  // NOT B->P1 (which is a valid the contract edge on its own line), but the false-green on the
+  // whole block: supported:true when the block cannot be trusted.
+  const b = findMermaidBlocks("graph TD\nP0 --> A\nA <-- B\nB --> P1", true)[0];
+  assert.equal(b.supported, false, "supported:false — Mermaid REJECTS bare <--");
+  // No phantom edge crossing the <-- line (the skip must not fabricate A->B or B->A)
+  assert.ok(!b.edges.some((e) => (e.from === "A" && e.to === "B") || (e.from === "B" && e.to === "A")),
+    "no phantom A<->B edge across the rejected operator");
+  assert.ok(b.edges.some((e) => e.from === "P0" && e.to === "A"), "real P0->A edge in best-effort model");
+  assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), "unsupported-arrow advisory");
+});
+
+test("F1 regression — standalone: A -- B yields supported:false + empty edges", () => {
+  const b = findMermaidBlocks("graph TD\nA -- B", true)[0];
+  assert.equal(b.supported, false);
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), []);
+});
+
+test("F1 regression — standalone: A <-- B yields supported:false + empty edges", () => {
+  const b = findMermaidBlocks("graph TD\nA <-- B", true)[0];
+  assert.equal(b.supported, false);
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), []);
+});
+
+// Cross-product guard: forms that must STILL parse (non-fatal controls)
+test("F1 regression — control arms: on-contract forms around the class still parse clean", () => {
+  // -- lbl --> (labeled solid arrow with 2-dash open) → on-contract, renders
+  const b1 = findMermaidBlocks("graph TD\nA -- label --> B", true)[0];
+  assert.equal(b1.supported, true, "labeled inline dash-arrow is on-contract");
+  assert.ok(b1.edges.some((e) => e.from === "A" && e.to === "B" && e.label === "label"), "labeled edge preserved");
+
+  // --- (3-dash open link) → renders, on-contract
+  const b2 = findMermaidBlocks("graph TD\nA --- B", true)[0];
+  assert.equal(b2.supported, true, "3-dash open link is on-contract");
+  assert.ok(b2.edges.some((e) => e.from === "A" && e.to === "B"), "--- edge preserved");
+
+  // <--- (3-dash reverse) → renders, on-contract
+  const b3 = findMermaidBlocks("graph TD\nA <--- B", true)[0];
+  assert.equal(b3.supported, true, "3-dash reverse on-contract");
+  assert.ok(b3.edges.some((e) => e.from === "A" && e.to === "B"), "<--- is on-contract and emits an edge");
+
+  // --> (solid arrow) → on-contract
+  const b4 = findMermaidBlocks("graph TD\nA --> B", true)[0];
+  assert.equal(b4.supported, true, "--> is on-contract");
+  assert.ok(b4.edges.some((e) => e.from === "A" && e.to === "B"), "arrow edge preserved");
+});
+
+// ─── F2 regression: bare o--/x-- (2-dash, no trailing) topology corruption ────
+// Oracle: `A o-- B` / `A x-- B` → Mermaid REJECTS. Longer forms like `o---`, `x----`,
+// `o--x`, `x--o` → Mermaid RENDERS (FIX-C catch-all, unsupportedRender, supported:true).
+// Prior behavior (F2): `A o-- B` fell into FIX-C catch-all as unsupportedRender →
+// supported:true, edges=[A->B]. Phantom A->B edge. Fix: explicit unsupportedFatal arms
+// for bare `o--`/`x--` (before the FIX-C catch-all).
+test("F2 regression — arm: A o-- B (bare 2-dash circle open)", () => {
+  const b = findMermaidBlocks("graph TD\nA o-- B", true)[0];
+  assert.equal(b.supported, false, "o-- is Mermaid-REJECTS: supported:false");
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), [], "no phantom A->B emitted");
+  assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), "unsupported-arrow advisory");
+});
+
+test("F2 regression — arm: A x-- B (bare 2-dash cross open)", () => {
+  const b = findMermaidBlocks("graph TD\nA x-- B", true)[0];
+  assert.equal(b.supported, false, "x-- is Mermaid-REJECTS: supported:false");
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), [], "no phantom A->B emitted");
+  assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), "unsupported-arrow advisory");
+});
+
+test("F2 regression — arm: multi-line o-- (P0-->A / A o-- B / B-->P1)", () => {
+  const b = findMermaidBlocks("graph TD\nP0 --> A\nA o-- B\nB --> P1", true)[0];
+  assert.equal(b.supported, false, "multi-line o-- block: supported:false");
+  assert.ok(!b.edges.some((e) => e.from === "A" && e.to === "B"), "no phantom A->B");
+  assert.ok(b.edges.some((e) => e.from === "P0" && e.to === "A"), "surrounding P0->A in best-effort model");
+});
+
+test("F2 regression — arm: multi-line x-- (P0-->A / A x-- B / B-->P1)", () => {
+  const b = findMermaidBlocks("graph TD\nP0 --> A\nA x-- B\nB --> P1", true)[0];
+  assert.equal(b.supported, false, "multi-line x-- block: supported:false");
+  assert.ok(!b.edges.some((e) => e.from === "A" && e.to === "B"), "no phantom A->B");
+  assert.ok(b.edges.some((e) => e.from === "P0" && e.to === "A"), "surrounding P0->A in best-effort model");
+});
+
+// Cross-product guard: longer o/x forms must STILL use FIX-C (unsupportedRender, supported:true)
+test("F2 regression — control arms: longer o/x forms still emit edge (renders in Mermaid)", () => {
+  const renderingForms = [
+    ["A o--- B", "o--- (3-dash open)"],
+    ["A x--- B", "x--- (3-dash open)"],
+    ["A o--x B", "o--x (2-dash cross close)"],
+    ["A x--o B", "x--o (2-dash circle close)"],
+    ["A o==> B", "o==> (thick arrow)"],
+    ["A x--o B", "x--o (2-dash circle close)"],
+  ];
+  for (const [input, label] of renderingForms) {
+    const b = findMermaidBlocks(`graph TD\n${input}`, true)[0];
+    assert.equal(b.supported, true, `${label}: supported:true (renders in Mermaid, FIX-C path)`);
+    assert.ok(b.edges.length > 0, `${label}: edge emitted (not silently dropped)`);
+    assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${label}: unsupported-arrow advisory`);
+  }
+});
+
+// ─── F3 regression: `A -- a--b --- B` false-green (supported:true + phantom a->B) ─
+// Oracle: `graph TD\nA -- a--b --- B` → Mermaid REJECTS (lexical error; `a--b` is not
+// valid Mermaid syntax). Prior behavior: supported:true, edges=[{from:a, to:B, label:b}].
+// Fix: bare `--` is now unsupportedFatal → supported:false. The phantom a->B may still
+// appear in the best-effort model (from the inline-label path after the fatal skip), but
+// the block-level signal is now honest: supported:false, parseError set.
+test("F3 regression: `A -- a--b --- B` is Mermaid-REJECTS → supported:false (not a false-green)", () => {
+  const b = findMermaidBlocks("graph TD\nA -- a--b --- B", true)[0];
+  assert.equal(b.supported, false, "Mermaid REJECTS this form; must be supported:false");
+  assert.ok(b.parseError, "parseError is set (block cannot be trusted)");
+  assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), "unsupported-arrow advisory");
+  // The block-level signal (supported:false) is what matters; the best-effort model
+  // may contain residual edges from partial parse but callers see the honest signal.
+});
+
+test("F3 regression — control: `A -- a---b ---- B` (3-dash close → middle node, on-contract)", () => {
+  // `A -- a---b ---- B`: Mermaid treats `a` as a middle node with label `a---b`,
+  // producing edges A->b and b->B. This IS on-contract (the 3-dash close makes `a`
+  // a real node id, not a glued form). Must remain supported:true.
+  const b = findMermaidBlocks("graph TD\nA -- a---b ---- B", true)[0];
+  assert.equal(b.supported, true, "triple-dash close: on-contract middle node, supported:true");
+  assert.ok(b.edges.length > 0, "edges present (A->b, b->B chain)");
 });
