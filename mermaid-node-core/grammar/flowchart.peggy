@@ -714,6 +714,15 @@ Subgraph
     if (header && header.fatalReason) {
       warnings.push(fatalWarn("invalid-subgraph-title", header.fatalReason, header.fatalReason, h.idLoc));
     }
+    // bare `subgraph` header (no id AND no title — `header` is null) is
+    // Mermaid-REJECTS (oracle: TypeError "Cannot read properties of undefined
+    // (reading 'text')"; the renderer expects at least one token after the
+    // keyword). Per the contract of the contract: Mermaid-rejects → supported:false +
+    // a clear "won't render" reason; the best-effort model is still exposed.
+    if (header === null) {
+      const bareReason = "bare `subgraph` with no id and no title — won't render in Mermaid (use `subgraph id` or `subgraph id[title]`)";
+      warnings.push(fatalWarn("bare-subgraph", bareReason, bareReason, h.idLoc));
+    }
     return { nodes, edges, subgraphs: [sgNode, ...subgraphs], warnings };
   }
 

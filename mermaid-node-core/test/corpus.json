@@ -5517,5 +5517,37 @@
       "inline-dash-label",
       "unsupported-arrow"
     ]
+  },
+  {
+    "id": "bare-subgraph-top-level",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph\nA --> B\nend",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" }
+    ],
+    "valid": true,
+    "expectSupported": false,
+    "note": "bare `subgraph` header with no id and no title is Mermaid-REJECTS (oracle: TypeError 'Cannot read properties of undefined (reading text)', won't render); must be supported:false + bare-subgraph warning; the body edges and the best-effort subgraph model are still exposed",
+    "expectWarnings": [
+      "bare-subgraph"
+    ]
+  },
+  {
+    "id": "bare-subgraph-nested",
+    "category": "subgraphs",
+    "input": "graph TD\nsubgraph outer\nsubgraph\nA --> B\nend\nend",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      { "from": "A", "to": "B" }
+    ],
+    "valid": true,
+    "expectSupported": false,
+    "note": "a bare `subgraph` nested inside a named subgraph is also Mermaid-REJECTS; the whole block is supported:false + bare-subgraph warning",
+    "expectWarnings": [
+      "bare-subgraph"
+    ]
   }
 ]

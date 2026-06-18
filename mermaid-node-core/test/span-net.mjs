@@ -92,12 +92,26 @@ export function checkSpans(block, lines, fail) {
       fail(`subgraph ${JSON.stringify(sg.id)}: line ${sg.line} out of range`);
       return checked;
     }
-    // editable id/title span: id text when hasId, else the title content (label)
+    // editable id/title span: id text when hasId, else the title content (label).
+    // Exception: a BARE `subgraph` header (hasId=false, label="") uses the
+    // `subgraph` keyword token as the editable span (an intentional fallback to
+    // keep idStart < idEnd <= line.length — an OOB zero-width span would be unsafe
+    // for write-back). In that case `slice(idStart,idEnd)` is `"subgraph"`, not "",
+    // so the standard content-equality check is replaced by the in-bounds/non-
+    // degenerate guard (which the existing focused test pins via an exact assertion).
     const idSlice = line.slice(sg.idStart, sg.idEnd);
-    const wantId = sg.hasId ? sg.id : sg.label;
-    if (idSlice !== wantId) {
-      fail(`subgraph ${JSON.stringify(sg.id)} (hasId=${sg.hasId}): slice(idStart=${sg.idStart},idEnd=${sg.idEnd})=${JSON.stringify(idSlice)} !== ${JSON.stringify(wantId)}`);
-      return checked;
+    if (!sg.hasId && sg.label === "") {
+      // Bare subgraph keyword fallback: span must be in-bounds + non-degenerate.
+      if (!(sg.idStart >= 0 && sg.idEnd > sg.idStart && sg.idEnd <= line.length)) {
+        fail(`subgraph "" (bare): keyword fallback span out of bounds: idStart=${sg.idStart} idEnd=${sg.idEnd} line.length=${line.length}`);
+        return checked;
+      }
+    } else {
+      const wantId = sg.hasId ? sg.id : sg.label;
+      if (idSlice !== wantId) {
+        fail(`subgraph ${JSON.stringify(sg.id)} (hasId=${sg.hasId}): slice(idStart=${sg.idStart},idEnd=${sg.idEnd})=${JSON.stringify(idSlice)} !== ${JSON.stringify(wantId)}`);
+        return checked;
+      }
     }
     // content-exclusive title span, where a title is present
     if (sg.titleStart !== undefined) {

@@ -1620,3 +1620,97 @@ test("F3 regression — control: `A -- a---b ---- B` (3-dash close → middle no
   assert.equal(b.supported, true, "triple-dash close: on-contract middle node, supported:true");
   assert.ok(b.edges.length > 0, "edges present (A->b, b->B chain)");
 });
+
+// ─── Bare-subgraph regression (the contract "Mermaid-rejects → supported:false") ────────
+//
+// Oracle: real Mermaid v11 rejects a bare `subgraph` keyword with no id and no
+// title with `TypeError: Cannot read properties of undefined (reading 'text')`.
+// The block is Mermaid-REJECTED, so per the contract (the contract): supported:false +
+// a clear "won't render" reason in parseError; best-effort model still exposed.
+// Cross-product: {top-level, nested} × {with body edges, empty body}.
+// Control arms (subgraphs with at least an id OR a title) must remain supported:true.
+
+test("bare-subgraph: top-level bare `subgraph` (no id, no title) is Mermaid-REJECTS → supported:false + bare-subgraph warning + parseError", () => {
+  // Oracle: real Mermaid v11 throws TypeError on this form — won't render.
+  const b = findMermaidBlocks("graph TD\nsubgraph\nA --> B\nend", true)[0];
+  assert.equal(b.supported, false, "bare subgraph: Mermaid-rejects → supported:false");
+  assert.ok(b.parseError, "parseError is set (won't render reason)");
+  const w = (b.warnings || []).find((x) => x.code === "bare-subgraph");
+  assert.ok(w, "bare-subgraph warning present");
+  assert.ok(typeof w.message === "string" && w.message.length > 0, "warning has a message");
+  assert.ok(typeof w.line === "number" && w.line >= 0, "warning has an in-range line");
+  // Best-effort model: the subgraph node is still exposed for editing (span invariants hold)
+  assert.equal(b.subgraphs.length, 1, "one subgraph in best-effort model");
+  const sg = b.subgraphs[0];
+  assert.equal(sg.hasId, false, "hasId false on bare form");
+  assert.equal(sg.id, "", "id is empty string");
+  assert.equal(sg.label, "", "label is empty string");
+  const lines = "graph TD\nsubgraph\nA --> B\nend".split("\n");
+  assert.ok(sg.idStart >= 0 && sg.idEnd > sg.idStart, "span is non-degenerate");
+  assert.ok(sg.idEnd <= lines[sg.line].length, "span end is in-bounds");
+  assert.equal(lines[sg.line].slice(sg.idStart, sg.idEnd), "subgraph", "span slices to the keyword token");
+  // titleStart/titleEnd are zero-width at the editable-token start (label is "" → slice must be "")
+  assert.equal(typeof sg.titleStart, "number", "titleStart present");
+  assert.equal(typeof sg.titleEnd, "number", "titleEnd present");
+  assert.equal(sg.titleEnd, sg.titleStart, "titleStart === titleEnd (zero-width for empty label)");
+  assert.equal(lines[sg.line].slice(sg.titleStart, sg.titleEnd), "", "titleSlice === \"\" === label");
+});
+
+test("bare-subgraph: top-level bare `subgraph` with an empty body is also Mermaid-REJECTS → supported:false", () => {
+  // An empty-body bare subgraph is the same class — the parser still rejects it.
+  const b = findMermaidBlocks("graph TD\nsubgraph\nend", true)[0];
+  assert.equal(b.supported, false, "empty-body bare subgraph → supported:false");
+  assert.ok(b.parseError, "parseError set");
+  assert.ok((b.warnings || []).some((w) => w.code === "bare-subgraph"), "bare-subgraph warning present");
+  assert.equal(b.subgraphs.length, 1, "subgraph in best-effort model");
+});
+
+test("bare-subgraph: nested bare `subgraph` inside a named subgraph → the whole block is supported:false", () => {
+  // The nested bare subgraph is also Mermaid-REJECTS. Since a Mermaid parse error is
+  // fatal to the whole diagram, the block-level signal is supported:false.
+  // Oracle: real Mermaid v11 throws TypeError on this form.
+  const src = "graph TD\nsubgraph outer\nsubgraph\nA --> B\nend\nend";
+  const b = findMermaidBlocks(src, true)[0];
+  assert.equal(b.supported, false, "nested bare subgraph → whole-block supported:false");
+  assert.ok(b.parseError, "parseError set");
+  assert.ok((b.warnings || []).some((w) => w.code === "bare-subgraph"), "bare-subgraph warning present");
+  // The outer named subgraph and the inner bare one are both in the best-effort model
+  assert.equal(b.subgraphs.length, 2, "both subgraphs in best-effort model");
+  const bare = b.subgraphs.find((s) => s.id === "");
+  assert.ok(bare, "the bare subgraph is in the model");
+  assert.equal(bare.hasId, false, "bare: hasId false");
+});
+
+test("bare-subgraph: bare-subgraph warning line is the absolute document line in a fenced block", () => {
+  // The bare-subgraph warning's line must be the ABSOLUTE document line (post line-offset).
+  const src = "# Doc\n\n```mermaid\ngraph TD\nsubgraph\nA --> B\nend\n```";
+  const b = findMermaidBlocks(src, false)[0];
+  assert.equal(b.supported, false, "supported:false");
+  const w = (b.warnings || []).find((x) => x.code === "bare-subgraph");
+  assert.ok(w, "bare-subgraph warning present");
+  const lines = src.split("\n");
+  assert.ok(w.line >= 0 && w.line < lines.length, `warning line ${w.line} is in document range`);
+  assert.ok(lines[w.line] !== undefined, "warning line resolves to a real document line");
+  // The subgraph keyword is on line index 4 (0-based): "# Doc"=0, ""=1, "```mermaid"=2, "graph TD"=3, "subgraph"=4
+  assert.equal(w.line, 4, "warning line is the ABSOLUTE document line (post line-offset)");
+});
+
+// Control arms — forms with at least an id OR a title must remain supported:true.
+// Cross-product: {id-only, id+title, title-only(bracket), title-only(quoted), free-title}.
+test("bare-subgraph control arms: subgraphs with an id or title remain supported:true", () => {
+  const controls = [
+    // [description, src]
+    ["id only",                  "graph TD\nsubgraph S\nA --> B\nend"],
+    ["id + bracket title",       "graph TD\nsubgraph S[My Title]\nA --> B\nend"],
+    ["id + quoted title",        'graph TD\nsubgraph S["My Title"]\nA --> B\nend'],
+    ["bracket title only",       "graph TD\nsubgraph [My Title]\nA --> B\nend"],
+    ["quoted title only",        'graph TD\nsubgraph "My Title"\nA --> B\nend'],
+    ["free-text title (no id)",  "graph TD\nsubgraph My Group\nA --> B\nend"],
+  ];
+  for (const [desc, src] of controls) {
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `${desc}: must remain supported:true`);
+    assert.equal(b.parseError, undefined, `${desc}: no parseError`);
+    assert.equal((b.warnings || []).filter((w) => w.code === "bare-subgraph").length, 0, `${desc}: no bare-subgraph warning`);
+  }
+});
