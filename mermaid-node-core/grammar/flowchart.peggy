@@ -103,34 +103,22 @@
 
   function makeNode(id, shapeInfo, loc, shapeLoc) {
     const s = span(loc);
-    // The node span must end exactly at the kept content, NEVER spanning a
-    // discarded off-contract hyphen tail (`receive-order` → kept id `receive`;
-    // `send-email[Label]` → kept id `send`). This upholds the content-exclusive
-    // invariant so a span-rename / relabel targets only the kept text and leaves
-    // the discarded tail untouched — a span that ran past it would let an edit
-    // silently overwrite `-order`/`-email`.
+    // Node span and label span. Two cases:
     //
-    //   - BARE id (no shape): the node text IS the kept id, so endChar =
-    //     startChar + id.length (`slice(startChar,endChar) === id`).
-    //   - SHAPED id: the node text is `id` + shape. For a NON-truncated id the
-    //     kept id sits flush against the shape opener, so endChar = the matched
-    //     rule end (the whole `A[Start]`). For a hyphen-TRUNCATED shaped id the
-    //     discarded tail sits BETWEEN the kept id and the shape (`send` ┃-email┃
-    //     `[Label]`), so a single contiguous span can't cover both the kept id
-    //     and the shape without also covering the discarded tail. We bound the
-    //     span to the kept id alone (like the bare arm) — the off-contract
-    //     `-email[Label]` remainder is left for the consumer to warn on, and
-    //     `slice(startChar,endChar) === id` holds for the truncated case too,
-    //     matching the bare-truncated arm the corpus already certifies. The
-    //     LABEL span (labelStart/labelEnd) is a SEPARATE concern: even when the
-    //     node span is bounded to the kept id, the bracketed label content is
-    //     real and editable, so the label span keeps pointing at that content
-    //     (`slice(labelStart,labelEnd) === label`) rather than being zeroed.
+    //   - BARE id (no shape): the node text IS the id, so endChar =
+    //     startChar + id.length (`slice(startChar,endChar) === id`). A bare
+    //     hyphenated id (`receive-order`) is now read in full (the contract), so its
+    //     span covers the full text. Label equals the id for bare nodes.
+    //   - SHAPED id: the node text is `id` + shape and the id sits flush against
+    //     the shape opener, so endChar = the matched rule end (the whole
+    //     `send-email[Label]`). The LABEL span is INDEPENDENT: it points at the
+    //     content INSIDE the brackets (exclusive of brackets/quotes) so a relabel
+    //     targets only the content, never the surrounding syntax.
     //
-    // Truncation is detected positionally: shapeLoc is captured right AFTER the
-    // consumed id (incl. any discarded hyphen tail) and right BEFORE the shape
-    // opener, so a gap between `startChar + id.length` and the shape-open column
-    // means the id was truncated.
+    // The historical truncation-detection branch (keptIdEnd vs shapeOpenCol) is
+    // retained for correctness but is now unreachable: after the the contract full-id
+    // fix the full hyphenated id is flush against the shape opener (no gap), so
+    // `truncated` is always false. The non-truncated arm is the live path.
     let endChar;
     let labelStart;
     let labelEnd;
@@ -143,17 +131,9 @@
       const shapeOpenCol = shapeLoc ? shapeLoc.start.column - 1 : keptIdEnd;
       const truncated = shapeOpenCol > keptIdEnd;
       if (truncated) {
-        // Hyphen-truncated shaped id — bound the NODE span to the kept id (like
-        // the bare arm), so a span-rename can't overwrite the discarded `-email`
-        // tail. But the LABEL span is INDEPENDENT of the node span: the shape's
-        // bracketed content is still present and editable, so the label span must
-        // point at that real in-bracket content (`shapeInfo` carries it, captured
-        // via HERE against the source columns inside the brackets — unaffected by
-        // the truncation). Zeroing it (labelStart === labelEnd) made a relabel a
-        // silent no-op (an empty edit). Keep the node span tight to the kept id,
-        // but let labelStart/labelEnd slice to the real label content so
-        // `source.slice(labelStart,labelEnd) === label` holds for the shaped-
-        // truncated case across every shape.
+        // Unreachable after the the contract full-id fix (retained for safety): if a
+        // gap ever appears between the id end and the shape opener, bound the span
+        // to the id alone and keep the label span pointing at the bracket content.
         endChar = keptIdEnd;
         labelStart = shapeInfo.labelStart;
         labelEnd = shapeInfo.labelEnd;
@@ -830,17 +810,19 @@ EdgeChain
         out.nodes.push(makeNode(ref.id, ref.shapeInfo, ref.loc, ref.shapeLoc));
       }
     };
-    // A hyphen-truncated endpoint (`send-email` → `send`) RENDERS as a longer id in
-    // Mermaid, so we keep the truncate behavior + advise. Fires for every truncated
-    // ref in any group (deduped per code|line).
+    // A hyphenated id (`send-email`) RENDERS in Mermaid as the full id but is
+    // off-contract for authoring (snake_case is the canonical convention). Per the contract
+    // v1.6 it is read in full + advised with a `non-canonical-id` warning so the
+    // caller can prompt the author to rename. Fires for every hyphenated ref in
+    // any group (deduped per code|line so a chain like `foo-bar --> baz-qux`
+    // emits one advisory per distinct id, not one per edge-endpoint occurrence).
     const noteTruncation = (ref) => {
       if (ref.truncated) {
-        // Two DISTINCT truncated ids on one line (`foo-bar --> baz-qux`) must EACH
-        // warn — the bare code|line key would collapse them to one (the baz
-        // truncation went silent). Ride the kept id as `_dedup` so the key widens to
-        // code@line@keptId; a SAME kept-id repeat (PEG backtracking, or `foo-bar -->
-        // foo-qux`) still collapses (same key), matching the reserved-id endpoint path.
-        const tw = warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc);
+        // Two DISTINCT hyphenated ids on one line (`foo-bar --> baz-qux`) must EACH
+        // warn — the bare code|line key would collapse them to one. Ride the full id
+        // as `_dedup` so the key widens to code@line@fullId; a SAME-id repeat
+        // (PEG backtracking, or `foo-bar --> foo-qux`) still collapses (same key).
+        const tw = warn("non-canonical-id", `hyphenated id "${ref.id}" is non-canonical; prefer snake_case`, ref.idLoc);
         tw._dedup = ref.id;
         pushWarn(tw);
       }
@@ -1031,10 +1013,10 @@ NodeStmt
   {
     const warnings = [];
     if (ref.truncated) {
-      // Two truncated bare nodes in one `;` chain (`foo-bar; baz-qux`) are distinct
-      // same-line truncations — ride the kept id as `_dedup` so each surfaces (the
-      // bare code|line key collapsed them to one). Same-id repeats still collapse.
-      const tw = warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc);
+      // Two hyphenated bare nodes in one `;` chain (`foo-bar; baz-qux`) are distinct
+      // same-line non-canonical ids — ride the full id as `_dedup` so each surfaces
+      // (the bare code|line key would collapse them to one). Same-id repeats still collapse.
+      const tw = warn("non-canonical-id", `hyphenated id "${ref.id}" is non-canonical; prefer snake_case`, ref.idLoc);
       tw._dedup = ref.id;
       warnings.push(tw);
     }
@@ -1064,26 +1046,33 @@ NodeRef
 // part of a longer id, so per the renders-it rule we keep parsing (the documented
 // truncate behavior) and attach an `id-truncated` advisory rather than failing.
 NodeIdRef
-  = id:NodeId { return { id, truncated: text() !== id, loc: location() }; }
+  = id:NodeId { return { id, truncated: id.includes("-"), loc: location() }; }
 
 // HERE captures a zero-width location at the current input position, so callers
 // can build a precise start..end span around a following construct.
 HERE = "" { return location(); }
 
 // ─── Identifiers ──────────────────────────────────────────────────────────────
-// Supported ids are snake_case: [A-Za-z0-9_]. A hyphenated compound (`receive-order`)
-// is off-contract — we take the prefix `receive` and discard `-order`, but
-// ONLY when the hyphen is followed by an id char (so a `-`/`-.` that begins an
-// arrow operator is left for the Link rule).
+// The canonical author convention is snake_case: [A-Za-z0-9_]. A hyphenated
+// compound (`receive-order`) is off-contract for authoring but RENDERS in real
+// Mermaid and must be read as the FULL id (the contract: "parse it AS MERMAID DOES —
+// read a hyphenated id as the FULL id + a non-canonical-id warning, NOT truncate
+// it to `receive`"). The `HyphenTail` segments are consumed and included in the
+// returned id; the arrow context guard (`!("-"/".")`) prevents a `-` that begins
+// a `--`/`-.` arrow shaft from being consumed as a hyphen-id segment.
 
 NodeId "node id"
-  = first:[A-Za-z0-9_] rest:IdChar* HyphenTail*
-  { return first + rest.join(""); }
+  = first:[A-Za-z0-9_] rest:IdChar* tails:HyphenTail*
+  { return first + rest.join("") + tails.join(""); }
 
 IdChar = [A-Za-z0-9_]
 
-// A hyphen that begins a compound id (followed by id chars), NOT an arrow.
+// A hyphen-and-suffix segment of a compound id (NOT an arrow opener). Returns
+// the full segment text (including the leading `-`) so NodeId can concatenate
+// all segments into the complete hyphenated id. The `!("-"/".")` guard prevents
+// a `--` or `-.` arrow shaft from being consumed here.
 HyphenTail = "-" !("-" / ".") IdChar+
+  { return text(); }
 
 // A plain id for subgraph headers (allows internal hyphens since it is not in
 // arrow context). The leading-char class is [A-Za-z0-9_] — same as NodeId's —
@@ -1336,22 +1325,35 @@ Link "arrow"
   / "o--" "-"* ">"           { return link(undefined, false, "arrow",  "solid",  false, leadingLen(text()), { leadingHead: true }); }
   / "x--" "-"* ">"           { return link(undefined, false, "arrow",  "solid",  false, leadingLen(text()), { leadingHead: true }); }
 
-  // reverse-only (a left head, no right head): `<--`, `<---`, `<----` (variadic).
-  // Oracle: arrow_open, reversed (caller swaps from/to). Tried AFTER the bidir `<-->`
-  // arm so the trailing `>` is always claimed as the second head first.
-  // `<---`+ (≥3 dashes reverse) RENDERS in Mermaid (reversed open edge). Bare `<--`
-  // (exactly 2 dashes) is a Mermaid-REJECTS form standalone (`A <-- B` → Parse error)
-  // but RENDERS embedded via the same line-merge quirk as bare `--`, so — exactly like
-  // bare `--` — it is the GENTLE non-fatal `unsupported` skip (drop this edge, keep
-  // surroundings, block supported:true) rather than a FATAL: a fatal here would
-  // regress the embedded multi-edge case (silently losing the surrounding edges, a the contract
-  // violation). A standalone bare `<--` thus yields an empty/best-effort block.
-  / "<--" "-"+                { return link(undefined, true,  "open",   "solid",  false, linkLen(text(), "solid", true), {}); }
+  // reverse-only (a `<` indicator on the left, NO `>` on the right): `<---`+
+  // (variadic ≥3 dashes), `<===`+ (≥3 equals), `<-.-` / `<-..-` (dotted).
+  //
+  // Oracle (real Mermaid v11.15.0, oracle-confirmed): ALL of these are edge-model
+  // items where `start` = the LEFT node, `end` = the RIGHT node — there is NO
+  // from/to swap in Mermaid's data model. `C <--- D` → start=C, end=D
+  // (type=arrow_open). The `<` is a visual indicator only; Mermaid records the
+  // left-to-right textual order as start→end. `reversed:false` here matches that.
+  //
+  // Additionally, `<===`+ normalizes stroke to `normal` (= our "solid") in Mermaid's
+  // model (oracle: `G <=== H` → stroke="normal"), so we report `"solid"` not `"thick"`.
+  // The dotted form keeps `"dotted"` (oracle: `A <-.- B` → stroke="dotted").
+  //
+  // Tried AFTER the bidir `<-->` arm so the trailing `>` is always claimed as the
+  // second head first.
+  //
+  // Bare `<--` (exactly 2 dashes) is a Mermaid-REJECTS form standalone (`A <-- B`
+  // → Parse error) but RENDERS embedded via the same line-merge quirk as bare `--`,
+  // so — exactly like bare `--` — it is the GENTLE non-fatal `unsupported` skip (drop
+  // this edge, keep surroundings, block supported:true) rather than a FATAL: a fatal
+  // here would silently lose the surrounding on-contract edges (a contract violation).
+  // A standalone bare `<--` thus yields an empty/best-effort block. Bare `<==` (2 equals)
+  // is a Mermaid-REJECTS form even embedded → FATAL (v1.6 #3).
+  / "<--" "-"+                { return link(undefined, false, "open",   "solid",  false, linkLen(text(), "solid", true), {}); }
   / "<--"                     { return link(undefined, false, "open",   "solid",  false, 1, { unsupported: true }); }
-  // `<===`+ (≥3 equals reverse) RENDERS; bare `<==` (exactly 2) → FATAL (v1.6 #3).
-  / "<==" "="+                { return link(undefined, true,  "open",   "thick",  false, linkLen(text(), "thick", true), {}); }
+  // `<===`+ (≥3 equals reverse) RENDERS; stroke normalizes to "solid" (oracle); bare `<==` → FATAL (v1.6 #3).
+  / "<==" "="+                { return link(undefined, false, "open",   "solid",  false, linkLen(text(), "thick", true), {}); }
   / "<=="                     { return link(undefined, false, "open",   "thick",  false, 1, { unsupportedFatal: true }); }
-  / "<-." "."* "-"            { return link(undefined, true,  "open",   "dotted", false, linkLen(text(), "dotted", true), {}); }
+  / "<-." "."* "-"            { return link(undefined, false, "open",   "dotted", false, linkLen(text(), "dotted", true), {}); }
 
   // INVISIBLE link `~~~` / `~~~~` (≥3 tildes; `~~` is a Mermaid lexical error).
   // Oracle: arrow_open / stroke:invisible / variadic length.

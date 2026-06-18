@@ -327,16 +327,16 @@ test("inline-dash/thick edge label: full family parses to the stripped label", (
   assert.equal(findMermaidBlocks("graph TD\nA -->|label| B", true)[0].edges[0].label, "label");
 });
 
-test("bare hyphenated-id node span is bounded to the kept id (slice === id)", () => {
-  // `receive-order` truncates to `receive`; the node span must cover ONLY the kept
-  // id so a span-rename can't overwrite the discarded `-order` tail.
+test("bare hyphenated-id node span covers the FULL id (slice === id)", () => {
+  // `receive-order` is read as the full id; the node span covers all of it so
+  // slice(startChar, endChar) === "receive-order" — the rename target is exact.
   const src = "graph TD\nreceive-order";
   const n = findMermaidBlocks(src, true)[0].nodes[0];
   const line = src.split("\n")[n.line];
-  assert.equal(n.id, "receive");
-  assert.equal(n.label, "receive");
-  assert.equal(line.slice(n.startChar, n.endChar), "receive");
-  assert.equal(line.slice(n.labelStart, n.labelEnd), "receive");
+  assert.equal(n.id, "receive-order");
+  assert.equal(n.label, "receive-order");
+  assert.equal(line.slice(n.startChar, n.endChar), "receive-order");
+  assert.equal(line.slice(n.labelStart, n.labelEnd), "receive-order");
   // A plain (non-hyphenated) bare id keeps the same invariant.
   const src2 = "graph TD\nplain";
   const n2 = findMermaidBlocks(src2, true)[0].nodes[0];
@@ -562,22 +562,30 @@ test("reserved-keyword family (v1.6): a reserved edge endpoint makes the block s
 });
 
 // Hyphenated-span family: {bare, shaped} × {hyphenated, plain}. The node span must
-// slice to the kept id for a hyphen-truncated id (so a span-edit can't overwrite
-// the discarded tail), and to the whole node text for a plain shaped id.
-test("hyphenated-span family: a SHAPED hyphenated id's span is bounded to the kept id (slice === id)", () => {
-  for (const body of ["send-email[Label]", "send-email(R)", "send-email{D}", "send-email([S])", "send-email[[Sub]]"]) {
+// cover the FULL declaration text for a shaped node (id + shape), including for
+// hyphenated ids (the contract: read the full id, never truncate).
+test("hyphenated-span family: a SHAPED hyphenated id's span covers the whole declaration (slice === id+shape)", () => {
+  const cases = [
+    ["send-email[Label]",  "send-email"],
+    ["send-email(R)",      "send-email"],
+    ["send-email{D}",      "send-email"],
+    ["send-email([S])",    "send-email"],
+    ["send-email[[Sub]]",  "send-email"],
+  ];
+  for (const [body, wantId] of cases) {
     const src = `graph TD\n${body}`;
     const n = findMermaidBlocks(src, true)[0].nodes[0];
-    assert.equal(n.id, "send", `${body}: id truncated to send`);
-    assert.equal(src.split("\n")[n.line].slice(n.startChar, n.endChar), "send", `${body}: span slices to kept id, not the discarded tail`);
+    assert.equal(n.id, wantId, `${body}: id is full id ${wantId}`);
+    assert.equal(src.split("\n")[n.line].slice(n.startChar, n.endChar), body, `${body}: span covers whole declaration`);
   }
   // multi-hyphen
   const n2 = findMermaidBlocks("graph TD\na-b-c-d[Z]", true)[0].nodes[0];
-  assert.equal("graph TD\na-b-c-d[Z]".split("\n")[n2.line].slice(n2.startChar, n2.endChar), "a");
+  assert.equal(n2.id, "a-b-c-d");
+  assert.equal("graph TD\na-b-c-d[Z]".split("\n")[n2.line].slice(n2.startChar, n2.endChar), "a-b-c-d[Z]");
   // as an edge source
   const b3 = findMermaidBlocks("graph TD\nsend-email[L] --> B", true)[0];
-  const ns = b3.nodes.find((x) => x.id === "send");
-  assert.equal("graph TD\nsend-email[L] --> B".split("\n")[ns.line].slice(ns.startChar, ns.endChar), "send");
+  const ns = b3.nodes.find((x) => x.id === "send-email");
+  assert.equal("graph TD\nsend-email[L] --> B".split("\n")[ns.line].slice(ns.startChar, ns.endChar), "send-email[L]");
 });
 
 test("hyphenated-span family: a PLAIN (non-truncated) shaped id keeps the WHOLE-node-text span", () => {
@@ -717,10 +725,10 @@ test("v1.4 C: inline-dash edge labels carry the inline-dash-label advisory; pipe
   assert.deepEqual(codesOf(findMermaidBlocks("graph TD\nA --> B", true)[0]), []);
 });
 
-test("v1.4 C: a hyphen-truncated id carries the id-truncated advisory (bare, shaped, endpoint)", () => {
+test("v1.4 C: a hyphenated id carries the non-canonical-id advisory (bare, shaped, endpoint)", () => {
   for (const body of ["send-email", "send-email[L]", "send-email --> B", "A --> recv-order"]) {
     const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
-    assert.deepEqual(codesOf(b), ["id-truncated"], `${body}: id-truncated advisory`);
+    assert.deepEqual(codesOf(b), ["non-canonical-id"], `${body}: non-canonical-id advisory`);
   }
   // a plain (non-hyphenated) id carries no advisory
   assert.deepEqual(codesOf(findMermaidBlocks("graph TD\nplain --> B", true)[0]), []);
@@ -886,25 +894,26 @@ test("rank1 regression: a 3+-shaft opener is two bare edges (genuine middle node
 test("rank3: same-line warnings dedupe per DISTINCT token, not per (code,line)", () => {
   const countOf = (b, code) => (b.warnings || []).filter((w) => w.code === code).length;
 
-  // two DISTINCT truncated ids on one edge line → TWO id-truncated warnings
+  // two DISTINCT hyphenated ids on one edge line → TWO non-canonical-id warnings
   const twoEdge = findMermaidBlocks("graph TD\nfoo-bar --> baz-qux", true)[0];
-  assert.deepEqual(twoEdge.edges.map((e) => `${e.from}->${e.to}`), ["foo->baz"]);
-  assert.equal(countOf(twoEdge, "id-truncated"), 2, "foo + baz each warn");
+  assert.deepEqual(twoEdge.edges.map((e) => `${e.from}->${e.to}`), ["foo-bar->baz-qux"]);
+  assert.equal(countOf(twoEdge, "non-canonical-id"), 2, "foo-bar + baz-qux each warn");
 
-  // SAME kept id on one line → ONE warning (foo-bar --> foo-qux both keep `foo`)
-  const sameEdge = findMermaidBlocks("graph TD\nfoo-bar --> foo-qux", true)[0];
-  assert.equal(countOf(sameEdge, "id-truncated"), 1, "same kept id collapses to one");
+  // SAME full id on one line → ONE warning (foo-bar --> foo-qux: both are `foo-bar` / `foo-qux` but only foo-bar repeats)
+  // Actually foo-bar and foo-qux are distinct ids, so both warn. Use foo-bar --> foo-bar:
+  const sameEdge = findMermaidBlocks("graph TD\nfoo-bar --> foo-bar", true)[0];
+  assert.equal(countOf(sameEdge, "non-canonical-id"), 1, "same full id collapses to one");
 
-  // a 3-link chain with three distinct kept ids → THREE warnings
+  // a 3-link chain with three distinct hyphenated ids → THREE warnings
   const threeChain = findMermaidBlocks("graph TD\nfoo-bar --> baz-qux --> qux-zap", true)[0];
-  assert.equal(countOf(threeChain, "id-truncated"), 3, "three distinct kept ids → three warnings");
+  assert.equal(countOf(threeChain, "non-canonical-id"), 3, "three distinct hyphenated ids → three warnings");
 
-  // two truncated bare nodes in a `;` chain → TWO warnings
+  // two hyphenated bare nodes in a `;` chain → TWO warnings
   const twoSemi = findMermaidBlocks("graph TD\nfoo-bar; baz-qux", true)[0];
-  assert.equal(countOf(twoSemi, "id-truncated"), 2, "two distinct NodeStmt truncations in a ; chain");
-  // same kept id in a `;` chain → ONE
-  const sameSemi = findMermaidBlocks("graph TD\nfoo-bar; foo-qux", true)[0];
-  assert.equal(countOf(sameSemi, "id-truncated"), 1, "same kept id in a ; chain collapses");
+  assert.equal(countOf(twoSemi, "non-canonical-id"), 2, "two distinct NodeStmt hyphenated ids in a ; chain");
+  // same full id in a `;` chain → ONE
+  const sameSemi = findMermaidBlocks("graph TD\nfoo-bar; foo-bar", true)[0];
+  assert.equal(countOf(sameSemi, "non-canonical-id"), 1, "same full id in a ; chain collapses");
 
   // two DISTINCT reserved keywords skipped in a `;` chain → TWO reserved-id warnings
   const twoReserved = findMermaidBlocks("graph TD\nend[X]; style[Y]", true)[0];
@@ -1003,7 +1012,9 @@ test("arrow metadata matches the real-Mermaid oracle table (head/stroke/bidir/le
     ["o==o",  "circle", "thick",     true,  1],
     ["x-.-x", "cross",  "dotted",    true,  1],
     ["o-.-o", "circle", "dotted",    true,  1],
-    // reverse-only (left head, no right head → arrow_open; reversed swaps from/to)
+    // reverse-only (left `<` indicator, no `>` on the right → arrow_open; oracle:
+    // start=left/end=right, NO from/to swap — C is from, D is to, matching Mermaid's
+    // data model; the `<` is a visual indicator only)
     ["<---",  "open",   "solid",     false, 2],
     ["<----", "open",   "solid",     false, 3],
     // leading head (decorative per oracle → arrow_point; length shifted +1)
@@ -1020,11 +1031,11 @@ test("arrow metadata matches the real-Mermaid oracle table (head/stroke/bidir/le
     assert.equal(e.stroke, stroke, `${op}: stroke`);
     assert.equal(e.bidirectional, bidirectional, `${op}: bidirectional`);
     assert.equal(e.length, length, `${op}: length`);
-    // reverse swaps from/to; everything else is C->D
-    const wantFrom = op.startsWith("<") && !op.endsWith(">") ? "D" : "C";
-    const wantTo = wantFrom === "D" ? "C" : "D";
-    assert.equal(e.from, wantFrom, `${op}: from`);
-    assert.equal(e.to, wantTo, `${op}: to`);
+    // oracle: ALL forms are C->D (left-node is from, right-node is to).
+    // The `<` prefix is a visual indicator only — Mermaid's data model preserves
+    // left-to-right order for reverse-only arrows (confirmed oracle-pinned v11.15.0).
+    assert.equal(e.from, "C", `${op}: from`);
+    assert.equal(e.to, "D", `${op}: to`);
   }
 });
 
@@ -1112,4 +1123,194 @@ test("edge metadata is ADDITIVE: from/to/label/positions intact alongside new fi
   assert.equal(e.stroke, "solid");
   assert.equal(e.bidirectional, false);
   assert.equal(e.length, 1);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arm-enumerated regression pins — hyphenated ids (the contract full-id fix)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// HYPHEN cross-product: {bare, shaped × shape-family, edge-endpoint × src/dst,
+// chain} × {single-hyphen, multi-hyphen}. Oracle: full id in model, non-canonical-id
+// warning, NO truncation.
+test("hyphen full-id: bare nodes read the full hyphenated id + non-canonical-id warning", () => {
+  // Bare single-hyphen ids — each reads the full id
+  for (const [body, wantId] of [
+    ["receive-order",  "receive-order"],
+    ["ship-order",     "ship-order"],
+    ["a-b",           "a-b"],
+    ["a-b-c",         "a-b-c"],
+    ["a-b-c-d",       "a-b-c-d"],
+  ]) {
+    const src = `graph TD\n${body}`;
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `${body}: supported`);
+    assert.equal(b.nodes.length, 1, `${body}: one node`);
+    assert.equal(b.nodes[0].id, wantId, `${body}: full id`);
+    assert.equal(b.nodes[0].label, wantId, `${body}: label = id for bare node`);
+    // span covers the full id text
+    const line = src.split("\n")[b.nodes[0].line];
+    assert.equal(line.slice(b.nodes[0].startChar, b.nodes[0].endChar), wantId, `${body}: span slices to full id`);
+    assert.deepEqual(codesOf(b), ["non-canonical-id"], `${body}: non-canonical-id advisory`);
+  }
+});
+
+test("hyphen full-id: shaped nodes read the full id; span covers whole declaration", () => {
+  // Cross-product: shape-family × single/multi hyphen
+  const cases = [
+    // [body, wantId, wantLabel]
+    ["send-email[Label]",   "send-email",  "Label"],
+    ["send-email(R)",       "send-email",  "R"],
+    ["send-email{D}",       "send-email",  "D"],
+    ["send-email([S])",     "send-email",  "S"],
+    ["send-email[[Sub]]",   "send-email",  "Sub"],
+    ["send-email[(Store)]", "send-email",  "Store"],
+    ["send-email((Rnd))",   "send-email",  "Rnd"],
+    ["send-email{{Hex}}",   "send-email",  "Hex"],
+    ["send-email>Asym]",    "send-email",  "Asym"],
+    ["a-b-c-d[Z]",          "a-b-c-d",    "Z"],
+  ];
+  for (const [body, wantId, wantLabel] of cases) {
+    const src = `graph TD\n${body}`;
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `${body}: supported`);
+    assert.equal(b.nodes[0].id, wantId, `${body}: full id`);
+    assert.equal(b.nodes[0].label, wantLabel, `${body}: label from shape`);
+    // node span covers the whole declaration (id + shape)
+    const line = src.split("\n")[b.nodes[0].line];
+    assert.equal(line.slice(b.nodes[0].startChar, b.nodes[0].endChar), body, `${body}: node span = whole decl`);
+    // label span slices to label content exactly
+    assert.equal(line.slice(b.nodes[0].labelStart, b.nodes[0].labelEnd), wantLabel, `${body}: label span`);
+    assert.deepEqual(codesOf(b), ["non-canonical-id"], `${body}: non-canonical-id advisory`);
+  }
+});
+
+test("hyphen full-id: edge endpoints read the full hyphenated id; edges carry full ids", () => {
+  // Source, destination, and both-hyphenated
+  const cases = [
+    ["receive-order --> B",       "receive-order", "B"],
+    ["A --> ship-order",          "A",             "ship-order"],
+    ["receive-order --> ship-order", "receive-order", "ship-order"],
+    ["a-b-c --> d-e-f",          "a-b-c",         "d-e-f"],
+  ];
+  for (const [body, wantFrom, wantTo] of cases) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, true, `${body}: supported`);
+    assert.equal(b.edges.length, 1, `${body}: one edge`);
+    assert.equal(b.edges[0].from, wantFrom, `${body}: from`);
+    assert.equal(b.edges[0].to, wantTo, `${body}: to`);
+    // non-canonical-id warning present iff any id is hyphenated
+    const hasHyphenSrc = wantFrom.includes("-");
+    const hasHyphenDst = wantTo.includes("-");
+    if (hasHyphenSrc || hasHyphenDst) {
+      assert.ok(codesOf(b).includes("non-canonical-id"), `${body}: non-canonical-id advisory present`);
+    } else {
+      assert.deepEqual(codesOf(b), [], `${body}: no advisory for plain ids`);
+    }
+  }
+});
+
+test("hyphen full-id: shaped hyphenated endpoint in edge — node emitted with full id", () => {
+  // send-email[L] --> B: node send-email emitted, edge send-email->B
+  const src = "graph TD\nsend-email[L] --> B";
+  const b = findMermaidBlocks(src, true)[0];
+  assert.equal(b.supported, true);
+  assert.equal(b.nodes.length, 1);
+  assert.equal(b.nodes[0].id, "send-email");
+  assert.equal(b.edges.length, 1);
+  assert.equal(b.edges[0].from, "send-email");
+  assert.equal(b.edges[0].to, "B");
+  // span covers send-email[L]
+  const line = src.split("\n")[b.nodes[0].line];
+  assert.equal(line.slice(b.nodes[0].startChar, b.nodes[0].endChar), "send-email[L]");
+});
+
+test("hyphen full-id: plain (non-hyphenated) ids carry NO non-canonical-id warning", () => {
+  // Verify the warning fires ONLY on hyphenated ids
+  for (const body of ["order_ship --> confirm", "A --> B", "process[X]", "node_1 --> node_2"]) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.deepEqual(codesOf(b), [], `${body}: no non-canonical-id for plain ids`);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arm-enumerated regression pins — reverse arrow direction (the contract no-swap fix)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// REVERSE cross-product: {solid, thick, dotted} × {shaft-lengths 3..5} × direction.
+// Oracle: from=left-node, to=right-node (no swap). The `<` is a visual indicator only.
+test("reverse arrow direction: solid <---+ keeps left-to-right order (from=left, to=right)", () => {
+  // Variable shaft lengths
+  for (const [op, wantLen] of [["<---", 2], ["<----", 3], ["<-----", 4]]) {
+    const b = findMermaidBlocks(`graph TD\nC ${op} D`, true)[0];
+    assert.equal(b.supported, true, `${op}: supported`);
+    assert.equal(b.edges.length, 1, `${op}: one edge`);
+    assert.equal(b.edges[0].from, "C", `${op}: from=C (left node, no swap)`);
+    assert.equal(b.edges[0].to, "D", `${op}: to=D (right node, no swap)`);
+    assert.equal(b.edges[0].head, "open", `${op}: head=open (no arrowhead)`);
+    assert.equal(b.edges[0].stroke, "solid", `${op}: stroke=solid`);
+    assert.equal(b.edges[0].length, wantLen, `${op}: length=${wantLen}`);
+    assert.deepEqual(codesOf(b), [], `${op}: no warning`);
+  }
+});
+
+test("reverse arrow direction: thick <===+ keeps left-to-right order; stroke=solid (Mermaid normalizes)", () => {
+  // Mermaid reports stroke=normal (our 'solid') for <=== — oracle-confirmed
+  for (const [op, wantLen] of [["<===", 2], ["<====", 3], ["<=====", 4]]) {
+    const b = findMermaidBlocks(`graph TD\nG ${op} H`, true)[0];
+    assert.equal(b.supported, true, `${op}: supported`);
+    assert.equal(b.edges.length, 1, `${op}: one edge`);
+    assert.equal(b.edges[0].from, "G", `${op}: from=G (no swap)`);
+    assert.equal(b.edges[0].to, "H", `${op}: to=H (no swap)`);
+    assert.equal(b.edges[0].head, "open", `${op}: head=open`);
+    assert.equal(b.edges[0].stroke, "solid", `${op}: stroke=solid (Mermaid normalizes thick reverse to normal)`);
+    assert.equal(b.edges[0].length, wantLen, `${op}: length=${wantLen}`);
+    assert.deepEqual(codesOf(b), [], `${op}: no warning`);
+  }
+});
+
+test("reverse arrow direction: dotted <-.-+ keeps left-to-right order; stroke=dotted", () => {
+  for (const [op, wantLen] of [["<-.-", 1], ["<-..-", 2], ["<-...-", 3]]) {
+    const b = findMermaidBlocks(`graph TD\nM ${op} N`, true)[0];
+    assert.equal(b.supported, true, `${op}: supported`);
+    assert.equal(b.edges.length, 1, `${op}: one edge`);
+    assert.equal(b.edges[0].from, "M", `${op}: from=M (no swap)`);
+    assert.equal(b.edges[0].to, "N", `${op}: to=N (no swap)`);
+    assert.equal(b.edges[0].head, "open", `${op}: head=open`);
+    assert.equal(b.edges[0].stroke, "dotted", `${op}: stroke=dotted`);
+    assert.equal(b.edges[0].length, wantLen, `${op}: length=${wantLen}`);
+    assert.deepEqual(codesOf(b), [], `${op}: no warning`);
+  }
+});
+
+test("reverse arrow direction: shaped endpoints — nodes emitted, direction preserved", () => {
+  // A[Start] <--- B[End]: from=A, to=B, both nodes emitted
+  const b = findMermaidBlocks("graph TD\nA[Start] <--- B[End]", true)[0];
+  assert.equal(b.supported, true);
+  assert.equal(b.edges[0].from, "A");
+  assert.equal(b.edges[0].to, "B");
+  assert.deepEqual(b.nodes.map((n) => n.id), ["A", "B"]);
+  assert.deepEqual(codesOf(b), []);
+  // with thick
+  const b2 = findMermaidBlocks("graph TD\nX[P] <=== Y[Q]", true)[0];
+  assert.equal(b2.edges[0].from, "X");
+  assert.equal(b2.edges[0].to, "Y");
+});
+
+test("reverse arrow direction: chain context — surrounding edges and direction all correct", () => {
+  // A block mixing forward + reverse arrows — surroundings unaffected
+  const b = findMermaidBlocks("graph TD\nA-->B\nC <--- D\nE-->F", true)[0];
+  assert.equal(b.supported, true);
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D", "E->F"]);
+  // all three edges: no spurious direction swap
+  assert.equal(b.edges[1].from, "C");
+  assert.equal(b.edges[1].to, "D");
+});
+
+test("reverse arrow direction: hyphenated ids in reverse arrow — full ids, no swap", () => {
+  // receive-order <--- ship-order → from=receive-order, to=ship-order
+  const b = findMermaidBlocks("graph TD\nreceive-order <--- ship-order", true)[0];
+  assert.equal(b.supported, true);
+  assert.equal(b.edges[0].from, "receive-order");
+  assert.equal(b.edges[0].to, "ship-order");
+  assert.ok(codesOf(b).includes("non-canonical-id"), "non-canonical-id for hyphenated ids");
 });

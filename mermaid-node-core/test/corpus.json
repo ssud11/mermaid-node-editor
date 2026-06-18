@@ -233,7 +233,7 @@
       }
     ],
     "valid": true,
-    "note": "Solid arrow, COMPACT (no spaces) — the compact (no-space) in-contract case"
+    "note": "Solid arrow, COMPACT (no spaces) \u2014 the compact (no-space) in-contract case"
   },
   {
     "id": "arrow-solid-left-glued",
@@ -618,7 +618,7 @@
       }
     ],
     "valid": true,
-    "note": "Quoted pipe edge label — quotes stripped per Mermaid"
+    "note": "Quoted pipe edge label \u2014 quotes stripped per Mermaid"
   },
   {
     "id": "arrow-inline-dash-label",
@@ -857,7 +857,7 @@
       }
     ],
     "valid": true,
-    "note": "snake_case ids (in-contract) — full id captured"
+    "note": "snake_case ids (in-contract) \u2014 full id captured"
   },
   {
     "id": "compound-id-numeric",
@@ -880,14 +880,14 @@
     "expectNodes": [],
     "expectEdges": [
       {
-        "from": "receive",
+        "from": "receive-order",
         "to": "process"
       }
     ],
     "valid": true,
-    "note": "Hyphenated id (off-contract): truncated at hyphen, remainder discarded — must not crash",
+    "note": "Hyphenated id (off-contract per author convention): read as full id receive-order with non-canonical-id advisory \u2014 must not crash, never truncate",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -897,14 +897,14 @@
     "expectNodes": [],
     "expectEdges": [
       {
-        "from": "receive",
-        "to": "send"
+        "from": "receive-order",
+        "to": "send-confirm"
       }
     ],
     "valid": true,
-    "note": "Both endpoints hyphenated compound",
+    "note": "Both endpoints hyphenated compound \u2014 both read in full",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -1117,7 +1117,7 @@
       }
     ],
     "valid": true,
-    "note": "Nested subgraphs — membership across nested end keywords"
+    "note": "Nested subgraphs \u2014 membership across nested end keywords"
   },
   {
     "id": "subgraph-two-siblings",
@@ -1185,7 +1185,7 @@
       }
     ],
     "valid": true,
-    "note": "Fenced ```mermaid in markdown — block detection + line offset"
+    "note": "Fenced ```mermaid in markdown \u2014 block detection + line offset"
   },
   {
     "id": "fenced-tilde-md",
@@ -1228,7 +1228,7 @@
       }
     ],
     "valid": true,
-    "note": "Two mermaid blocks — both returned (combined here), correct absolute lines",
+    "note": "Two mermaid blocks \u2014 both returned (combined here), correct absolute lines",
     "combineBlocks": true
   },
   {
@@ -1460,7 +1460,7 @@
     "expectEdges": [],
     "valid": true,
     "expectSupported": false,
-    "note": "a standalone shaped reserved-keyword line (`end[...]`) is skipped and dropped (no node/edge), and the block still parses supported:true — a graceful skip, not a whole-block failure. expectSupported pins the supported axis so this can never silently re-mask.",
+    "note": "a standalone shaped reserved-keyword line (`end[...]`) is skipped and dropped (no node/edge), and the block still parses supported:true \u2014 a graceful skip, not a whole-block failure. expectSupported pins the supported axis so this can never silently re-mask.",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -1499,7 +1499,7 @@
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "Bare id on its own line — valid node, label==id, no shape"
+    "note": "Bare id on its own line \u2014 valid node, label==id, no shape"
   },
   {
     "id": "bare-id-edge-ref",
@@ -1519,7 +1519,7 @@
       }
     ],
     "valid": true,
-    "note": "Bare id B referenced in edge but not shaped — appears in edges"
+    "note": "Bare id B referenced in edge but not shaped \u2014 appears in edges"
   },
   {
     "id": "semicolon-statements",
@@ -1598,7 +1598,7 @@
       }
     ],
     "valid": true,
-    "note": "Compact-arrow regression: chained compact arrows — B is a real node, both refs"
+    "note": "Compact-arrow regression: chained compact arrows \u2014 B is a real node, both refs"
   },
   {
     "id": "r15-x-arrowhead",
@@ -1650,7 +1650,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Unclosed bracket — must not crash; block is unsupported/parseError"
+    "note": "Unclosed bracket \u2014 must not crash; block is unsupported/parseError"
   },
   {
     "id": "invalid-mid-typed",
@@ -1660,7 +1660,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Mid-typed partial second node — must not crash (no error recovery: whole block unsupported)"
+    "note": "Mid-typed partial second node \u2014 must not crash (no error recovery: whole block unsupported)"
   },
   {
     "id": "invalid-unclosed-fence",
@@ -1669,7 +1669,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Unterminated ```mermaid fence — must not swallow the file; no block returned",
+    "note": "Unterminated ```mermaid fence \u2014 must not swallow the file; no block returned",
     "expectNoBlocks": true
   },
   {
@@ -1694,7 +1694,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "Over-bracketed [[[ shape (off-contract) — must WARN/refuse, not silently corrupt"
+    "note": "Over-bracketed [[[ shape (off-contract) \u2014 must WARN/refuse, not silently corrupt"
   },
   {
     "id": "fanout-ampersand-out-split",
@@ -1859,7 +1859,7 @@
       }
     ],
     "valid": true,
-    "note": "`subgraph id[title]` with NO space → {id, title, hasId:true}, not a free-text id"
+    "note": "`subgraph id[title]` with NO space \u2192 {id, title, hasId:true}, not a free-text id"
   },
   {
     "id": "subgraph-id-paren-nospace",
@@ -1884,7 +1884,7 @@
       }
     ],
     "valid": true,
-    "note": "`subgraph id(title)` with NO space → {id, title, hasId:true}",
+    "note": "`subgraph id(title)` with NO space \u2192 {id, title, hasId:true}",
     "expectSupported": false,
     "expectWarnings": [
       "invalid-subgraph-title"
@@ -1913,7 +1913,7 @@
       }
     ],
     "valid": true,
-    "note": "`subgraph id[\"title\"]` no-space quoted form → {id, title, hasId:true}"
+    "note": "`subgraph id[\"title\"]` no-space quoted form \u2192 {id, title, hasId:true}"
   },
   {
     "id": "edge-inline-dash-label-left-glued",
@@ -1928,7 +1928,7 @@
       }
     ],
     "valid": true,
-    "note": "one-sided whitespace (no space before -->) → ONE edge A->B label 'text', not a phantom node",
+    "note": "one-sided whitespace (no space before -->) \u2192 ONE edge A->B label 'text', not a phantom node",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -1946,7 +1946,7 @@
       }
     ],
     "valid": true,
-    "note": "one-sided whitespace (no space after --) → ONE edge A->B label 'text'",
+    "note": "one-sided whitespace (no space after --) \u2192 ONE edge A->B label 'text'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -1964,7 +1964,7 @@
       }
     ],
     "valid": true,
-    "note": "zero whitespace compact `A--text-->B` → ONE edge A->B label 'text'",
+    "note": "zero whitespace compact `A--text-->B` \u2192 ONE edge A->B label 'text'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -1982,7 +1982,7 @@
       }
     ],
     "valid": true,
-    "note": "zero whitespace compact thick-arrow label `A==text==>B` → ONE edge A->B label 'text'",
+    "note": "zero whitespace compact thick-arrow label `A==text==>B` \u2192 ONE edge A->B label 'text'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2068,7 +2068,7 @@
     "expectNodes": [],
     "expectEdges": [],
     "valid": false,
-    "note": "`graph DT` (DT is not a real Mermaid direction — TD/TB/BT/LR/RL) must WARN, not be accepted as supported"
+    "note": "`graph DT` (DT is not a real Mermaid direction \u2014 TD/TB/BT/LR/RL) must WARN, not be accepted as supported"
   },
   {
     "id": "directive-style",
@@ -2347,7 +2347,7 @@
       }
     ],
     "valid": true,
-    "note": "control: an id that merely STARTS with a directive keyword (`styleA`) is a real node, NOT a consumed directive — the keyword must be a whole token"
+    "note": "control: an id that merely STARTS with a directive keyword (`styleA`) is a real node, NOT a consumed directive \u2014 the keyword must be a whole token"
   },
   {
     "id": "directive-control-edge-id-prefix",
@@ -2406,7 +2406,7 @@
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "control: an unquoted >] label still parses as the raw run (quote='') — only the quoted forms strip quotes"
+    "note": "control: an unquoted >] label still parses as the raw run (quote='') \u2014 only the quoted forms strip quotes"
   },
   {
     "id": "edge-mixed-dash-pipe-warns",
@@ -2441,7 +2441,7 @@
       }
     ],
     "valid": true,
-    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes → label='label'"
+    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes \u2192 label='label'"
   },
   {
     "id": "edge-inline-dash-label-control",
@@ -2564,7 +2564,7 @@
       }
     ],
     "valid": true,
-    "note": "a double-quoted inline-dash label strips the surrounding quotes → label='q label' (mirrors the pipe form)",
+    "note": "a double-quoted inline-dash label strips the surrounding quotes \u2192 label='q label' (mirrors the pipe form)",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2582,7 +2582,7 @@
       }
     ],
     "valid": true,
-    "note": "a single-quoted inline-dash label strips the surrounding quotes → label='q label'",
+    "note": "a single-quoted inline-dash label strips the surrounding quotes \u2192 label='q label'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2600,7 +2600,7 @@
       }
     ],
     "valid": true,
-    "note": "thick: a double-quoted inline label strips the surrounding quotes → label='q label'",
+    "note": "thick: a double-quoted inline label strips the surrounding quotes \u2192 label='q label'",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2618,7 +2618,7 @@
       }
     ],
     "valid": true,
-    "note": "internal hyphens inside the label are preserved — only a shaft run that reaches `>` is a terminator",
+    "note": "internal hyphens inside the label are preserved \u2014 only a shaft run that reaches `>` is a terminator",
     "expectWarnings": [
       "inline-dash-label"
     ]
@@ -2654,7 +2654,7 @@
       }
     ],
     "valid": true,
-    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes → label='label'"
+    "note": "control: the canonical pipe-label form `-->|label|` strips the pipes \u2192 label='label'"
   },
   {
     "id": "invalid-asym-unquoted-open-paren",
@@ -2689,7 +2689,7 @@
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "control: a QUOTED asymmetric label may contain a leading bracket → label='(text)', quotes stripped"
+    "note": "control: a QUOTED asymmetric label may contain a leading bracket \u2192 label='(text)', quotes stripped"
   },
   {
     "id": "bare-hyphenated-id-span-bounds-kept-id",
@@ -2698,16 +2698,16 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "receive",
-        "label": "receive",
+        "id": "receive-order",
+        "label": "receive-order",
         "shape": ""
       }
     ],
     "expectEdges": [],
     "valid": true,
-    "note": "a bare hyphenated id is truncated to the kept prefix `receive`; the node span ends at the kept id so a span-rename leaves the discarded tail alone (slice===id)",
+    "note": "a bare hyphenated id is read as the full id receive-order; the node span covers the full text so slice(startChar,endChar)===id",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -2782,7 +2782,7 @@
       }
     ],
     "valid": true,
-    "note": "control: a headless thick link `===` (no `>`) still parses to one edge — the long-thick-arrow path does not shadow the open-link path"
+    "note": "control: a headless thick link `===` (no `>`) still parses to one edge \u2014 the long-thick-arrow path does not shadow the open-link path"
   },
   {
     "id": "directive-source-edge-dest-not-lost",
@@ -2859,7 +2859,7 @@
       }
     ],
     "valid": true,
-    "note": "a `click` directive whose VALUE (a URL) contains `--` is consumed+ignored as a whole-line directive — the `--` in the value is opaque rest-of-line text, not an edge operator; the real `A-->B` edge above survives. (Position-precise guard: `click` is followed by a space, not a bracket, so it parses as a directive.)"
+    "note": "a `click` directive whose VALUE (a URL) contains `--` is consumed+ignored as a whole-line directive \u2014 the `--` in the value is opaque rest-of-line text, not an edge operator; the real `A-->B` edge above survives. (Position-precise guard: `click` is followed by a space, not a bracket, so it parses as a directive.)"
   },
   {
     "id": "directive-acctitle-value-contains-dashes",
@@ -2873,7 +2873,7 @@
       }
     ],
     "valid": true,
-    "note": "an `accTitle:` directive whose VALUE contains `--` is still consumed+ignored as a whole line — the `--` is opaque value text, not an edge operator; the `A-->B` edge survives"
+    "note": "an `accTitle:` directive whose VALUE contains `--` is still consumed+ignored as a whole line \u2014 the `--` is opaque value text, not an edge operator; the `A-->B` edge survives"
   },
   {
     "id": "edge-inline-dash-label-open-shaft-2",
@@ -3149,7 +3149,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `style[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `style[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3172,7 +3172,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `graph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `graph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3195,7 +3195,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `flowchart[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `flowchart[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3218,7 +3218,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `subgraph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `subgraph[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3247,7 +3247,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `direction[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `direction[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": []
   },
   {
@@ -3274,7 +3274,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `click[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `click[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": []
   },
   {
@@ -3295,7 +3295,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `classDef[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `classDef[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3318,7 +3318,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `class[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `class[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3341,7 +3341,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `linkStyle[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `linkStyle[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3370,7 +3370,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "standalone shaped reserved keyword `default[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `default[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": []
   },
   {
@@ -3391,7 +3391,7 @@
     ],
     "valid": true,
     "expectSupported": false,
-    "note": "standalone shaped reserved keyword `end[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) — no whole-block data loss",
+    "note": "standalone shaped reserved keyword `end[X]` on its own line is skipped+dropped; the surrounding A->B and C->D edges survive (block stays supported:true) \u2014 no whole-block data loss",
     "expectWarnings": [
       "reserved-id"
     ]
@@ -3495,7 +3495,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "Label",
         "shape": "[]"
       }
@@ -3504,11 +3504,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email[Label]"
     },
-    "note": "shaped hyphenated id `send-email[Label]` truncates to `send`; span slices to the kept id (NOT the discarded `-email[Label]` tail) so a span-edit can't overwrite off-contract text",
+    "note": "shaped hyphenated id send-email[Label] read as full id; node span covers the whole declaration send-email[Label]",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3518,7 +3518,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "R",
         "shape": "()"
       }
@@ -3527,11 +3527,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email(R)"
     },
-    "note": "shaped hyphenated id, round shape: span bounded to kept id `send`",
+    "note": "shaped hyphenated id, round shape: full id send-email; node span covers send-email(R)",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3541,7 +3541,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "D",
         "shape": "{}"
       }
@@ -3550,11 +3550,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email{D}"
     },
-    "note": "shaped hyphenated id, diamond shape: span bounded to kept id `send`",
+    "note": "shaped hyphenated id, diamond shape: full id send-email; node span covers send-email{D}",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3564,7 +3564,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "S",
         "shape": "([])"
       }
@@ -3573,11 +3573,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email([S])"
     },
-    "note": "shaped hyphenated id, stadium shape: span bounded to kept id `send`",
+    "note": "shaped hyphenated id, stadium shape: full id send-email; node span covers send-email([S])",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3587,7 +3587,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "Sub",
         "shape": "[[]]"
       }
@@ -3596,11 +3596,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email[[Sub]]"
     },
-    "note": "shaped hyphenated id, subroutine shape: span bounded to kept id `send`",
+    "note": "shaped hyphenated id, subroutine shape: full id send-email; node span covers send-email[[Sub]]",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3610,7 +3610,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "a",
+        "id": "a-b-c-d",
         "label": "Z",
         "shape": "[]"
       }
@@ -3619,11 +3619,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "a": "a"
+      "a-b-c-d": "a-b-c-d[Z]"
     },
-    "note": "multi-hyphen shaped id `a-b-c-d[Z]` truncates to `a`; span bounded to kept id `a`",
+    "note": "multi-hyphen shaped id a-b-c-d[Z] read as full id; node span covers a-b-c-d[Z]",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3633,25 +3633,25 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "L",
         "shape": "[]"
       }
     ],
     "expectEdges": [
       {
-        "from": "send",
+        "from": "send-email",
         "to": "B"
       }
     ],
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email[L]"
     },
-    "note": "shaped hyphenated id as an edge SOURCE: span bounded to kept id `send`; the edge send->B is emitted",
+    "note": "shaped hyphenated id as edge source: full id send-email; edge send-email->B; node span covers send-email[L]",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3672,7 +3672,7 @@
     "expectNodeSpanSlices": {
       "plain": "plain[X]"
     },
-    "note": "plain (non-hyphenated) shaped id: span is the WHOLE node text `plain[X]` (not just the id) — the non-truncated invariant"
+    "note": "plain (non-hyphenated) shaped id: span is the WHOLE node text `plain[X]` (not just the id) \u2014 the non-truncated invariant"
   },
   {
     "id": "plain-shaped-span-circle",
@@ -3701,7 +3701,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "Store",
         "shape": "[()]"
       }
@@ -3710,11 +3710,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email[(Store)]"
     },
-    "note": "shaped hyphenated id, cylinder shape: node span stays the kept id `send`, while the label span slices to the real in-bracket content `Store` (not zero-width) so a relabel is not a silent no-op",
+    "note": "shaped hyphenated id, cylinder shape: full id send-email; node span covers send-email[(Store)]; label span slices to Store",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3724,7 +3724,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "Round",
         "shape": "(())"
       }
@@ -3733,11 +3733,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email((Round))"
     },
-    "note": "shaped hyphenated id, circle shape: node span is the kept id `send`, label span slices to `Round`",
+    "note": "shaped hyphenated id, circle shape: full id send-email; node span covers send-email((Round)); label span slices to Round",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3747,7 +3747,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "Hex",
         "shape": "{{}}"
       }
@@ -3756,11 +3756,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email{{Hex}}"
     },
-    "note": "shaped hyphenated id, hexagon shape: node span is the kept id `send`, label span slices to `Hex`",
+    "note": "shaped hyphenated id, hexagon shape: full id send-email; node span covers send-email{{Hex}}; label span slices to Hex",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -3770,7 +3770,7 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "send",
+        "id": "send-email",
         "label": "Asym",
         "shape": ">]"
       }
@@ -3779,11 +3779,11 @@
     "valid": true,
     "expectSupported": true,
     "expectNodeSpanSlices": {
-      "send": "send"
+      "send-email": "send-email>Asym]"
     },
-    "note": "shaped hyphenated id, asymmetric shape: node span is the kept id `send`, label span slices to `Asym`",
+    "note": "shaped hyphenated id, asymmetric shape: full id send-email; node span covers send-email>Asym]; label span slices to Asym",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -4372,8 +4372,8 @@
     "isMmd": true,
     "expectNodes": [
       {
-        "id": "ship",
-        "label": "ship",
+        "id": "ship-order",
+        "label": "ship-order",
         "shape": ""
       }
     ],
@@ -4381,9 +4381,9 @@
     "valid": true,
     "expectSupported": true,
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ],
-    "note": "a bare hyphenated id is truncated (kept prefix) and advised with id-truncated"
+    "note": "a bare hyphenated id is read as the full id and advised with non-canonical-id"
   },
   {
     "id": "semicolon-chain-reserved-shaped-recovers",
@@ -4437,7 +4437,7 @@
     "expectEdges": [],
     "valid": false,
     "expectSupported": false,
-    "note": "a labeled inline edge whose OPEN shaft (dash `--`) differs from its CLOSE shaft (thick `===`) is rejected by real Mermaid; it must be an honest parseError (supported:false), NOT a silent phantom (it previously mis-parsed into A->label, label->B with no warning) — the sibling of the hard-failed mixed dash+pipe form."
+    "note": "a labeled inline edge whose OPEN shaft (dash `--`) differs from its CLOSE shaft (thick `===`) is rejected by real Mermaid; it must be an honest parseError (supported:false), NOT a silent phantom (it previously mis-parsed into A->label, label->B with no warning) \u2014 the sibling of the hard-failed mixed dash+pipe form."
   },
   {
     "id": "edge-mixed-shaft-thick-dash-hardfails",
@@ -4468,7 +4468,7 @@
     "expectWarnings": [
       "inline-dash-label"
     ],
-    "note": "a MATCHED-shaft labeled dash edge still parses to one labeled edge (regression guard for the mixed-shaft hard-fail) — open and close shafts are both dash."
+    "note": "a MATCHED-shaft labeled dash edge still parses to one labeled edge (regression guard for the mixed-shaft hard-fail) \u2014 open and close shafts are both dash."
   },
   {
     "id": "edge-matched-shaft-thick-label-parses",
@@ -4488,7 +4488,7 @@
     "expectWarnings": [
       "inline-dash-label"
     ],
-    "note": "a MATCHED-shaft labeled thick edge still parses to one labeled edge (regression guard) — open and close shafts are both thick."
+    "note": "a MATCHED-shaft labeled thick edge still parses to one labeled edge (regression guard) \u2014 open and close shafts are both thick."
   },
   {
     "id": "edge-inline-dot-label-arrow",
@@ -4505,7 +4505,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "dotted inline label `-. text .->` (dotted ARROW close) → ONE labeled dotted edge A->B, renders in real Mermaid (was a whole-block hard-fail)",
+    "note": "dotted inline label `-. text .->` (dotted ARROW close) \u2192 ONE labeled dotted edge A->B, renders in real Mermaid (was a whole-block hard-fail)",
     "expectWarnings": [
       "inline-dot-label"
     ]
@@ -4525,7 +4525,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "dotted inline label `-. text .-` (dotted HEAD-LESS close) → ONE labeled dotted edge A->B",
+    "note": "dotted inline label `-. text .-` (dotted HEAD-LESS close) \u2192 ONE labeled dotted edge A->B",
     "expectWarnings": [
       "inline-dot-label"
     ]
@@ -4585,7 +4585,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "a double-quoted dotted-inline label strips the surrounding quotes → label=q lbl (mirrors the pipe form)",
+    "note": "a double-quoted dotted-inline label strips the surrounding quotes \u2192 label=q lbl (mirrors the pipe form)",
     "expectWarnings": [
       "inline-dot-label"
     ]
@@ -4667,7 +4667,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "REGRESSION PIN: a 3-shaft dash `--- text -->` is the GENUINE node `text` with two bare edges (matches real Mermaid) — NOT an inline label. The dotted-inline fix must not over-generalize a 3+-shaft inline arm.",
+    "note": "REGRESSION PIN: a 3-shaft dash `--- text -->` is the GENUINE node `text` with two bare edges (matches real Mermaid) \u2014 NOT an inline label. The dotted-inline fix must not over-generalize a 3+-shaft inline arm.",
     "expectWarnings": []
   },
   {
@@ -4688,7 +4688,7 @@
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "REGRESSION PIN: a 3-shaft thick `=== text ===>` is the genuine node `text` with two bare edges (matches real Mermaid) — NOT an inline label.",
+    "note": "REGRESSION PIN: a 3-shaft thick `=== text ===>` is the genuine node `text` with two bare edges (matches real Mermaid) \u2014 NOT an inline label.",
     "expectWarnings": []
   },
   {
@@ -4699,15 +4699,15 @@
     "expectNodes": [],
     "expectEdges": [
       {
-        "from": "foo",
-        "to": "baz"
+        "from": "foo-bar",
+        "to": "baz-qux"
       }
     ],
     "valid": true,
     "expectSupported": true,
-    "note": "two DISTINCT truncated ids on one edge line — both surface (the count is pinned in the unit test; the corpus pins the code set survives)",
+    "note": "two DISTINCT hyphenated ids on one edge line \u2014 both surface with non-canonical-id (the count is pinned in the unit test; the corpus pins the code set survives)",
     "expectWarnings": [
-      "id-truncated"
+      "non-canonical-id"
     ]
   },
   {
@@ -4868,8 +4868,8 @@
         "to": "B"
       },
       {
-        "from": "D",
-        "to": "C"
+        "from": "C",
+        "to": "D"
       },
       {
         "from": "E",
@@ -4877,7 +4877,7 @@
       }
     ],
     "valid": true,
-    "note": "reverse 3-shaft <--- (oracle arrow_open len2, reversed); swaps from/to; block survives"
+    "note": "reverse 3-shaft <--- (oracle arrow_open len2, start=left/end=right); NO from/to swap; block survives"
   },
   {
     "id": "arrow-unsupported-trailing-o",
@@ -4958,5 +4958,319 @@
     ],
     "valid": true,
     "note": "a-->o2: o2 is the target node, not an arrow head"
+  },
+  {
+    "id": "hyphen-id-full-bare-edge-both",
+    "category": "ids",
+    "input": "graph TD\nreceive-order --> ship-order",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "receive-order",
+        "to": "ship-order"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "non-canonical-id"
+    ],
+    "note": "oracle: hyphenated ids in an edge are read in full (receive-order, ship-order); non-canonical-id advisory; never truncated"
+  },
+  {
+    "id": "hyphen-id-full-multi-bare",
+    "category": "ids",
+    "input": "graph TD\na-b-c-d",
+    "isMmd": true,
+    "expectNodes": [
+      {
+        "id": "a-b-c-d",
+        "label": "a-b-c-d",
+        "shape": ""
+      }
+    ],
+    "expectEdges": [],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "non-canonical-id"
+    ],
+    "note": "oracle: multi-hyphen bare id a-b-c-d read in full; not truncated to a"
+  },
+  {
+    "id": "hyphen-id-full-chain",
+    "category": "ids",
+    "input": "graph TD\nreceive-order --> process-order --> ship-order",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "receive-order",
+        "to": "process-order"
+      },
+      {
+        "from": "process-order",
+        "to": "ship-order"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "non-canonical-id"
+    ],
+    "note": "oracle: chained hyphenated ids all read in full; deduped non-canonical-id advisory"
+  },
+  {
+    "id": "hyphen-id-full-shaped-rect-span",
+    "category": "ids",
+    "input": "graph TD\nsend-email[Send Email]",
+    "isMmd": true,
+    "expectNodes": [
+      {
+        "id": "send-email",
+        "label": "Send Email",
+        "shape": "[]"
+      }
+    ],
+    "expectEdges": [],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "non-canonical-id"
+    ],
+    "expectNodeSpanSlices": {
+      "send-email": "send-email[Send Email]"
+    },
+    "note": "oracle: shaped hyphenated id send-email[Send Email] \u2014 full id; node span covers whole declaration; label span slices to Send Email"
+  },
+  {
+    "id": "hyphen-id-full-shaped-round-span",
+    "category": "ids",
+    "input": "graph TD\nsend-email(Send Email)",
+    "isMmd": true,
+    "expectNodes": [
+      {
+        "id": "send-email",
+        "label": "Send Email",
+        "shape": "()"
+      }
+    ],
+    "expectEdges": [],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "non-canonical-id"
+    ],
+    "expectNodeSpanSlices": {
+      "send-email": "send-email(Send Email)"
+    },
+    "note": "oracle: shaped hyphenated id send-email(Send Email) round shape \u2014 full id; whole declaration span"
+  },
+  {
+    "id": "hyphen-id-plain-no-warn",
+    "category": "ids",
+    "input": "graph TD\norder_ship --> confirm",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "order_ship",
+        "to": "confirm"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: snake_case ids carry NO non-canonical-id warning (no hyphen); only hyphenated ids warn"
+  },
+  {
+    "id": "reverse-arrow-solid-3shaft-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nC <--- D",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "C",
+        "to": "D"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: C <--- D \u2192 from=C to=D (left-to-right, NO swap); Mermaid start=C end=D; the < is a visual-only indicator"
+  },
+  {
+    "id": "reverse-arrow-solid-4shaft-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nC <---- D",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "C",
+        "to": "D"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: C <---- D \u2192 from=C to=D (4-shaft length 3); same no-swap rule as 3-shaft"
+  },
+  {
+    "id": "reverse-arrow-solid-5shaft-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nC <----- D",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "C",
+        "to": "D"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: C <----- D \u2192 from=C to=D (5-shaft length 4)"
+  },
+  {
+    "id": "reverse-arrow-thick-3shaft-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nG <=== H",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "G",
+        "to": "H"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: G <=== H \u2192 from=G to=H (no swap); stroke normalizes to solid per Mermaid (stroke=normal)"
+  },
+  {
+    "id": "reverse-arrow-thick-4shaft-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nG <==== H",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "G",
+        "to": "H"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: G <==== H \u2192 from=G to=H (4-shaft, stroke=solid/normal per Mermaid)"
+  },
+  {
+    "id": "reverse-arrow-dotted-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nM <-.- N",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "M",
+        "to": "N"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: M <-.- N \u2192 from=M to=N (no swap); dotted stroke preserved"
+  },
+  {
+    "id": "reverse-arrow-dotted-2dot-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nM <-..- N",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "M",
+        "to": "N"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: M <-..- N \u2192 from=M to=N (2-dot dotted reverse, no swap)"
+  },
+  {
+    "id": "reverse-arrow-chain-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nA-->B\nC <--- D\nE-->F",
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B"
+      },
+      {
+        "from": "C",
+        "to": "D"
+      },
+      {
+        "from": "E",
+        "to": "F"
+      }
+    ],
+    "valid": true,
+    "note": "oracle: reverse 3-shaft in a mixed block \u2014 C->D (not D->C); surrounding plain arrows unaffected",
+    "expectWarnings": []
+  },
+  {
+    "id": "reverse-arrow-hyphen-ids-direction",
+    "category": "arrow-forms",
+    "input": "graph TD\nreceive-order <--- ship-order",
+    "isMmd": true,
+    "expectNodes": [],
+    "expectEdges": [
+      {
+        "from": "receive-order",
+        "to": "ship-order"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [
+      "non-canonical-id"
+    ],
+    "note": "oracle: hyphenated ids in a reverse arrow \u2014 full ids (receive-order, ship-order), from=receive-order to=ship-order (no swap); non-canonical-id advisory"
+  },
+  {
+    "id": "reverse-arrow-shaped-endpoints",
+    "category": "arrow-forms",
+    "input": "graph TD\nA[Start] <--- B[End]",
+    "isMmd": true,
+    "expectNodes": [
+      {
+        "id": "A",
+        "label": "Start",
+        "shape": "[]"
+      },
+      {
+        "id": "B",
+        "label": "End",
+        "shape": "[]"
+      }
+    ],
+    "expectEdges": [
+      {
+        "from": "A",
+        "to": "B"
+      }
+    ],
+    "valid": true,
+    "expectSupported": true,
+    "expectWarnings": [],
+    "note": "oracle: shaped endpoints in a reverse arrow \u2014 A[Start] <--- B[End] \u2192 from=A to=B; both nodes emitted"
   }
 ]
