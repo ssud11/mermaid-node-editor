@@ -183,8 +183,11 @@ export function findMermaidBlocks(text, isMmd) {
     }
     const fenceChar = open[2][0];
     const len = open[2].length;
-    const info = open[3].toLowerCase();
-    // Closing fence: same 0-3-space indent cap as the opener (CommonMark the contract.4).
+    // Fence info-string match is CASE-SENSITIVE: CommonMark and the Mermaid
+    // renderer only treat a lowercase `mermaid` info-string as a live diagram
+    // fence (```MERMAID / ```Mermaid render as ordinary code). Do NOT lowercase.
+    const info = open[3];
+    // Closing fence: same 0-3-space indent cap as the opener (CommonMark rule).
     const closeRe = new RegExp("^ {0,3}" + fenceChar + "{" + len + ",}\\s*$");
     let j = i + 1;
     while (j < lines.length && !closeRe.test(lines[j])) {
