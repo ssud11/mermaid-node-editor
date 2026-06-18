@@ -32,6 +32,22 @@
 // ============================================================================
 
 {{
+  // --- warnings (yellow-lint advisories) ----------------------------------
+  //
+  // A warning is `{ code, message, line }` (0-based line within the block; the
+  // envelope in src/parser.js shifts it to an absolute document line). Warnings
+  // are NOT collected in a shared mutable array — PEG backtracking would leave
+  // spurious entries from speculative paths that were later discarded. Instead a
+  // warning rides on the MODEL OBJECT (a node/edge's `_warn`, or a statement
+  // line's `warnings[]`) the action returns; only COMMITTED results reach the
+  // `Body` assembly, which harvests + de-dupes them. A backtracked object never
+  // enters the committed list, so its warning never surfaces. (Verified: an
+  // action that warns then backtracks leaves no warning when warnings are
+  // model-attached, but DOES when pushed to a shared array.)
+  function warn(code, message, loc) {
+    return { code, message, line: loc.start.line - 1 };
+  }
+
   // --- model constructors -------------------------------------------------
 
   // 0-based line + 0-based exclusive-end column from a peggy location().
@@ -145,7 +161,7 @@
   }
 
   // Build a shape descriptor from open/close tokens + a label result. `l` is the
-  // { value, quote, labelStart, labelEnd } from a ShapeLabel/AsymLabel rule.
+  // { value, quote, labelStart, labelEnd } from a per-shape label / AsymLabel rule.
   function shape(open, close, l) {
     return {
       open,
@@ -218,6 +234,7 @@ Document
       nodes: body.nodes,
       edges: body.edges,
       subgraphs: body.subgraphs,
+      warnings: body.warnings,
     };
   }
 
@@ -247,13 +264,32 @@ Body
     const nodes = [];
     const edges = [];
     const subgraphs = [];
+    const warnings = [];
+    const seenWarn = new Set();
+    // Harvest a warning, de-duping on (code|line) so a construct that warns once
+    // per matched line can't double-report; strip any `_warn` rider off the model
+    // object so it never leaks into the public node/edge shape.
+    const addWarn = (w) => {
+      if (!w) return;
+      const key = w.code + "@" + w.line;
+      if (seenWarn.has(key)) return;
+      seenWarn.add(key);
+      warnings.push(w);
+    };
+    const take = (item) => {
+      if (item && item._warn) { addWarn(item._warn); delete item._warn; }
+      return item;
+    };
     for (const ln of lines) {
       if (!ln) continue;
-      for (const n of ln.nodes) nodes.push(n);
-      for (const e of ln.edges) edges.push(e);
-      for (const sg of ln.subgraphs) subgraphs.push(sg);
+      for (const n of ln.nodes) nodes.push(take(n));
+      for (const e of ln.edges) edges.push(take(e));
+      for (const sg of ln.subgraphs) subgraphs.push(take(sg));
+      // A statement line may also carry line-level warnings not tied to one item
+      // (e.g. a reserved-keyword node skipped block-locally — no model object).
+      if (ln.warnings) for (const w of ln.warnings) addWarn(w);
     }
-    return { nodes, edges, subgraphs };
+    return { nodes, edges, subgraphs, warnings };
   }
 
 // A statement line. A Subgraph is a MULTI-line construct that consumes its own
@@ -267,7 +303,7 @@ StmtLine
   / DirectiveStmt                            { return null; }    // style/click/classDef/... — consumed + ignored
   / content:SingleLineBody NL                { return content; } // a line ending in a newline
   / content:SingleLineBody EOF               { return content; } // the final line, no NL
-  / ReservedNodeStmt                         { return null; }    // standalone reserved-keyword node — dropped, surroundings survive
+  / r:ReservedNodeStmt                       { return r; }       // standalone reserved-keyword node — dropped + warned, surroundings survive
   / Sp InlineComment? NL                     { return null; }    // blank / comment-only line
   / Sp InlineComment EOF                     { return null; }    // final comment-only line, no NL
   / WS EOF                                   { return null; }    // final whitespace-only line, no NL
@@ -300,13 +336,24 @@ StmtLine
 // `end`} × {standalone bare / standalone shaped} skip-and-preserve-surroundings
 // here, while {reserved as an edge endpoint} drops-the-edge-keep-surroundings in
 // EdgeChain.
+//
+// CASE-INSENSITIVE: the keywords match case-insensitively (`End[X]`, `STYLE[x]`),
+// matching how `isReserved` lowercases — Mermaid renders a mixed-case reserved id
+// as a node, so per the renders-it rule we recover the line (skip block-local) and
+// attach a `reserved-id` warning, instead of letting the mixed-case form fall
+// through to a whole-block hard-fail (the pre-v1.4 behavior). The recovered line
+// returns no model object, so the warning rides on the StmtLine result's
+// `warnings[]` (harvested by Body). The skip itself preserves the surrounding
+// statements exactly as the lowercase form already did.
 ReservedNodeStmt
-  = Sp "end" !IdChar NodeShape Sp InlineComment? (NL / EOF)         // shaped `end[X]` only (bare `end` = subgraph terminator)
-  / Sp NonEndReservedKeyword !IdChar NodeShape? Sp InlineComment? (NL / EOF)
+  = Sp kw:"end"i !IdChar NodeShape Sp InlineComment? (NL / EOF)   // shaped `end[X]` only (bare `end` = subgraph terminator)
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
+  / Sp kw:NonEndReservedKeyword !IdChar NodeShape? Sp InlineComment? (NL / EOF)
+    { return { nodes: [], edges: [], subgraphs: [], warnings: [warn("reserved-id", `"${kw}" is a reserved keyword and cannot be a node id; this node is skipped`, location())] }; }
 
 NonEndReservedKeyword
-  = "graph" / "flowchart" / "subgraph" / "direction"
-  / "click" / "classDef" / "class" / "linkStyle" / "style" / "default"
+  = "graph"i / "flowchart"i / "subgraph"i / "direction"i
+  / "click"i / "classDef"i / "class"i / "linkStyle"i / "style"i / "default"i
 
 // A per-(sub)graph layout directive — `direction LR` / `direction TD` etc. It
 // carries no node/edge to model, so (like a comment) it is consumed and ignored.
@@ -369,10 +416,11 @@ StmtContent
 SemicolonStmts
   = first:SingleStmt rest:(Sp ";" Sp s:SingleStmt { return s; })+ Sp ";"?
   {
-    const acc = { nodes: [...first.nodes], edges: [...first.edges], subgraphs: [] };
+    const acc = { nodes: [...first.nodes], edges: [...first.edges], subgraphs: [], warnings: [...(first.warnings || [])] };
     for (const s of rest) {
       acc.nodes.push(...s.nodes);
       acc.edges.push(...s.edges);
+      if (s.warnings) acc.warnings.push(...s.warnings);
     }
     return acc;
   }
@@ -395,6 +443,12 @@ Subgraph
     const edges = [];
     const subgraphs = [];
     const members = [];
+    // Line-level warnings emitted INSIDE the subgraph body (e.g. a reserved-keyword
+    // node skipped block-locally — no model object to ride on). Item-level `_warn`
+    // riders on inner nodes/edges bubble up untouched on the pushed objects and are
+    // harvested by the OUTER `Body.take()`; only these non-item line warnings need
+    // forwarding, exposed as `warnings` on this subgraph's StmtLine result.
+    const innerWarnings = [];
     const seenMember = new Set();
     const addMember = (id) => {
       if (!seenMember.has(id)) { seenMember.add(id); members.push(id); }
@@ -420,6 +474,7 @@ Subgraph
         // Subgraph action prepends itself before its own descendants).
       }
       if (isNested) addMember(ln.subgraphs[0].id);
+      if (ln.warnings) for (const w of ln.warnings) innerWarnings.push(w);
     }
     const h = header || { id: null, title: null, idLoc: hdrLoc, idText: "", titleSpan: null };
     const idSpan = span(h.idLoc);
@@ -460,7 +515,20 @@ Subgraph
       sgNode.titleStart = h.titleSpan.titleStart;
       sgNode.titleEnd = h.titleSpan.titleEnd;
     }
-    return { nodes, edges, subgraphs: [sgNode, ...subgraphs] };
+    // A reserved keyword used as a subgraph id (`subgraph graph[Title]`,
+    // `subgraph end[Title]`) RENDERS in real Mermaid, so per the renders-it rule we
+    // KEEP the subgraph and attach a yellow-lint rather than hard-failing or
+    // silently accepting. Any edge that REFERENCES this reserved id is dropped by
+    // EdgeChain with its own `reserved-id` warning (so the drop is never silent).
+    const warnings = [...innerWarnings];
+    if (hasId && isReserved(id)) {
+      warnings.push(warn(
+        "reserved-id-subgraph",
+        `subgraph id "${id}" is a reserved keyword; an edge referencing it is dropped`,
+        h.idLoc,
+      ));
+    }
+    return { nodes, edges, subgraphs: [sgNode, ...subgraphs], warnings };
   }
 
 // Header variants. Each captures the span of the EDITABLE token so a title/id
@@ -503,7 +571,7 @@ EndOfHeader = Sp ("%%" / "\n" / "\r" / !.)
 SubgraphTitle
   = "[" cLoc:HERE '"' c:DQuoted '"' "]" { return { value: c, quote: '"', span: contentSpan(c, cLoc), loc: location() }; }
   / "[" cLoc:HERE "'" c:SQuoted "'" "]" { return { value: c, quote: "'", span: contentSpan(c, cLoc), loc: location() }; }
-  / "[" cLoc:HERE c:BracketRun "]"      { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location() }; }
+  / "[" cLoc:HERE c:SquareRun "]"       { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location() }; }
   / "(" cLoc:HERE '"' c:DQuoted '"' ")" { return { value: c, quote: '"', span: contentSpan(c, cLoc), loc: location() }; }
   / "(" cLoc:HERE "'" c:SQuoted "'" ")" { return { value: c, quote: "'", span: contentSpan(c, cLoc), loc: location() }; }
   / "(" cLoc:HERE c:ParenRun ")"        { return { value: c.trim(), quote: "", span: trimmedSpan(c, cLoc), loc: location() }; }
@@ -520,40 +588,92 @@ FreeTitle = chars:(!("\n" / "%%") c:. { return c; })+ { return chars.join("").tr
 // emits a node. Reversed (`<--`) operators swap from/to so the model matches
 // Mermaid's directed semantics.
 
+// An EDGE CHAIN over node GROUPS. A group is one node, or several `&`-joined nodes
+// (`A & B`) — Mermaid's fan-out/fan-in shorthand. Each link connects every node in
+// the previous group to every node in the next group (the cartesian product), which
+// is how Mermaid renders `A & B --> C & D` (A→C, A→D, B→C, B→D). Per the renders-it
+// rule the `&` form is therefore SPLIT into the real pairwise edges rather than
+// hard-failing the block; a single `fanout-split` advisory is attached for the
+// chain. A shaped endpoint still emits its node; an endpoint that is a reserved
+// keyword still drops its edge (with a `reserved-id` warning so the drop is never
+// silent) and is never emitted as a node.
 EdgeChain
-  = first:NodeRef rest:(seg:EdgeSeg { return seg; })+
+  = first:NodeGroup rest:(seg:EdgeSegGroup { return seg; })+
   {
-    const out = { nodes: [], edges: [], subgraphs: [] };
+    const out = { nodes: [], edges: [], subgraphs: [], warnings: [] };
+    const seenWarn = new Set();
+    const pushWarn = (w) => {
+      const key = w.code + "@" + w.line;
+      if (!seenWarn.has(key)) { seenWarn.add(key); out.warnings.push(w); }
+    };
     const emitNode = (ref) => {
       if (ref.shapeInfo && !isReserved(ref.id)) {
         out.nodes.push(makeNode(ref.id, ref.shapeInfo, ref.loc, ref.shapeLoc));
       }
     };
-    emitNode(first);
-    let prev = first;
-    for (const seg of rest) {
-      emitNode(seg.node);
-      if (!isReserved(prev.id) && !isReserved(seg.node.id)) {
-        const link = seg.link;
-        const [from, to] = link.reversed
-          ? [seg.node.id, prev.id]
-          : [prev.id, seg.node.id];
-        // edge span: from the previous node start to this node end.
-        const loc = { start: prev.loc.start, end: seg.node.loc.end };
-        out.edges.push(makeEdge(from, to, link.label, loc));
+    // A hyphen-truncated endpoint (`send-email` → `send`) RENDERS as a longer id in
+    // Mermaid, so we keep the truncate behavior + advise. Fires for every truncated
+    // ref in any group (deduped per code|line).
+    const noteTruncation = (ref) => {
+      if (ref.truncated) {
+        pushWarn(warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc));
       }
-      prev = seg.node;
+    };
+    // Whether any group in the chain has more than one node (a real fan-out/fan-in).
+    let sawFanout = first.refs.length > 1;
+    for (const ref of first.refs) { emitNode(ref); noteTruncation(ref); }
+    let prevGroup = first;
+    for (const seg of rest) {
+      if (seg.group.refs.length > 1) sawFanout = true;
+      for (const ref of seg.group.refs) { emitNode(ref); noteTruncation(ref); }
+      const link = seg.link;
+      // A non-canonical inline-dash label on this segment → one advisory (per line).
+      if (link.inlineDash && link.label !== undefined && link.label !== null) {
+        pushWarn(warn("inline-dash-label", "inline-dash edge label is non-canonical; prefer the pipe form `-->|label|`", location()));
+      }
+      // Cartesian product of (prev group) × (this group) — one edge per pair, in
+      // source order (every prev node against the first next node, then the second…).
+      for (const pRef of prevGroup.refs) {
+        for (const nRef of seg.group.refs) {
+          if (isReserved(pRef.id) || isReserved(nRef.id)) {
+            // A reserved endpoint drops THIS edge but never the surrounding ones —
+            // warn so the drop is visible (v1.4: never silently drop an edge).
+            const resId = isReserved(pRef.id) ? pRef.id : nRef.id;
+            pushWarn(warn("reserved-id", `edge endpoint "${resId}" is a reserved keyword; this edge is dropped`, { start: pRef.loc.start, end: nRef.loc.end }));
+            continue;
+          }
+          const [from, to] = link.reversed ? [nRef.id, pRef.id] : [pRef.id, nRef.id];
+          // edge span: from this prev node's start to this next node's end.
+          const loc = { start: pRef.loc.start, end: nRef.loc.end };
+          out.edges.push(makeEdge(from, to, link.label, loc));
+        }
+      }
+      prevGroup = seg.group;
+    }
+    if (sawFanout) {
+      pushWarn(warn("fanout-split", "`&` fan-out/fan-in edge split into the individual pairwise edges", location()));
     }
     return out;
   }
 
-// A segment = arrow, optional pipe label, then the next node. A pipe label
+// A node group: one node, or several `&`-joined nodes (`A & B & C`). The `&` form
+// is Mermaid's fan-out/fan-in shorthand; EdgeChain expands it into pairwise edges.
+NodeGroup
+  = first:NodeRef rest:(Sp "&" Sp n:NodeRef { return n; })*
+  { return { refs: [first, ...rest] }; }
+
+// A segment = arrow, optional pipe label, then the next node GROUP. A pipe label
 // (`-->|yes|`) takes precedence over an inline-dash label if both somehow appear.
-EdgeSeg
-  = Sp link:Link Sp pipe:PipeLabel? Sp node:NodeRef
+EdgeSegGroup
+  = Sp link:Link Sp pipe:PipeLabel? Sp group:NodeGroup
   {
-    const label = pipe !== null && pipe !== undefined ? pipe : link.label;
-    return { link: { label, reversed: link.reversed }, node };
+    const hasPipe = pipe !== null && pipe !== undefined;
+    const label = hasPipe ? pipe : link.label;
+    // The inline-dash label form (`-- text -->`) is non-canonical (prefer the pipe
+    // form `-->|text|`); flag it for an advisory. A pipe label takes precedence and
+    // is canonical, so it never carries the inline-dash flag.
+    const inlineDash = !hasPipe && link.inlineDash === true;
+    return { link: { label, reversed: link.reversed, inlineDash }, group };
   }
 
 PipeLabel
@@ -568,16 +688,27 @@ PipeRun = chars:(!("|" / "\n") c:. { return c; })* { return chars.join(""); }
 NodeStmt
   = ref:NodeRef &{ return !isReserved(ref.id); }
   {
-    return { nodes: [makeNode(ref.id, ref.shapeInfo, ref.loc, ref.shapeLoc)], edges: [], subgraphs: [] };
+    const warnings = [];
+    if (ref.truncated) {
+      warnings.push(warn("id-truncated", `hyphenated id truncated to "${ref.id}"; the remainder after the hyphen is discarded`, ref.idLoc));
+    }
+    return { nodes: [makeNode(ref.id, ref.shapeInfo, ref.loc, ref.shapeLoc)], edges: [], subgraphs: [], warnings };
   }
 
 // ─── Node reference (id, optionally with a shape) ─────────────────────────────
 
 NodeRef
-  = loc:HERE id:NodeId shapeLoc:HERE shape:NodeShape
-    { return { id, shapeInfo: shape, shapeLoc, loc: { start: loc.start, end: location().end } }; }
-  / loc:HERE id:NodeId
-    { return { id, shapeInfo: null, loc: { start: loc.start, end: location().end } }; }
+  = loc:HERE idr:NodeIdRef shapeLoc:HERE shape:NodeShape
+    { return { id: idr.id, truncated: idr.truncated, idLoc: idr.loc, shapeInfo: shape, shapeLoc, loc: { start: loc.start, end: location().end } }; }
+  / loc:HERE idr:NodeIdRef
+    { return { id: idr.id, truncated: idr.truncated, idLoc: idr.loc, shapeInfo: null, loc: { start: loc.start, end: location().end } }; }
+
+// A node id plus whether a hyphen tail was consumed-and-DISCARDED (`send-email` →
+// id `send`, truncated:true). The discarded off-contract tail RENDERS in Mermaid as
+// part of a longer id, so per the renders-it rule we keep parsing (the documented
+// truncate behavior) and attach an `id-truncated` advisory rather than failing.
+NodeIdRef
+  = id:NodeId { return { id, truncated: text() !== id, loc: location() }; }
 
 // HERE captures a zero-width location at the current input position, so callers
 // can build a precise start..end span around a following construct.
@@ -614,33 +745,55 @@ PlainId "plain id"
 // Multi-char opening tokens are tried before single-char ones. Each returns the
 // shape token pair, the label content, the quote char, and the content span.
 
+// Each shape's UNQUOTED label run stops ONLY at that shape's OWN closing token, so
+// a FOREIGN close-bracket inside the label is kept as content (`A[Order (Pending)]`
+// → label `Order (Pending)`; `A(read [x])` → label `read [x]`). This is the v1.4
+// renders-it rule: Mermaid renders such a label, so we parse it instead of
+// hard-failing. The label run per shape is therefore distinct (a square `[…]` stops
+// at `]`, a paren `(…)` at `)`, …). Multi-char shapes stop at their two-char close.
+// The quoted forms (shared `QuotedLabel`) are tried first and are unaffected.
 NodeShape
-  = "[[" l:ShapeLabel "]]" { return shape("[[", "]]", l); }
-  / "[(" l:ShapeLabel ")]" { return shape("[(", ")]", l); }
-  / "([" l:ShapeLabel "])" { return shape("([", "])", l); }
-  / "((" l:ShapeLabel "))" { return shape("((", "))", l); }
-  / "{{" l:ShapeLabel "}}" { return shape("{{", "}}", l); }
-  / "["  l:ShapeLabel "]"  { return shape("[", "]", l); }
-  / "("  l:ShapeLabel ")"  { return shape("(", ")", l); }
-  / "{"  l:ShapeLabel "}"  { return shape("{", "}", l); }
-  / ">"  l:AsymLabel  "]"  { return shape(">", "]", l); }
+  = "[[" l:DoubleSquareLabel "]]" { return shape("[[", "]]", l); }
+  / "[(" l:CylinderLabel ")]"     { return shape("[(", ")]", l); }
+  / "([" l:StadiumLabel "])"      { return shape("([", "])", l); }
+  / "((" l:DoubleCircleLabel "))" { return shape("((", "))", l); }
+  / "{{" l:HexagonLabel "}}"      { return shape("{{", "}}", l); }
+  / "["  l:SquareLabel "]"        { return shape("[", "]", l); }
+  / "("  l:RoundLabel ")"         { return shape("(", ")", l); }
+  / "{"  l:BraceLabel "}"         { return shape("{", "}", l); }
+  / ">"  l:AsymLabel  "]"         { return shape(">", "]", l); }
 
-// ShapeLabel returns { value, quote, labelStart, labelEnd } — the content span is
-// captured around the inner content so labelStart/labelEnd are real columns.
+// A label = the shared quoted forms, or a raw run that stops at this shape's close.
+// QuotedLabel returns { value, quote, labelStart, labelEnd } — the content span is
+// captured around the inner content so labelStart/labelEnd are real columns. The
+// raw run carries the `!OpenBracket` start-guard (see below).
 //
 // The unquoted run must NOT begin with an opening bracket char (`[`/`(`/`{`).
 // That guard closes the ASYMMETRIC over-bracket class (`A[[[hello]]`, `A((x)`,
 // `A{{{x}}`, …): when a multi-char opener like `[[` fails to find its symmetric
 // close, the single-char opener `[` would otherwise backtrack and swallow the
 // leftover `[` as label content (`label:'[hello'`) — a silent corruption that
-// the contract forbids (off-contract input must be warned, never silently corrupted). With the guard the whole node shape fails to match, so
-// the block is reported `supported:false` + `parseError` (a clean WARN). A label
-// that genuinely starts with a bracket must be quoted (`A["[x"]`), which the
-// quoted alternatives above accept.
-ShapeLabel
+// the contract forbids (off-contract input must be warned, never silently
+// corrupted). The start-guard is INDEPENDENT of the run's stop token, so relaxing
+// the stop token (to keep a FOREIGN close-bracket as content, B4) does not weaken
+// the guard: the over-bracket forms still fail to match and the block is reported
+// `supported:false` + `parseError` (a clean WARN). A label that genuinely STARTS
+// with a bracket must be quoted (`A["[x"]`), which QuotedLabel accepts.
+QuotedLabel
   = lLoc:HERE '"' c:DQuoted '"' { return labelSpan(c, '"', lLoc, location()); }
   / lLoc:HERE "'" c:SQuoted "'" { return labelSpan(c, "'", lLoc, location()); }
-  / lLoc:HERE !OpenBracket c:BracketRun { return labelSpanRaw(c, "", lLoc); }
+
+// Per-shape unquoted labels: quoted-first, then a raw run that stops only at this
+// shape's own closing token (so a foreign close-bracket of a DIFFERENT family is
+// label content). `!OpenBracket` keeps the asymmetric over-bracket guard.
+SquareLabel       = QuotedLabel / lLoc:HERE !OpenBracket c:SquareRun       { return labelSpanRaw(c, "", lLoc); }
+RoundLabel        = QuotedLabel / lLoc:HERE !OpenBracket c:RoundRun        { return labelSpanRaw(c, "", lLoc); }
+BraceLabel        = QuotedLabel / lLoc:HERE !OpenBracket c:BraceRun        { return labelSpanRaw(c, "", lLoc); }
+DoubleSquareLabel = QuotedLabel / lLoc:HERE !OpenBracket c:DoubleSquareRun { return labelSpanRaw(c, "", lLoc); }
+CylinderLabel     = QuotedLabel / lLoc:HERE !OpenBracket c:CylinderRun     { return labelSpanRaw(c, "", lLoc); }
+StadiumLabel      = QuotedLabel / lLoc:HERE !OpenBracket c:StadiumRun      { return labelSpanRaw(c, "", lLoc); }
+DoubleCircleLabel = QuotedLabel / lLoc:HERE !OpenBracket c:DoubleCircleRun { return labelSpanRaw(c, "", lLoc); }
+HexagonLabel      = QuotedLabel / lLoc:HERE !OpenBracket c:HexagonRun      { return labelSpanRaw(c, "", lLoc); }
 
 // An opening bracket char — used as a negative lookahead so an unquoted shape
 // label can never begin with one (the asymmetric over-bracket corruption guard).
@@ -649,9 +802,9 @@ OpenBracket = "[" / "(" / "{"
 // The `>]` (asymmetric) shape, like every other shape, must strip surrounding
 // quotes so a quoted label reports quote='"'/"'" and a content-EXCLUSIVE span —
 // otherwise a relabel honoring labelStart/labelEnd would silently drop the quotes
-// (`A>"x"]` → `A>new]`). Mirror ShapeLabel: try the quoted forms first, then the
-// raw unquoted run.
-// The unquoted run gets the SAME `!OpenBracket` guard ShapeLabel has, for the
+// (`A>"x"]` → `A>new]`). Mirror the per-shape labels: try the quoted forms first,
+// then the raw unquoted run.
+// The unquoted run gets the SAME `!OpenBracket` guard the per-shape labels have, for the
 // SAME reason: an unquoted asym label must not begin with `[`/`(`/`{`. Without it,
 // `A>(text)]` / `A>{x}]` silently parse as a `>]` node whose label keeps the stray
 // opener (`label:'(text)'`) — the asymmetric over-bracket corruption class the
@@ -664,12 +817,23 @@ AsymLabel
   / lLoc:HERE "'" c:SQuoted "'" { return labelSpan(c, "'", lLoc, location()); }
   / lLoc:HERE !OpenBracket c:AsymRun { return labelSpanRaw(c, "", lLoc); }
 
-// Raw label runs — opaque text up to the (unquoted) close token / newline.
-// A `%%` inside a label is content, not a comment, so it is NOT excluded here.
-BracketRun = chars:(!("]" / ")" / "}" / "\n") c:. { return c; })* { return chars.join(""); }
-AsymRun    = chars:(!("]" / "\n") c:. { return c; })* { return chars.join(""); }
+// Raw label runs — opaque text up to this shape's OWN unquoted close token / NL.
+// A `%%` inside a label is content, not a comment, so it is NOT excluded here. Each
+// run stops only at its shape's close, so a foreign close-bracket of a DIFFERENT
+// family (`(` `)` `{` `}` inside a `[…]`, etc.) is kept as label content — the v1.4
+// renders-it behavior. Multi-char shapes stop at their full two-char close, so a
+// SINGLE foreign close char of the same family (`]` inside `[[…]]`) is also kept.
+SquareRun       = chars:(!("]" / "\n") c:. { return c; })* { return chars.join(""); }
+RoundRun        = chars:(!(")" / "\n") c:. { return c; })* { return chars.join(""); }
+BraceRun        = chars:(!("}" / "\n") c:. { return c; })* { return chars.join(""); }
+DoubleSquareRun = chars:(!("]]" / "\n") c:. { return c; })* { return chars.join(""); }
+CylinderRun     = chars:(!(")]" / "\n") c:. { return c; })* { return chars.join(""); }
+StadiumRun      = chars:(!("])" / "\n") c:. { return c; })* { return chars.join(""); }
+DoubleCircleRun = chars:(!("))" / "\n") c:. { return c; })* { return chars.join(""); }
+HexagonRun      = chars:(!("}}" / "\n") c:. { return c; })* { return chars.join(""); }
+AsymRun         = chars:(!("]" / "\n") c:. { return c; })* { return chars.join(""); }
 // An unquoted subgraph-title run inside `(...)` — opaque up to the close paren.
-ParenRun   = chars:(!(")" / "\n") c:. { return c; })* { return chars.join(""); }
+ParenRun        = chars:(!(")" / "\n") c:. { return c; })* { return chars.join(""); }
 
 DQuoted = chars:(!('"' / "\n") c:. { return c; })* { return chars.join(""); }
 SQuoted = chars:(!("'" / "\n") c:. { return c; })* { return chars.join(""); }
@@ -687,8 +851,8 @@ Link "arrow"
   // ANY shaft length `-- -* >` / `== =* >` — same length-variant family the bare
   // arrow at the `"--" "-"* ">"` rule accepts) so `A -- text ---> B` consumes the
   // whole `--->` and the shaft chars never leak into the label.
-  = "--" WS? l:InlineDashLabel WS? DashArrowClose { return { label: l, reversed: false }; }
-  / "==" WS? l:InlineThickLabel WS? ThickArrowClose { return { label: l, reversed: false }; }
+  = "--" WS? l:InlineDashLabel WS? DashArrowClose { return { label: l, reversed: false, inlineDash: true }; }
+  / "==" WS? l:InlineThickLabel WS? ThickArrowClose { return { label: l, reversed: false, inlineDash: true }; }
   // Labeled OPEN-link (NO arrowhead): `A -- label --- B`, `A -- label -- B`,
   // `A -- label ---- B` (and the thick `A == label === B` variants). Mirrors the
   // labeled-arrow branches above, but the CLOSE is a head-less dash/equals run
@@ -703,8 +867,8 @@ Link "arrow"
   // close. GENERALIZES the inline-dash family across {close-kind: arrow vs open} ×
   // {shaft-length 2..5} × {label: quoted/unquoted} — every arm now parses to ONE
   // labeled edge instead of phantom-noding.
-  / "--" WS? l:InlineDashLabel WS DashOpenClose { return { label: l, reversed: false }; }
-  / "==" WS? l:InlineThickLabel WS ThickOpenClose { return { label: l, reversed: false }; }
+  / "--" WS? l:InlineDashLabel WS DashOpenClose { return { label: l, reversed: false, inlineDash: true }; }
+  / "==" WS? l:InlineThickLabel WS ThickOpenClose { return { label: l, reversed: false, inlineDash: true }; }
   // Bidirectional (solid only — Mermaid has no `<==>`).
   / "<-->" { return { label: undefined, reversed: false }; }
   / "<--"  { return { label: undefined, reversed: true }; }

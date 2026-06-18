@@ -52,6 +52,32 @@ function eq(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// The set of distinct warning codes a block (or set of blocks) emitted.
+function warnCodes(blocks) {
+  const codes = new Set();
+  for (const b of blocks) for (const w of b.warnings || []) codes.add(w.code);
+  return [...codes].sort();
+}
+// Assert the emitted warning codes are EXACTLY the expected set (order-insensitive).
+// Returns an error message or null. A warning must also carry a real 0-based line
+// that lies within the source so a consumer can point at it.
+function checkWarnings(blocks, expectWarnings, lines) {
+  const got = warnCodes(blocks);
+  const want = [...expectWarnings].sort();
+  if (!eq(got, want)) return `warnings mismatch: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`;
+  for (const b of blocks) {
+    for (const w of b.warnings || []) {
+      if (typeof w.line !== "number" || w.line < 0 || lines[w.line] === undefined) {
+        return `warning ${JSON.stringify(w.code)} has an out-of-range line ${w.line}`;
+      }
+      if (typeof w.message !== "string" || w.message.length === 0) {
+        return `warning ${JSON.stringify(w.code)} has no message`;
+      }
+    }
+  }
+  return null;
+}
+
 // A node/edge span is "real" iff it has a 0-based line and a non-degenerate
 // column range that lies within the source line.
 function spanLooksReal(item, lines) {
@@ -110,6 +136,14 @@ for (const tc of corpus) {
         failures.push({ id: tc.id, reason: `expectSupported=${tc.expectSupported} but a block was supported=${bad.supported} (parseError=${JSON.stringify(bad.parseError)})` });
         continue;
       }
+    }
+    // A valid:false case that is a graceful WARN (supported:true, empty model) may
+    // still carry yellow-lint warnings — e.g. a reserved-keyword edge endpoint that
+    // is dropped now warns `reserved-id` so the drop is never silent. expectWarnings
+    // pins the exact code set when the case asks.
+    if (tc.expectWarnings !== undefined) {
+      const w = checkWarnings(blocks, tc.expectWarnings, lines);
+      if (w) { failures.push({ id: tc.id, reason: w }); continue; }
     }
     pass++;
     continue;
@@ -231,6 +265,19 @@ for (const tc of corpus) {
   }
   if (netFail) {
     failures.push({ id: tc.id, reason: `span-net: ${netFail}` });
+    continue;
+  }
+
+  // Warning-channel assertion: when a valid:true case pins `expectWarnings`, the
+  // emitted yellow-lint codes (over the blocks under check) must match exactly.
+  // This is how the v1.4 renders-it-but-warn families certify their advisory
+  // (fanout-split / reserved-id / reserved-id-subgraph / inline-dash-label /
+  // id-truncated). When omitted, the default is NO warnings (a clean parse), so a
+  // case that starts emitting a spurious warning is caught even without opting in.
+  const wantWarnings = tc.expectWarnings === undefined ? [] : tc.expectWarnings;
+  const warnFail = checkWarnings(supBlocks, wantWarnings, lines);
+  if (warnFail) {
+    failures.push({ id: tc.id, reason: warnFail });
     continue;
   }
 

@@ -59,7 +59,16 @@ import { parse as parseFlowchart, SyntaxError as PeggySyntaxError } from "./gene
  * @property {Node[]} nodes
  * @property {Edge[]} edges
  * @property {Subgraph[]} subgraphs
+ * @property {Warning[]} warnings  yellow-lint advisories — the block is still
+ *   supported:true; each warning notes a renders-but-off-canonical construct that
+ *   was parsed best-effort, skipped block-locally, or split. An empty array means
+ *   no advisory. Distinct from `parseError` (a hard parse failure, supported:false).
  * @property {string|undefined} parseError  message when the block didn't parse
+ *
+ * @typedef {Object} Warning
+ * @property {string} code   stable machine code (e.g. "reserved-id", "fanout-split")
+ * @property {string} message human-readable advisory
+ * @property {number} line   0-based absolute line the advisory points at
  */
 
 const FENCE_RE = /^(\s*)(`{3,}|~{3,})\s*(\S*)/;
@@ -74,6 +83,9 @@ function applyLineOffset(parsed, lineOffset) {
   for (const n of parsed.nodes) n.line += lineOffset;
   for (const e of parsed.edges) e.line += lineOffset;
   for (const sg of parsed.subgraphs) sg.line += lineOffset;
+  // Warnings carry a 0-based line too, so a fenced-block warning points at the
+  // absolute document line (not the line within the fence content).
+  for (const w of parsed.warnings || []) w.line += lineOffset;
   return parsed;
 }
 
@@ -94,11 +106,15 @@ function parseBlockContent(content, lineOffset) {
         nodes: [],
         edges: [],
         subgraphs: [],
+        warnings: [],
         parseError: err.message,
       };
     }
     throw err; // a non-grammar error is a real bug — don't swallow it
   }
+  // The grammar returns a `warnings` array on a supported block; default it so the
+  // field is always present (an empty array = no advisory) before the offset shift.
+  if (!parsed.warnings) parsed.warnings = [];
   applyLineOffset(parsed, lineOffset);
   parsed.parseError = undefined;
   return parsed;

@@ -18,6 +18,20 @@ const normEdges = (es) =>
   es.map((e) => (e.label !== undefined ? { from: e.from, to: e.to, label: e.label } : { from: e.from, to: e.to }));
 const normSubs = (ss) => ss.map((s) => ({ id: s.id, label: s.label, hasId: s.hasId, members: s.members }));
 
+// Distinct warning codes a set of blocks emitted, sorted (order-insensitive set
+// compare). Also verifies each warning carries a real in-range line + a message.
+const warnCodes = (blocks) =>
+  [...new Set(blocks.flatMap((b) => (b.warnings || []).map((w) => w.code)))].sort();
+function assertWarnings(blocks, expectWarnings, lines, id) {
+  assert.deepEqual(warnCodes(blocks), [...expectWarnings].sort(), `warnings codes (${id})`);
+  for (const b of blocks) {
+    for (const w of b.warnings || []) {
+      assert.ok(typeof w.line === "number" && w.line >= 0 && lines[w.line] !== undefined, `warning ${w.code} in-range line (${id})`);
+      assert.ok(typeof w.message === "string" && w.message.length > 0, `warning ${w.code} has a message (${id})`);
+    }
+  }
+}
+
 function isMmdFor(tc) {
   const hasFence = /^\s*(```|~~~)/m.test(tc.input);
   return tc.isMmd === true || (tc.isMmd === undefined && !hasFence);
@@ -46,6 +60,10 @@ for (const tc of corpus) {
       if (tc.expectSupported !== undefined) {
         for (const b of blocks) assert.equal(b.supported, tc.expectSupported, `valid:false supported axis (${tc.id})`);
       }
+      // A graceful-WARN valid:false case (supported:true, empty model) may still
+      // carry yellow-lint warnings (e.g. a dropped reserved edge endpoint). Pin the
+      // exact code set when the case asks via expectWarnings.
+      if (tc.expectWarnings !== undefined) assertWarnings(blocks, tc.expectWarnings, lines, tc.id);
       return;
     }
 
@@ -109,6 +127,12 @@ for (const tc of corpus) {
     for (const b of supBlocks) {
       checkSpans(b, lines, (msg) => assert.fail(`span-net (${tc.id}): ${msg}`));
     }
+
+    // Warning-channel assertion: pin the exact yellow-lint code set when the case
+    // asks (the v1.4 renders-it-but-warn families certify their advisory here);
+    // default is NO warnings, so a case that starts emitting a spurious warning
+    // fails even without opting in.
+    assertWarnings(supBlocks, tc.expectWarnings === undefined ? [] : tc.expectWarnings, lines, tc.id);
   });
 }
 
@@ -518,4 +542,136 @@ test("hyphenated-span family: a PLAIN (non-truncated) shaped id keeps the WHOLE-
     const n = findMermaidBlocks(src, true)[0].nodes[0];
     assert.equal(src.split("\n")[n.line].slice(n.startChar, n.endChar), slice, `${body}: whole-text span`);
   }
+});
+
+// ── v1.4 renders-it-but-warn families ─────────────────────────────────────────
+
+const codesOf = (b) => [...new Set((b.warnings || []).map((w) => w.code))].sort();
+
+// A block may be supported:true AND carry warnings (the yellow-lint). A clean
+// canonical block carries an empty warnings array.
+test("warnings channel: supported block carries an empty array on a clean parse", () => {
+  const b = findMermaidBlocks("graph TD\nA[Start] --> B[End]", true)[0];
+  assert.equal(b.supported, true);
+  assert.deepEqual(b.warnings, []);
+});
+
+test("warnings channel: a fenced-block warning line is absolute in the document", () => {
+  // The reserved-id skip is on the 5th line (0-based 4) of the document.
+  const src = "# Doc\n\n```mermaid\ngraph TD\nEnd[X]\n```";
+  const b = findMermaidBlocks(src, false)[0];
+  assert.equal(b.supported, true);
+  const w = (b.warnings || []).find((x) => x.code === "reserved-id");
+  assert.ok(w, "reserved-id warning present");
+  assert.equal(w.line, 4, "warning line is the absolute document line of End[X]");
+});
+
+// B1 — reserved-keyword node id recovery is CASE-INSENSITIVE.
+test("v1.4 B1: a mixed/upper-case reserved node id is recovered case-insensitively + warned, never block-fatal", () => {
+  for (const kw of ["End", "STYLE", "Graph", "ClassDef", "SUBGRAPH", "Direction"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\n${kw}[X]\nC-->D`, true)[0];
+    assert.equal(b.supported, true, `${kw}[X]: block survives (supported)`);
+    assert.equal(b.nodes.length, 0, `${kw}[X]: skipped, no node`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D"], `${kw}[X]: surrounding edges survive`);
+    assert.deepEqual(codesOf(b), ["reserved-id"], `${kw}[X]: reserved-id warning`);
+  }
+  // a mixed-case bare `End` still must NOT be recovered as a shaped node when bare
+  // (no shape) — but a mixed-case SHAPED end[X] is recovered like the others above.
+});
+
+// B2 — a reserved keyword as a subgraph id is kept + warned; the edge referencing
+// it is dropped with its own warning (never silently).
+test("v1.4 B2: reserved keyword as a subgraph id is kept + warned, the referencing edge drop is advised", () => {
+  const b = findMermaidBlocks("graph TD\nsubgraph graph[Title]\n  C --> graph\nend", true)[0];
+  assert.equal(b.supported, true);
+  assert.deepEqual(b.subgraphs.map((s) => ({ id: s.id, label: s.label })), [{ id: "graph", label: "Title" }]);
+  assert.equal(b.edges.length, 0, "the C-->graph edge (reserved endpoint) is dropped");
+  assert.deepEqual(codesOf(b), ["reserved-id", "reserved-id-subgraph"]);
+});
+
+// B3 — `&` fan-out/fan-in is SPLIT into the real pairwise edges + one advisory.
+test("v1.4 B3: & fan-out/fan-in splits into the real pairwise edges, never block-fatal", () => {
+  const cases = [
+    ["A --> B & C", ["A->B", "A->C"]],
+    ["A & B --> C", ["A->C", "B->C"]],
+    ["A & B --> C & D", ["A->C", "A->D", "B->C", "B->D"]],
+    ["A --> B & C --> D", ["A->B", "A->C", "B->D", "C->D"]],
+  ];
+  for (const [body, edges] of cases) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.supported, true, `${body}: supported`);
+    assert.equal(b.parseError, undefined, `${body}: no parseError`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), edges, `${body}: split edges`);
+    assert.deepEqual(codesOf(b), ["fanout-split"], `${body}: one fanout-split advisory`);
+  }
+  // a reserved member in a fan-out drops only its edge (reserved-id) + still splits
+  const r = findMermaidBlocks("graph TD\nA --> B & end", true)[0];
+  assert.deepEqual(r.edges.map((e) => `${e.from}->${e.to}`), ["A->B"]);
+  assert.deepEqual(codesOf(r), ["fanout-split", "reserved-id"]);
+});
+
+// B4 — a FOREIGN close-bracket inside an unquoted label is kept as content (it
+// renders in Mermaid); the over-bracket guard still hard-fails.
+test("v1.4 B4: a foreign close-bracket inside an unquoted label is part of the label", () => {
+  const cases = [
+    ["A[Order (Pending)]", "Order (Pending)", "[]"],
+    ["A[Status {x}]", "Status {x}", "[]"],
+    ["A(read [x])", "read [x]", "()"],
+    ["A{check (x)}", "check (x)", "{}"],
+    ["A[[Sub (x)]]", "Sub (x)", "[[]]"],
+    ["A((Circle [x]))", "Circle [x]", "(())"],
+    ["A{{Hex (x)}}", "Hex (x)", "{{}}"],
+    ["A([Stadium {x}])", "Stadium {x}", "([])"],
+  ];
+  for (const [body, label, shape] of cases) {
+    const src = `graph TD\n${body}`;
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `${body}: supported`);
+    const n = b.nodes[0];
+    assert.equal(n.label, label, `${body}: label keeps the foreign bracket`);
+    assert.equal(n.shape, shape, `${body}: shape`);
+    // span-content invariant: the label span still slices to exactly the label
+    assert.equal(src.split("\n")[n.line].slice(n.labelStart, n.labelEnd), label, `${body}: label span slices to content`);
+    assert.deepEqual(codesOf(b), [], `${body}: a parsed canonical-shape label carries no warning`);
+  }
+  // the ASYMMETRIC over-bracket guard is unchanged — these still hard-fail.
+  for (const src of ["graph TD\nA[[[hello]]", "graph TD\nA((x)", "graph TD\nA{{{x}}", "graph TD\nA[[x]"]) {
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, false, `${src}: over-bracket still hard-fails`);
+    assert.equal(b.nodes.length, 0, `${src}: no live node`);
+  }
+});
+
+// C — advisory warnings on forms that already parse but are non-canonical.
+test("v1.4 C: inline-dash edge labels carry the inline-dash-label advisory; pipe form does not", () => {
+  for (const body of ["A -- text --> B", "A == text ==> B", "A -- text --- B", 'A -- "q" --> B']) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.equal(b.edges.length, 1, `${body}: one edge`);
+    assert.deepEqual(codesOf(b), ["inline-dash-label"], `${body}: advisory`);
+  }
+  // canonical pipe + bare arrow carry NO advisory
+  assert.deepEqual(codesOf(findMermaidBlocks("graph TD\nA -->|label| B", true)[0]), []);
+  assert.deepEqual(codesOf(findMermaidBlocks("graph TD\nA --> B", true)[0]), []);
+});
+
+test("v1.4 C: a hyphen-truncated id carries the id-truncated advisory (bare, shaped, endpoint)", () => {
+  for (const body of ["send-email", "send-email[L]", "send-email --> B", "A --> recv-order"]) {
+    const b = findMermaidBlocks(`graph TD\n${body}`, true)[0];
+    assert.deepEqual(codesOf(b), ["id-truncated"], `${body}: id-truncated advisory`);
+  }
+  // a plain (non-hyphenated) id carries no advisory
+  assert.deepEqual(codesOf(findMermaidBlocks("graph TD\nplain --> B", true)[0]), []);
+});
+
+test("v1.4: a backtracked speculative path leaves NO spurious warning (model-attached, not a shared array)", () => {
+  // `A -- a--b --- B` exercises the inline-dash label path with an embedded dash run;
+  // the parser backtracks across several Link alternatives before committing. Exactly
+  // one inline-dash-label advisory must survive — not one per speculative attempt.
+  const b = findMermaidBlocks("graph TD\nA -- a--b --- B", true)[0];
+  assert.equal(b.edges[0].label, "a--b");
+  assert.deepEqual(codesOf(b), ["inline-dash-label"]);
+  // and a clean canonical chain after a fan-out line keeps warnings scoped per block
+  const b2 = findMermaidBlocks("graph TD\nA --> B & C\nD --> E", true)[0];
+  assert.deepEqual(b2.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "A->C", "D->E"]);
+  assert.deepEqual(codesOf(b2), ["fanout-split"]);
 });

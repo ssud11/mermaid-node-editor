@@ -68,6 +68,7 @@ Each `Block` carries:
 | `nodes` | each with `id`, `label`, `shape`, `open`/`close`/`quote`, and `{ line, startChar, endChar, labelStart, labelEnd }` |
 | `edges` | each with `from`, `to`, optional `label`, and `{ line, startChar, endChar }` |
 | `subgraphs` | each with `id`, `label`, `hasId`, `quote`, `members[]`, and `{ line, idStart, idEnd }` |
+| `warnings` | advisory yellow-lints — an array of `{ code, message, line }`. The block is still `supported: true`; each warning flags a form that **renders** but is off-canonical and was parsed best-effort, split, or skipped block-locally (e.g. a reserved-keyword node id, an `&` fan-out edge that was split, a non-canonical inline-dash label). Empty when there is nothing to advise. Distinct from `parseError`. |
 | `parseError` | the parse-error message when the block did not parse (no exception is thrown) |
 
 Supported flowchart forms: node shapes `[]` `()` `([])` `[[]]` `[()]` `(())`
@@ -80,13 +81,38 @@ comments; YAML frontmatter; markdown fenced blocks and whole `.mmd` files.
 
 ### Graceful handling of off-contract input
 
-Inputs outside the contract — hyphenated ids, `&` fan-out, over-bracketed
-shapes, reserved-keyword node ids, unterminated brackets/fences — are handled
-**gracefully**: the parser never throws or hangs. A hyphenated id is truncated at
-the hyphen (the remainder discarded). A block that does not parse is returned
-`supported: false` with a `parseError` message. An unterminated fence is skipped,
-never swallowing the rest of the document. This lets a consumer **warn** on such
-input rather than silently mis-handle it.
+The parser never throws or hangs. Two tiers of off-contract handling, by whether
+the construct **renders** in real Mermaid:
+
+**Renders-but-off-canonical → parse best-effort + a `warnings` entry, block-local.**
+A form Mermaid itself accepts is never hard-denied: the block stays
+`supported: true`, the surrounding model is preserved, and an advisory is added to
+`warnings`. This covers:
+
+- a **reserved-keyword node id** (`End[X]`, `STYLE[x]`, any case) — that one node is
+  skipped, the surrounding edges survive (`reserved-id`);
+- a **reserved keyword as an edge endpoint** (`X --> end`) — that edge is dropped,
+  surroundings survive (`reserved-id`);
+- a **reserved keyword as a subgraph id** (`subgraph graph[Title]`) — the subgraph is
+  kept; an edge referencing it is preserved rather than silently dropped
+  (`reserved-id-subgraph`);
+- **`&` fan-out / fan-in** (`A --> B & C`, `A & B --> C`) — split into the real
+  pairwise edges (`fanout-split`);
+- a **foreign close-bracket inside an unquoted label** (`A[Order (Pending)]`) — parsed
+  as part of the label (it stops only at the shape's own closing token);
+- a **hyphenated id** — truncated at the hyphen, remainder discarded (`id-truncated`);
+- a **non-canonical inline-dash edge label** (`A -- text --> B`) — parsed; prefer the
+  pipe form `-->|text|` (`inline-dash-label`).
+
+**Input real Mermaid itself rejects → `supported: false` + a `parseError`.** Reserved
+for genuinely-malformed input: asymmetric over-bracketed shapes (`A[[[hello]]`,
+`A((x)`), an unclosed bracket, a bogus direction (`graph DT`), the mixed
+dash+pipe form (`A --|label|-->`). An unterminated fence is skipped, never
+swallowing the rest of the document.
+
+This lets a consumer surface a **yellow-lint warning** for renders-but-off-canonical
+input (without losing the rest of the diagram) and a hard error only for input
+Mermaid would reject too.
 
 ## License
 
