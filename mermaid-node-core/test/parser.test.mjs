@@ -1077,12 +1077,13 @@ test("unsupported-arrow (v1.6): a Mermaid-REJECTED arrow → supported:false; a 
     assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
   }
   // Quirky leading-head forms that REAL Mermaid RENDERS (`o--x`, `x--o`, `o==>`,
-  // `o---`, `x==o` → render as an edge C->D) but whose irregular metadata we do not
-  // model — these stay supported:true (a gentle skip-warn, no whole-block loss).
+  // `o---`, `x==o` → render as an edge C->D). Per the contract "renders-it → warn-don't-deny":
+  // the C->D edge IS EMITTED (not dropped) + an `unsupported-arrow` advisory; supported:true.
+  // The surrounding A->B / E->F survive too (ALL three edges present).
   for (const op of ["o--x", "x--o", "o==>", "o---", "x==o"]) {
     const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
     assert.equal(b.supported, true, `${op}: renders in Mermaid → supported:true`);
-    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "E->F"], `${op}: surroundings kept`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D", "E->F"], `${op}: C->D edge emitted (renders); surroundings kept`);
     assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
   }
 });
@@ -1313,4 +1314,158 @@ test("reverse arrow direction: hyphenated ids in reverse arrow — full ids, no 
   assert.equal(b.edges[0].from, "receive-order");
   assert.equal(b.edges[0].to, "ship-order");
   assert.ok(codesOf(b).includes("non-canonical-id"), "non-canonical-id for hyphenated ids");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arm-enumerated regression pins — indented fence detection (CommonMark the contract.4)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// CommonMark: a fenced code block opener indented ≥4 columns (or 1 tab, which
+// equals 4) is NOT a fence — it is an indented code block, rendered as literal
+// text. VS Code's markdown-it engine follows this rule exactly (empirically
+// verified: 0-3 spaces → fence/mermaid, 4 spaces or tab → code_block).
+// A block mis-detected as a live Mermaid diagram when it renders as literal text
+// is a write-back corruption risk: the sidebar would offer rename/relabel and
+// WorkspaceEdit would silently mutate prose the user sees as a code listing.
+//
+// Cross-product: {indent 0..4+, tab} × {backtick, tilde} × {with/without content}.
+
+test("indented fence: 4-space indent is NOT a live Mermaid block (CommonMark literal)", () => {
+  // 4-space indent → CommonMark indented code block (literal text); 0 live blocks.
+  assert.equal(findMermaidBlocks("    ```mermaid\n    graph TD\n    A-->B\n    ```", false).length, 0, "4-space: 0 blocks");
+  assert.equal(findMermaidBlocks("    ~~~mermaid\n    graph TD\n    A-->B\n    ~~~", false).length, 0, "4-space tilde: 0 blocks");
+  // 5-space and 8-space also produce 0 blocks
+  assert.equal(findMermaidBlocks("     ```mermaid\n     graph TD\n     A-->B\n     ```", false).length, 0, "5-space: 0 blocks");
+  assert.equal(findMermaidBlocks("        ```mermaid\n        graph TD\n        A-->B\n        ```", false).length, 0, "8-space: 0 blocks");
+});
+
+test("indented fence: tab-indent is NOT a live Mermaid block (tab = 4 columns)", () => {
+  // A leading tab equals 4 visual columns → same as 4-space; no live block.
+  assert.equal(findMermaidBlocks("\t```mermaid\n\tgraph TD\n\tA-->B\n\t```", false).length, 0, "tab: 0 blocks");
+  assert.equal(findMermaidBlocks("\t~~~mermaid\n\tgraph TD\n\tA-->B\n\t~~~", false).length, 0, "tab tilde: 0 blocks");
+});
+
+test("indented fence: indents 0, 1, 2, 3 ARE live Mermaid blocks", () => {
+  // These are valid fence openers per CommonMark; the block renders as a diagram.
+  for (const [name, prefix] of [["0", ""], ["1", " "], ["2", "  "], ["3", "   "]]) {
+    const src = `${prefix}\`\`\`mermaid\ngraph TD\nA-->B\n${prefix}\`\`\``;
+    const blocks = findMermaidBlocks(src, false);
+    assert.equal(blocks.length, 1, `indent-${name}: 1 live block`);
+    assert.equal(blocks[0].supported, true, `indent-${name}: supported:true`);
+    assert.deepEqual(blocks[0].edges.map((e) => `${e.from}->${e.to}`), ["A->B"], `indent-${name}: edge A->B`);
+  }
+  // tilde fence, same indent range
+  for (const [name, prefix] of [["0", ""], ["1", " "], ["2", "  "], ["3", "   "]]) {
+    const src = `${prefix}~~~mermaid\ngraph TD\nA-->B\n${prefix}~~~`;
+    assert.equal(findMermaidBlocks(src, false).length, 1, `tilde indent-${name}: 1 live block`);
+  }
+});
+
+test("indented fence: a 4-space-indented opener in a multi-block doc is skipped; adjacent real fences survive", () => {
+  // A 4-space-indented fence is literal; a real unindented fence before/after it parses normally.
+  const src = "```mermaid\ngraph TD\nA-->B\n```\n\n    ```mermaid\n    graph TD\n    C-->D\n    ```\n\n```mermaid\ngraph TD\nE-->F\n```";
+  const blocks = findMermaidBlocks(src, false);
+  // Only the two real (0-indent) fences produce live blocks; the 4-space one is literal.
+  assert.equal(blocks.length, 2, "2 live blocks (the 4-space fence is literal)");
+  assert.deepEqual(blocks[0].edges.map((e) => `${e.from}->${e.to}`), ["A->B"]);
+  assert.deepEqual(blocks[1].edges.map((e) => `${e.from}->${e.to}`), ["E->F"]);
+});
+
+test("indented fence: closing fence also respects the 0-3-column cap (CommonMark close rule)", () => {
+  // A 4-space-indented closing fence is NOT a real close; the block is unterminated → 0 blocks.
+  const src = "```mermaid\ngraph TD\nA-->B\n    ```";
+  assert.equal(findMermaidBlocks(src, false).length, 0, "4-space close is not a real close → unterminated → 0 blocks");
+  // A 3-space close IS valid.
+  const src3 = "```mermaid\ngraph TD\nA-->B\n   ```";
+  const b3 = findMermaidBlocks(src3, false);
+  assert.equal(b3.length, 1, "3-space close is valid → 1 block");
+  assert.equal(b3[0].supported, true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arm-enumerated regression pins — FIX-C catch-all forms emit edge + advisory
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// These are LEADING circle/cross head (`o`/`x`) forms on various shafts whose
+// trailing combination is not one of the cleanly-modeled arms. Oracle: ALL of
+// them RENDER in real Mermaid v11 as a plain A->B edge. Per the contract "renders-it →
+// warn-don't-deny": the edge MUST be emitted (never silently dropped) — a drop
+// is the the contract-prohibited "silently drop an on-contract edge" class.
+//
+// Cross-product: {o, x} × {solid-headless 3..5, solid-cross-head, solid-circle-head,
+//                           thick-arrow-head, thick-open 3..4, thick-cross-head,
+//                           dotted-open 1..2, dotted-cross-head}.
+// Each arm: supported:true, A->B in edges, unsupported-arrow in warnings.
+
+test("FIX-C renders family: each leading-o/x form emits the A->B edge + unsupported-arrow advisory", () => {
+  // These all RENDER as C->D in real Mermaid (oracle-verified); emit the edge + warn.
+  const renders = [
+    // {o|x} + solid head-less shaft (3+ dashes, no `>`)
+    "o---", "o----", "o-----",
+    "x---", "x----",
+    // {o|x} + solid cross/circle head (trailing x/o, not the same as source)
+    "o--x",   // source=o, trail=x  → RENDERS C->D
+    "x--o",   // source=x, trail=o  → RENDERS C->D
+    // {o|x} + thick arrow head
+    "o==>",
+    // {o|x} + thick open (3+ equals)
+    "o===", "o====",
+    // {o|x} + thick cross head
+    "x==o",
+    // {o|x} + dotted open (1 dot / 2 dots)
+    "o-.-", "o-..-",
+    "x-.-", "x-..-",
+  ];
+  for (const op of renders) {
+    const b = findMermaidBlocks(`graph TD\nA ${op} B`, true)[0];
+    assert.equal(b.supported, true, `${op}: renders → supported:true`);
+    assert.equal(b.parseError, undefined, `${op}: no parseError`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B"], `${op}: A->B edge emitted (renders, not dropped)`);
+    assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory present`);
+  }
+});
+
+test("FIX-C renders family: A->B edge is present alongside surrounding edges (no block loss)", () => {
+  // The C->D edge from the FIX-C form PLUS the surrounding A->B / E->F all survive.
+  const ops = ["o---", "x---", "o--x", "x--o", "o==>", "o-.-", "x-..-"];
+  for (const op of ops) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
+    assert.equal(b.supported, true, `${op}: supported:true`);
+    assert.deepEqual(
+      b.edges.map((e) => `${e.from}->${e.to}`),
+      ["A->B", "C->D", "E->F"],
+      `${op}: all three edges present (FIX-C edge + surroundings)`,
+    );
+    assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
+  }
+});
+
+test("FIX-C renders family: warning line is the absolute document line of the FIX-C edge", () => {
+  // The unsupported-arrow warning's line must be within the document's line range.
+  const src = "```mermaid\ngraph TD\nA-->B\nC o--- D\nE-->F\n```";
+  const b = findMermaidBlocks(src, false)[0];
+  assert.equal(b.supported, true);
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "C->D", "E->F"]);
+  const w = (b.warnings || []).find((x) => x.code === "unsupported-arrow");
+  assert.ok(w, "unsupported-arrow warning present");
+  const lines = src.split("\n");
+  assert.ok(w.line >= 0 && w.line < lines.length, `warning line ${w.line} is in-range`);
+  assert.ok(lines[w.line] !== undefined, "warning line resolves to a real document line");
+});
+
+test("FIX-C renders family: bare `--` and `<--` are still a SKIP (multi-line-label quirk, off-contract)", () => {
+  // `A -- B` and `A <-- B` are Mermaid-REJECTED standalone (not the renders class).
+  // They render ONLY via an off-contract multi-line-label quirk (the contract "labels are
+  // single-line"). These keep the gentle skip-warn behavior: edge dropped, supported:true.
+  for (const op of ["--", "<--"]) {
+    const b = findMermaidBlocks(`graph TD\nA ${op} B`, true)[0];
+    assert.equal(b.supported, true, `${op}: gentle skip (not fatal)`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), [], `${op}: edge NOT emitted (off-contract quirk)`);
+    assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
+  }
+  // Surroundings survive the skip
+  for (const op of ["--", "<--"]) {
+    const b = findMermaidBlocks(`graph TD\nP-->A\nA ${op} B\nB-->Q`, true)[0];
+    assert.ok(b.edges.some((e) => e.from === "P" && e.to === "A"), `${op}: surrounding P->A survives`);
+  }
 });

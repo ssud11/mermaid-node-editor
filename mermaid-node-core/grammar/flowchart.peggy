@@ -865,18 +865,27 @@ EdgeChain
         pushWarn(warn("inline-dot-label", "inline-dot edge label is non-canonical; prefer the pipe form `-.->|label|`", location()));
       }
       // Per-construct `unsupported-arrow` recovery, with the v1.6 RENDERS-vs-REJECTS
-      // split. A connector matched as an UnsupportedArrow alt of the Link rule emits NO
-      // edge for this segment + one `unsupported-arrow` warning; the surrounding edges
-      // survive. The warning's FATALITY follows real Mermaid:
+      // split. A connector matched as an unsupported alt of the Link rule emits an
+      // `unsupported-arrow` warning; the handling of the edge itself depends on which
+      // flag was set:
       //   - `unsupportedFatal` (Mermaid REJECTS the whole diagram — `-->o`/`-->x`/`==>o`/
       //     `-.->x`, dangling `==`, `<==`, `o==`/`x==`): the warning is FATAL → the block
-      //     is supported:false + "won't render" (best-effort model still exposed).
-      //   - `unsupported` (Mermaid RENDERS but we don't model the irregular metadata —
-      //     quirky leading-head `o--x`/`o==>`/`o---`, dangling `--` via line-merge): the
-      //     warning is a GENTLE advisory, block stays supported:true.
+      //     is supported:false + "won't render" (best-effort model still exposed). Edge
+      //     dropped.
+      //   - `unsupportedRender` (Mermaid RENDERS as A->B but with irregular metadata we
+      //     don't model — the FIX-C catch-all: `o---`, `o-.-`, `x----`, `o==>`, `o--x`,
+      //     `x--o`, etc.): the warning is a GENTLE advisory, block stays supported:true,
+      //     and the edge IS EMITTED (from/to correct, metadata unmodeled). Per the contract
+      //     "renders-it → warn-don't-deny": emitting the edge is mandatory here — a silent
+      //     drop is the prohibited "silently drop an on-contract edge" class.
+      //   - `unsupported` (Mermaid renders ONLY via off-contract multi-line-label quirk —
+      //     bare `--` / `<--`: these render embedded but the contract "labels are single-line" makes
+      //     the multi-line label itself off-contract): GENTLE advisory, edge DROPPED,
+      //     block stays supported:true (surrounding edges survive, no whole-block loss).
       // This is the structural backstop: no arrow form discards the whole block silently
-      // (the maximal silent-loss class) — a reject is an honest supported:false, a render
-      // is a skip-warn.
+      // (the maximal silent-loss class) — a reject is an honest supported:false; a
+      // renders-with-irregular-metadata form emits the edge + warns; a dangling off-
+      // contract form skips the edge + warns.
       if (link.unsupportedFatal) {
         pushWarn(fatalWarn(
           "unsupported-arrow",
@@ -887,7 +896,12 @@ EdgeChain
         prevGroup = seg.group;
         continue;
       }
-      if (link.unsupported) {
+      if (link.unsupportedRender) {
+        pushWarn(warn("unsupported-arrow", "this arrow form renders in Mermaid but its metadata is not modeled; the edge endpoints are kept", location()));
+        // Fall through to the edge-emission block below — from/to are correct even
+        // though the metadata (head/stroke/bidirectional/length) is the `unsupported`
+        // placeholder from the catch-all. The the contract renders-it rule forbids a silent drop.
+      } else if (link.unsupported) {
         pushWarn(warn("unsupported-arrow", "this arrow form is not modeled; the edge is skipped (surrounding edges are kept)", location()));
         prevGroup = seg.group;
         continue;
@@ -979,6 +993,7 @@ EdgeSegGroup
         length: link.length,
         unsupported: link.unsupported === true,
         unsupportedFatal: link.unsupportedFatal === true,
+        unsupportedRender: link.unsupportedRender === true,
         leadingHead: link.leadingHead === true,
         pipeFatalReason,
       },
@@ -1409,19 +1424,23 @@ Link "arrow"
 
   // FIX C catch-all — a LEADING circle/cross head (`o`/`x`) on a shaft whose
   // TRAILING combination is NOT one of the cleanly-modeled forms above (e.g.
-  // `o--x`, `x--o`, `o==>`, `o---`). Oracle: these RENDER in Mermaid, but with
-  // IRREGULAR metadata (a leading `o`/`x` over a `==` shaft collapses the stroke to
-  // `normal`; a leading head over a head-less shaft renders `arrow_open`) — too
-  // quirky to model faithfully and outside the stated fix scope. Rather than let
-  // them HARD-FAIL the whole block (the data-loss class this fix exists to kill), we
-  // MATCH the arrow shape and mark it `unsupported` → EdgeChain drops THIS edge with
-  // an `unsupported-arrow` advisory, surrounding edges survive. This is the
-  // structural backstop generalized: any leading-head arrow shape we don't model
-  // skips block-locally, never nuking the block. The shaft run is greedy over the
-  // stroke chars + an optional trailing head, bounded so it stops at the first
-  // non-shaft/non-head char (it can't swallow the next node).
+  // `o--x`, `x--o`, `o==>`, `o---`, `o-.-`, `x----`). Oracle: ALL of these RENDER
+  // in Mermaid as a plain A->B edge (arrow_open / arrow_point / irregular metadata
+  // depending on the trailing combination), confirmed via real Mermaid v11 for every
+  // sub-family: `o---` RENDERS C->D, `x----` RENDERS C->D, `o-.-` RENDERS C->D,
+  // `o==>` RENDERS C->D, `o--x` RENDERS C->D, `x--o` RENDERS C->D, etc.
+  // Per the the contract "renders-it → warn-don't-deny" rule: since these RENDER, the edge
+  // MUST be emitted (not silently dropped) — silent drop is the the contract-prohibited class.
+  // The `unsupportedRender` flag signals EdgeChain to emit the from/to edge with an
+  // `unsupported-arrow` advisory (renders-but-unmodeled), instead of the full skip.
+  // Metadata (head/stroke/bidirectional/length) is not modeled for these forms; the
+  // edge still carries the endpoints and the warning. This is distinct from the FATAL
+  // `unsupportedFatal` forms (Mermaid REJECTS) and the gentle `unsupported` skip
+  // (bare `--` / `<--` which render ONLY via a multi-line-label quirk, off-contract
+  // per the contract "labels are single-line"). The shaft run is greedy so it stops at the
+  // first non-shaft/non-head char and cannot swallow the next node.
   / ("o" / "x") ("-" / "=" / ".")+ ("-" / "=" / "." / ">" / "x" / "o")*
-    { return link(undefined, false, "arrow", "solid", false, 1, { unsupported: true }); }
+    { return link(undefined, false, "arrow", "solid", false, 1, { unsupportedRender: true }); }
 
 // The closing arrows of the inline-label form, as full-length shaft runs. Any
 // shaft length is one closing arrow (`-->`, `--->`, `---->`, … / `==>`, `===>`,

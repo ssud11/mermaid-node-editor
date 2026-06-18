@@ -89,7 +89,11 @@ import { parse as parseFlowchart, SyntaxError as PeggySyntaxError } from "./gene
  * @property {number} line   0-based absolute line the advisory points at
  */
 
-const FENCE_RE = /^(\s*)(`{3,}|~{3,})\s*(\S*)/;
+// CommonMark rule: a fenced code block opener may be indented at most 3 spaces.
+// A leading tab counts as 4 columns and therefore always exceeds the cap.
+// /^( {0,3})(`{3,}|~{3,})\s*(\S*)/ — the opener group is space-only, not `\s*`,
+// so a tab-indented line never matches this regex and is treated as non-fence content.
+const FENCE_RE = /^( {0,3})(`{3,}|~{3,})\s*(\S*)/;
 
 /**
  * Shift all positions in a parsed flowchart by a line offset so they are
@@ -180,7 +184,8 @@ export function findMermaidBlocks(text, isMmd) {
     const fenceChar = open[2][0];
     const len = open[2].length;
     const info = open[3].toLowerCase();
-    const closeRe = new RegExp("^\\s*" + fenceChar + "{" + len + ",}\\s*$");
+    // Closing fence: same 0-3-space indent cap as the opener (CommonMark the contract.4).
+    const closeRe = new RegExp("^ {0,3}" + fenceChar + "{" + len + ",}\\s*$");
     let j = i + 1;
     while (j < lines.length && !closeRe.test(lines[j])) {
       j++;
