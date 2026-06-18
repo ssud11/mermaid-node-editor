@@ -1,4 +1,4 @@
-// IT-1/IT-3 visual harness — renders the REAL webview (style.css + main.js) in
+// Visual harness — renders the REAL webview (style.css + main.js) in
 // chromium via playwright-core, feeds sample data, screenshots light + dark, and
 // asserts the DOM renders correctly (incl. no markup injection from labels/ids).
 //

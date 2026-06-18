@@ -1,4 +1,4 @@
-// IT-1 smoke — runs INSIDE the VS Code extension host (so `require('vscode')` works).
+// Smoke test — runs INSIDE the VS Code extension host (so `require('vscode')` works).
 // Goal: prove the extension actually loads/activates and its webview view resolves
 // in a real host — the "never run as an extension" gap. No mocha; throw = fail.
 const path = require('path');
@@ -31,9 +31,9 @@ async function run() {
   //    zero-coverage path. A throw here surfaces a real runtime defect.
   await vscode.commands.executeCommand('mermaidNodeEditorPanel.focus');
   await new Promise((r) => setTimeout(r, 1500));
-  console.log('IT-1 smoke PASS: activate + commands + demo open + webview resolve');
+  console.log('smoke PASS: activate + commands + demo open + webview resolve');
 
-  // 5. IT-2 — write-back glue end-to-end: onMessage -> WorkspaceEdit -> live doc.
+  // 5. write-back glue end-to-end: onMessage -> WorkspaceEdit -> live doc.
   const provider = api.provider;
   const src = 'graph TD\n  A[Start] --> B[Stop]\n  B --> A\n';
   const wbDoc = await vscode.workspace.openTextDocument({ language: 'mermaid', content: src });
@@ -53,7 +53,7 @@ async function run() {
   text = (await vscode.workspace.openTextDocument(wbDoc.uri)).getText();
   assert.ok(text.includes('B[Halt]'), 'node B label should become Halt');
 
-  console.log('IT-2 write-back PASS: id-rename propagates to edges + label edit lands via WorkspaceEdit');
+  console.log('write-back PASS: id-rename propagates to edges + label edit lands via WorkspaceEdit');
 
   // 6. Multi-file / multi-block / subgraph coverage — scenarios previously only
   //    inferred from reading the code, now asserted end-to-end.
@@ -83,7 +83,7 @@ async function run() {
   const tB = await readText(docB.uri);
   assert.ok(tA.includes('A[Alpha2]') && !tA.includes('Gamma2'), 'edit must land in focused file A only');
   assert.ok(tB.includes('A[Gamma2]') && !tB.includes('Alpha2'), 'edit must land in focused file B only');
-  console.log('IT-6 PASS: active-editor switching targets the focused file (covers split focus)');
+  console.log('PASS: active-editor switching targets the focused file (covers split focus)');
 
   // (b) Multi-block Markdown: the cursor scopes which block is edited; a node that
   //     lives in another block can't be touched.
@@ -109,7 +109,7 @@ async function run() {
   assert.ok(mdText.includes('A[First2]'), 'block 1 node editable when cursor is in block 1');
   assert.ok(mdText.includes('C[Third2]'), 'block 2 node editable when cursor is in block 2');
   assert.ok(!mdText.includes('NOPE'), 'a node outside the cursor block must not be edited');
-  console.log('IT-6 PASS: multi-block Markdown is cursor-scoped to the right block');
+  console.log('PASS: multi-block Markdown is cursor-scoped to the right block');
 
   // (c) Cursor outside any block -> empty state -> edit messages are no-ops.
   mdEd.selection = new vscode.Selection(7, 0, 7, 0); // prose line, between blocks
@@ -118,7 +118,7 @@ async function run() {
   await provider.onMessage({ type: 'nodeLabelChanged', id: 'A', value: 'SHOULD_NOT_APPLY' });
   const after = await readText(mdDoc.uri);
   assert.strictEqual(after, before, 'with cursor outside any block, an edit message must be a no-op');
-  console.log('IT-6 PASS: cursor outside a block clears + ignores edits');
+  console.log('PASS: cursor outside a block clears + ignores edits');
 
   // (d) Subgraph title edit end-to-end (through the panel glue, not just the pure fn).
   const sgDoc = await vscode.workspace.openTextDocument({
@@ -131,7 +131,7 @@ async function run() {
   await provider.onMessage({ type: 'subgraphLabelChanged', id: 'sg', value: 'Renamed' });
   const sgText = await readText(sgDoc.uri);
   assert.ok(/subgraph sg \[Renamed\]/.test(sgText), 'subgraph title should write back via the panel glue');
-  console.log('IT-6 PASS: subgraph title edit lands end-to-end');
+  console.log('PASS: subgraph title edit lands end-to-end');
 
   // (e) A newline in a pasted label is collapsed, not injected into the source.
   const nlDoc = await vscode.workspace.openTextDocument({
@@ -145,11 +145,11 @@ async function run() {
   const nlText = await readText(nlDoc.uri);
   assert.ok(nlText.includes('A[Line1 Line2]'), 'newline in a label should collapse to a space');
   assert.ok(!nlText.includes('Line1\nLine2'), 'a label newline must not split the source line');
-  console.log('IT-6 PASS: newline in a pasted label is collapsed, not injected');
+  console.log('PASS: newline in a pasted label is collapsed, not injected');
 
   // (f) The 'ready' handshake is handled (previously a silent no-op).
   await provider.onMessage({ type: 'ready' });
-  console.log('IT-6 PASS: ready handshake handled without error');
+  console.log('PASS: ready handshake handled without error');
 
   // 7. A2 — duplicate-tag linting surfaces as native Diagnostics (warnings).
   const dupDoc = await vscode.workspace.openTextDocument({
@@ -287,7 +287,7 @@ async function run() {
   // 12. Hidden-tab reveal (PREVIEW path): the doc's tab exists but is COVERED by
   //     another tab in its group, and focus sits in a DIFFERENT group. A preview
   //     node-click reveal must flip the doc's OWN group back to it — not open a
-  //     duplicate in the focused group (the v1.3.0 dogfood bug). The sidebar
+  //     duplicate in the focused group (the v1.3.0 regression bug). The sidebar
   //     path is not reachable in this state (unsupported-doc focus clears it),
   //     so this drives the preview panel's revealTag via the api.preview hook.
   const hiddenDoc = await vscode.workspace.openTextDocument({

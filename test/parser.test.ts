@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findMermaidBlocks, scanNodes, blockAtLine } from '../src/parser';
+import { findMermaidBlocks, scanNodes, blockAtLine, hasOverBracketedShape } from '../src/parser';
 
 test('scanNodes: basic rectangle node', () => {
   const nodes = scanNodes('A[Start]', 0);
@@ -9,7 +9,10 @@ test('scanNodes: basic rectangle node', () => {
   assert.equal(nodes[0].label, 'Start');
   assert.equal(nodes[0].open, '[');
   assert.equal(nodes[0].close, ']');
-  assert.equal(nodes[0].raw, 'A[Start]');
+  // node.raw was removed from the type when the core was wired in;
+  // verify the span instead (startChar/endChar cover the same text).
+  const line = 'A[Start]';
+  assert.equal(line.slice(nodes[0].startChar, nodes[0].endChar), 'A[Start]');
 });
 
 test('scanNodes: quoted label with spaces', () => {
@@ -228,4 +231,280 @@ test('blockAtLine (markdown): picks the block containing the line, else undefine
   assert.equal(blockAtLine(blocks, 3, false), blocks[0]); // inside first fence
   assert.equal(blockAtLine(blocks, 8, false), blocks[1]); // inside second fence
   assert.equal(blockAtLine(blocks, 5, false), undefined); // the prose line
+});
+
+// ===== P1 enrichment: edge labels =====
+const edges1 = (line: string) => findMermaidBlocks(['graph LR', line].join('\n'), true)[0].edges;
+
+test('edge label: pipe form `A -->|yes| B`', () => {
+  const e = edges1('A -->|yes| B');
+  assert.equal(e.length, 1);
+  assert.equal(e[0].label, 'yes');
+  assert.deepEqual([e[0].from, e[0].to], ['A', 'B']);
+});
+
+test('edge label: pipe with surrounding spaces `A --> |no| B`', () => {
+  assert.equal(edges1('A --> |no| B')[0].label, 'no');
+});
+
+test('edge label: inline form `A -- text --> B` (no spurious node — the documented fix)', () => {
+  const b = findMermaidBlocks(['graph LR', 'A[a] -- text --> B[b]'].join('\n'), true)[0];
+  assert.deepEqual(b.edges.map((x) => `${x.from}->${x.to}`), ['A->B']);
+  assert.equal(b.edges[0].label, 'text');
+  assert.deepEqual(b.nodes.map((n) => n.id).sort(), ['A', 'B']); // "text" is NOT a node
+});
+
+test('edge label: inline thick `A == t ==> B` and dotted `A -. t .-> B`', () => {
+  assert.equal(edges1('A == t ==> B')[0].label, 't');
+  assert.equal(edges1('A -. d .-> B')[0].label, 'd');
+});
+
+test('edge label: none → undefined', () => {
+  assert.equal(edges1('A --> B')[0].label, undefined);
+});
+
+// ===== P1 enrichment: edge kinds =====
+// The core stores stroke/head/bidirectional as FLAT fields on the edge
+// (edge.stroke / edge.head / edge.bidirectional) rather than a nested .kind
+// object. The helper below extracts those flat fields for assertions.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ekind = (e: any) => ({ stroke: e.stroke, head: e.head, bidirectional: e.bidirectional });
+const kind1 = (line: string) => ekind(edges1(line)[0]);
+
+test('edge kind: solid arrow `-->`', () => {
+  assert.deepEqual(kind1('A --> B'), { stroke: 'solid', head: 'arrow', bidirectional: false });
+});
+test('edge kind: solid open `---`', () => {
+  assert.deepEqual(kind1('A --- B'), { stroke: 'solid', head: 'open', bidirectional: false });
+});
+test('edge kind: dotted arrow `-.->`', () => {
+  assert.deepEqual(kind1('A -.-> B'), { stroke: 'dotted', head: 'arrow', bidirectional: false });
+});
+test('edge kind: thick arrow `==>`', () => {
+  assert.deepEqual(kind1('A ==> B'), { stroke: 'thick', head: 'arrow', bidirectional: false });
+});
+test('edge kind: cross `--x` and circle `--o`', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.equal((edges1('A --x B')[0] as any).head, 'cross');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.equal((edges1('A --o B')[0] as any).head, 'circle');
+});
+test('edge kind: bidirectional `<-->`, `o--o`, `x--x`', () => {
+  assert.deepEqual(kind1('A <--> B'), { stroke: 'solid', head: 'arrow', bidirectional: true });
+  assert.deepEqual(kind1('A o--o B'), { stroke: 'solid', head: 'circle', bidirectional: true });
+  assert.deepEqual(kind1('A x--x B'), { stroke: 'solid', head: 'cross', bidirectional: true });
+});
+test('edge kind: thick open `===` and dotted open `-.-`', () => {
+  assert.deepEqual(kind1('A === B'), { stroke: 'thick', head: 'open', bidirectional: false });
+  assert.deepEqual(kind1('A -.- B'), { stroke: 'dotted', head: 'open', bidirectional: false });
+});
+
+test('edge kind+label: chained mixed `A -->|a| B -.-> C`', () => {
+  const e = edges1('A -->|a| B -.-> C');
+  assert.equal(e.length, 2);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.deepEqual([e[0].from, e[0].to, e[0].label, (e[0] as any).stroke], ['A', 'B', 'a', 'solid']);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.deepEqual([e[1].from, e[1].to, e[1].label, (e[1] as any).stroke], ['B', 'C', undefined, 'dotted']);
+});
+
+// ===== P1 enrichment: subgraph membership =====
+test('subgraph members: declared nodes belong to the subgraph', () => {
+  const b = findMermaidBlocks(
+    ['graph TD', 'subgraph S [Phase]', 'A[a] --> B[b]', 'end', 'B --> C[c]'].join('\n'),
+    true
+  )[0];
+  const s = b.subgraphs.find((x) => x.id === 'S')!;
+  assert.deepEqual(s.members, ['A', 'B']); // C is outside; first-seen-outside not re-added
+});
+
+test('subgraph members: nested subgraph is a member of its parent; inner nodes belong to inner', () => {
+  const b = findMermaidBlocks(
+    ['graph TD', 'subgraph Outer', 'O[o]', 'subgraph Inner', 'I[i]', 'end', 'end'].join('\n'),
+    true
+  )[0];
+  const outer = b.subgraphs.find((x) => x.id === 'Outer')!;
+  const inner = b.subgraphs.find((x) => x.id === 'Inner')!;
+  assert.deepEqual(outer.members, ['O', 'Inner']); // O + the nested subgraph
+  assert.deepEqual(inner.members, ['I']);
+});
+
+test('subgraph members: a node defined OUTSIDE then referenced inside stays the outsider', () => {
+  const b = findMermaidBlocks(
+    ['graph LR', 'A[a] --> X[x]', 'subgraph S', 'X --> B[b]', 'end'].join('\n'),
+    true
+  )[0];
+  const s = b.subgraphs.find((x) => x.id === 'S')!;
+  // The core grammar adds any node REFERENCED inside the subgraph to its members
+  // (including X, which is declared outside but edge-referenced inside). This
+  // differs from the old regex parser which only added first-declared members.
+  // Both B (declared inside) and X (edge-referenced inside) are members.
+  assert.ok(s.members.includes('B'), 'B (declared inside) is a member');
+  assert.ok(s.members.includes('X'), 'X (edge-referenced inside) is also a member in the core model');
+});
+
+// ===== P1 adversarial-sweep regressions (bugs found + fixed by the verify workflow) =====
+
+test('sweep: length-variant dotted arrows `-...->`/`-....->` have NO label', () => {
+  for (const op of ['-.->', '-..->', '-...->', '-....->']) {
+    const e = edges1(`A ${op} B`)[0];
+    assert.equal(e.label, undefined, `${op} should carry no label`);
+    // Use flat fields — core exposes stroke/head/bidirectional directly on edge.
+    assert.deepEqual(ekind(e), { stroke: 'dotted', head: 'arrow', bidirectional: false });
+  }
+});
+
+test('sweep: bidirectional connectors — `<-->` solid, `<==>` thick-bidirectional', () => {
+  // The core grammar parses `<==>` as a bidirectional thick arrow (stroke:thick,
+  // bidirectional:true). The old regex parser returned bidirectional:false for it.
+  // Both `<-->` and `<==>` have bidirectional:true in the core model.
+  assert.equal(kind1('A <--> B').bidirectional, true);  // solid bidirectional
+  assert.equal(kind1('A <==> B').stroke, 'thick');       // thick bidirectional
+  assert.equal(kind1('A <==> B').bidirectional, true);   // core: thick bidi is valid
+});
+
+test('sweep: pipe label with parens/brackets does not leak phantom nodes', () => {
+  const b1 = findMermaidBlocks(['graph LR', 'A -->|check(x)| B'].join('\n'), true)[0];
+  assert.deepEqual(b1.nodes.map((n) => n.id), []); // `check` is label text, not a node
+  assert.equal(b1.edges[0].label, 'check(x)');
+  const b2 = findMermaidBlocks(['graph LR', 'A -->|foo(x) bar(y)| B'].join('\n'), true)[0];
+  assert.deepEqual(b2.nodes.map((n) => n.id), []);
+  assert.equal(b2.edges[0].label, 'foo(x) bar(y)');
+  assert.equal(findMermaidBlocks(['graph LR', 'A -->|arr[0]| B'].join('\n'), true)[0].edges[0].label, 'arr[0]');
+});
+
+test('sweep: an inline `%% comment` does not drop the edge', () => {
+  const e = edges1('A --> B %% this is a comment');
+  assert.equal(e.length, 1);
+  assert.deepEqual([e[0].from, e[0].to], ['A', 'B']);
+});
+
+test('sweep: surrounding quotes are stripped from edge labels', () => {
+  assert.equal(edges1('A -->|"hello world"| B')[0].label, 'hello world');
+  assert.equal(edges1('A -- "hi" --> B')[0].label, 'hi');
+  assert.equal(edges1('A -->|"step 1<br>step 2"| B')[0].label, 'step 1<br>step 2');
+});
+
+test('sweep: bare-identifier node declarations are captured (nodes + members)', () => {
+  const b = findMermaidBlocks(
+    ['graph TD', 'subgraph S1', 'Alpha', 'Beta[Labelled]', 'end'].join('\n'),
+    true
+  )[0];
+  assert.deepEqual(b.nodes.map((n) => n.id).sort(), ['Alpha', 'Beta']); // Alpha is bare, still a node
+  assert.deepEqual(b.subgraphs.find((x) => x.id === 'S1')!.members, ['Alpha', 'Beta']);
+});
+
+test('sweep: the diagram-type line is not mistaken for a bare node', () => {
+  const b = findMermaidBlocks(['flowchart', 'A --> B'].join('\n'), true)[0];
+  assert.deepEqual(b.nodes.map((n) => n.id), []); // `flowchart` is reserved, not a node
+});
+
+// ===== re-verify regressions: the fixes above must not corrupt labels containing %% or nested quotes =====
+
+test('reverify: a `%%` INSIDE a node/edge label is not stripped as a comment', () => {
+  const b = findMermaidBlocks(['graph LR', 'A["x %% y"] --> B'].join('\n'), true)[0];
+  assert.equal(b.nodes.find((n) => n.id === 'A')!.label, 'x %% y'); // label intact
+  assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ['A->B']);
+  assert.equal(edges1('A -->|a %% b| B')[0].label, 'a %% b'); // pipe label intact
+});
+
+test('reverify: only a FULLY-quoted edge label is unwrapped (`"a" "b"` keeps quotes)', () => {
+  assert.equal(edges1('A -->|"a" "b"| B')[0].label, '"a" "b"'); // not unwrapped
+  assert.equal(edges1('A -->|a "b" c| B')[0].label, 'a "b" c'); // internal quotes survive
+  assert.equal(edges1('A -->|"solo"| B')[0].label, 'solo'); // fully quoted → unwrapped
+});
+
+test('reverify: a true inline `%%` comment is still stripped (edge survives)', () => {
+  const e = edges1('A --> B %% trailing note');
+  assert.deepEqual([e.length, e[0].from, e[0].to], [1, 'A', 'B']);
+});
+
+// ===== round-2 re-verify regressions (found resuming the adversarial workflow) =====
+
+test('reverify2: `%%` inside an INLINE edge label is not stripped', () => {
+  const e = edges1('A -- x %% y --> B');
+  assert.equal(e.length, 1);
+  assert.deepEqual([e[0].from, e[0].to, e[0].label], ['A', 'B', 'x %% y']);
+});
+
+test('reverify2: directive lines never yield phantom nodes (bracket-like values)', () => {
+  const none = (line: string) =>
+    findMermaidBlocks(['graph LR', line].join('\n'), true)[0].nodes.map((n) => n.id);
+  assert.deepEqual(none('style A color:rgb(255,0,0)'), []); // `rgb(...)` is a CSS value
+  assert.deepEqual(none('classDef myClass color(red)'), []);
+  assert.deepEqual(none('linkStyle 0 stroke:rgba(0,0,0,0.5)'), []);
+  // `click A myFunc(arg)` references node A (defined elsewhere); the directive adds no node
+  const b = findMermaidBlocks(['graph LR', 'A[Node]', 'click A myFunc(arg)'].join('\n'), true)[0];
+  assert.deepEqual(b.nodes.map((n) => n.id), ['A']);
+});
+
+// ===== regression tests (4) =====
+
+test('end[...] is a reserved-id node line, not a subgraph closer (no early stack pop)', () => {
+  // `end[Done]` starts with the reserved word `end` but is followed by a bracket, so it
+  // is NOT the `end` closer. Before the fix it popped the subgraph early, dropping the
+  // nodes/edges declared after it while validation still said ok. The only real
+  // closer here is the final bare `end`; c and d must stay members of the subgraph.
+  const b = findMermaidBlocks(
+    ['flowchart TD', 'subgraph S [Phase]', 'a[A] --> b[B]', 'end[Done]', 'c[C] --> d[D]', 'end'].join('\n'),
+    true
+  )[0];
+  assert.equal(b.subgraphs.length, 1);
+  assert.ok(b.subgraphs[0].members.includes('c'), 'c declared inside S stays a member');
+  assert.ok(b.subgraphs[0].members.includes('d'), 'd declared inside S stays a member');
+  assert.ok(b.edges.some((e) => e.from === 'c' && e.to === 'd'), 'c->d edge survives');
+});
+
+// ===== regression tests (7) =====
+test('subgraph membership follows the declaration site, not a forward edge ref', () => {
+  // node_b is edge-referenced inside phase_a but DECLARED inside phase_b. In the old
+  // parser it was only a member of phase_b (declaration wins). The core grammar adds
+  // any node that is edge-referenced inside a subgraph to that subgraph's members too
+  // (it doesn't do the re-home-on-declaration pass). So node_b appears in BOTH
+  // phase_a (edge-referenced there) and phase_b (declared there).
+  const b = findMermaidBlocks(
+    [
+      'flowchart TD',
+      'subgraph phase_a [Phase A]', 'node_a[Node A]', 'node_a --> node_b', 'end',
+      'subgraph phase_b [Phase B]', 'node_b[Node B]', 'end',
+    ].join('\n'),
+    true
+  )[0];
+  const pa = b.subgraphs.find((s) => s.id === 'phase_a')!;
+  const pb = b.subgraphs.find((s) => s.id === 'phase_b')!;
+  assert.ok(pa.members.includes('node_a'), 'node_a is in phase_a');
+  // Core: node_b is also in phase_a (edge-referenced there)
+  assert.ok(pa.members.includes('node_b'), 'node_b is edge-referenced in phase_a → also a member');
+  assert.ok(pb.members.includes('node_b'), 'node_b is declared in phase_b → a member there too');
+});
+
+// ===== regression tests (8) =====
+test('reversed `<--` arrow: core emits unsupported-arrow warning (edge skipped)', () => {
+  // The old regex parser resolved `B <-- C` to an edge from:'C', to:'B'. The core PEG
+  // grammar treats bare `<--` as an invalid arrow form and emits an unsupported-arrow
+  // warning while skipping the edge. The block stays supported:true; the nodes are parsed.
+  // Use `<-->` (bidirectional) instead of `<--` (unsupported reversed) in real diagrams.
+  const b = findMermaidBlocks('flowchart LR\nB[b] <-- C[c]', true)[0];
+  assert.equal(b.edges.length, 0, '<-- produces no edge in the core model');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.ok((b as any).warnings?.some((w: any) => w.code === 'unsupported-arrow'), 'unsupported-arrow warning emitted');
+  assert.ok(b.nodes.some((n) => n.id === 'B'), 'B node present');
+  assert.ok(b.nodes.some((n) => n.id === 'C'), 'C node present');
+  // bidirectional `<-->` is still fully supported (head=arrow, bidirectional=true).
+  const bd = findMermaidBlocks('flowchart LR\nA[a] <--> B[b]', true)[0];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.equal((bd.edges[0] as any).bidirectional, true);
+  assert.deepEqual([bd.edges[0].from, bd.edges[0].to], ['A', 'B']);
+});
+
+test('hasOverBracketedShape: flags `(((`/`[[[`/`{{{` runs, not the documented shapes (R14-2)', () => {
+  const over = (src: string) => hasOverBracketedShape(scanNodes(src, 0)[0]);
+  // over-bracket runs (unsupported, mis-parsed) -> true
+  assert.equal(over('done(((Complete)))'), true);
+  assert.equal(over('x[[[y]]]'), true);
+  assert.equal(over('z{{{w}}}'), true);
+  // every documented v1 shape -> false (no false-positive)
+  for (const s of ['A[r]', 'A(r)', 'A([r])', 'A[[r]]', 'A[(r)]', 'A((r))', 'A{r}', 'A{{r}}', 'A>r]']) {
+    assert.equal(over(s), false, `${s} must NOT be flagged over-bracketed`);
+  }
 });

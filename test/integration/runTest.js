@@ -1,4 +1,4 @@
-// IT-1 headless runtime smoke entrypoint (runs in Node, not the extension host).
+// Headless runtime smoke entrypoint (runs in Node, not the extension host).
 // Downloads a VS Code build and launches it with this extension loaded, then runs
 // ./suite/index.js inside the extension host.
 const path = require('path');

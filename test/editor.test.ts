@@ -29,6 +29,47 @@ test('buildNodeRaw: preserves bracket shape, adds quotes only when needed', () =
   assert.equal(buildNodeRaw({ open: '[', close: ']', quote: '"' }, 'A', 'keep'), 'A["keep"]');
 });
 
+// ---- regression: write-tool source corruption ----
+
+test('buildNodeRaw: a bare node (no brackets) gains brackets when labelled', () => {
+  // bare `Alpha` relabelled to `Gamma` was fusing into `AlphaGamma`.
+  assert.equal(buildNodeRaw({ open: '', close: '', quote: '' }, 'Alpha', 'Gamma'), 'Alpha[Gamma]');
+});
+
+test('computeIdRename: rejects a reserved-keyword id', () => {
+  // rename to `end` (etc.) produced a keyword-led line the parser silently drops.
+  const { block: b, lines } = block('graph TD\nA[x] --> B');
+  for (const kw of ['end', 'graph', 'subgraph', 'classDef']) {
+    const r = computeIdRename(b, lines, 'A', kw);
+    assert.equal(r.ok, false, `rename to "${kw}" must be rejected`);
+    assert.match(r.error!, /reserved/);
+  }
+  assert.equal(computeIdRename(b, lines, 'A', 'Start').ok, true); // a non-reserved id still works
+});
+
+test('computeLabelEdit: rejects a label containing a line break', () => {
+  // an interior newline spliced inside the bracket corrupted the node + its edges.
+  const r = computeLabelEdit(block('graph TD\nA[Start]').block, 'A', 'line1\nline2');
+  assert.equal(r.ok, false);
+  assert.match(r.error!, /line break/);
+});
+
+test('computeSubgraphLabelEdit: rejects a title containing a line break', () => {
+  // the subgraph-title twin of the node-label newline bug.
+  const { block: b, lines } = block('graph TD\nsubgraph S [Phase]\nA[x] --> B\nend');
+  const r = computeSubgraphLabelEdit(b, lines, 'S', 'line1\nline2');
+  assert.equal(r.ok, false);
+  assert.match(r.error!, /line break/);
+});
+
+test('computeLabelEdit: labelling a bare node brackets it instead of fusing', () => {
+  // `Alpha` is declared bare on its own line, then referenced by an edge. Relabelling
+  // the declaration must produce `Alpha[Gamma]` (id intact, edge ref still resolves).
+  const r = computeLabelEdit(block('graph TD\nAlpha\nAlpha --> Beta').block, 'Alpha', 'Gamma');
+  assert.equal(r.ok, true);
+  assert.equal(r.edits[0].newText, 'Alpha[Gamma]');
+});
+
 test('computeLabelEdit: replaces just the node label span', () => {
   const { block: b } = block('graph TD\nA[Start] --> B[End]');
   const r = computeLabelEdit(b, 'A', 'Begin');
@@ -98,7 +139,7 @@ test('computeSubgraphLabelEdit: adds a bracket when the subgraph had only an id'
   assert.equal(r.edits[0].newText, 'subgraph grp [A Title]');
 });
 
-// --- IT-6 regression tests: edge-case rename bugs found in code review ---
+// --- regression tests: edge-case rename bugs found in code review ---
 
 test('computeIdRename: rejects renaming onto a bare referenced id (no silent merge)', () => {
   // X is referenced in edges but never bracket-defined; renaming A->X would
@@ -168,4 +209,208 @@ test('computeIdRename: collision guard sees a bare ref even with a trailing semi
   const r = computeIdRename(b, lines, 'X', 'B');
   assert.equal(r.ok, false);
   assert.match(r.error || '', /already exists/);
+});
+
+// --- regression tests (2) ---
+
+test('computeIdRename: renames the node ref in style/click but leaves CSS + URL values', () => {
+  // `style A …` / `click A …` LEAD with a real node ref. The old skip-list left them
+  // dangling on the dead id after a rename. Now the leading id follows the rename,
+  // while the CSS value (`#A`) and the quoted URL stay untouched.
+  const text = ['graph TD', 'A[Start] --> B[End]', 'style A fill:#f00,stroke:#A', 'click A href "https://A.example"'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Alpha');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[1], 'Alpha[Start] --> B[End]'); // node + edge ref renamed
+  assert.equal(out[2], 'style Alpha fill:#f00,stroke:#A'); // leading id renamed; CSS value `#A` intact
+  assert.equal(out[3], 'click Alpha href "https://A.example"'); // leading id renamed; URL intact
+});
+
+test('computeIdRename: classDef / linkStyle lines are still left alone', () => {
+  // classDef's token after the keyword is a CLASS name, not a node ref — renaming a
+  // node that happens to share the name must not touch the classDef.
+  const text = ['graph TD', 'A[x] --> B[y]', 'classDef A fill:#eee', 'linkStyle 0 stroke:#333'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Alpha');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[2], 'classDef A fill:#eee'); // class name untouched
+  assert.equal(out[3], 'linkStyle 0 stroke:#333'); // untouched
+});
+
+// --- regression tests (3) ---
+
+test('computeIdRename: rejects an id that exists only in a %% comment (no false green)', () => {
+  // `ghost` is named only in a comment, never in the graph — renaming it must FAIL,
+  // not "succeed" by rewriting comment prose (which reported ok:true, editCount:1).
+  const { block: b, lines } = block('graph TD\n%% TODO rename ghost later\nA[x] --> B[y]');
+  const r = computeIdRename(b, lines, 'ghost', 'real');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /not found/);
+});
+
+test('computeIdRename: does not rewrite a real id mentioned inside a %% comment', () => {
+  const { block: b, lines } = block('graph TD\n%% note: A is the start\nA[x] --> B[y]');
+  const r = computeIdRename(b, lines, 'A', 'Start');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[1], '%% note: A is the start'); // comment prose untouched
+  assert.equal(out[2], 'Start[x] --> B[y]'); // real node renamed
+});
+
+test('computeIdRename: rejects an empty oldId instead of hanging the process', () => {
+  // oldId='' reached renameIdInLine where `\b\b` is a zero-width match that never
+  // advances lastIndex → an infinite loop (which hangs the caller). Reject cleanly.
+  const { block: b, lines } = block('graph TD\nA[Alpha] --> B[Beta]');
+  const r = computeIdRename(b, lines, '', 'NewId');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /Invalid id/);
+});
+
+test('renameIdInLine: an empty oldId is a no-op (no zero-width infinite loop)', () => {
+  assert.equal(renameIdInLine('A --> B', '', 'Z'), 'A --> B');
+});
+
+// --- regression tests (4) ---
+
+test('computeSubgraphLabelEdit: quotes a multi-word title on a bare (id-less) subgraph', () => {
+  // A bare-title subgraph has no `[ ]` to delimit the title, so a multi-word new title
+  // must be quoted — `subgraph Three Word Title` would parse with only `Three` as id.
+  const text = ['flowchart TD', 'subgraph "Two Words"', 'A[x]', 'end'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeSubgraphLabelEdit(b, lines, 'Two Words', 'Three Word Title');
+  assert.equal(r.ok, true);
+  assert.equal(r.edits[0].newText, 'subgraph "Three Word Title"');
+});
+
+test('computeLabelEdit: a bare edge-ref id gets a "give it a shape" message, not "not found"', () => {
+  // `B` is only an edge endpoint (never bracket-declared); the read API reports it
+  // found:true, so relabel must explain it has no label yet rather than say not-found.
+  const r = computeLabelEdit(block('graph TD\nA[x] --> B').block, 'B', 'New');
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /referenced by edges|give it a shape/i);
+});
+
+// --- regression tests (6) ---
+
+test('computeIdRename: renames node refs in a `class` directive but not the class name', () => {
+  // `class A B` assigns node A to class B. Renaming A->Z updates the leading id-list;
+  // the trailing class name B (a classDef ref) is left alone.
+  const text = ['graph TD', 'A[x] --> C[y]', 'classDef B fill:#eee', 'class A B'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'A', 'Z');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[3], 'class Z B'); // id renamed in the id-list; class name B untouched
+});
+
+test('computeIdRename: does not clobber a class NAME equal to a renamed node id', () => {
+  // classDef named B + `class A B`; renaming node B must not rewrite the class name B
+  // in the class directive (different namespace) — the deferred R2-5/R6-2 case.
+  const text = ['graph TD', 'A[x] --> B[y]', 'classDef B fill:#eee', 'class A B'].join('\n');
+  const { block: b, lines } = block(text);
+  const r = computeIdRename(b, lines, 'B', 'Z');
+  assert.equal(r.ok, true);
+  const out = [...lines];
+  for (const e of r.edits) out[e.line] = e.newText;
+  assert.equal(out[3], 'class A B'); // class name B preserved (only the id-list is touched)
+});
+
+test('computeIdRename: renames an id in a SPACE-separated `class A, B, C` id-list', () => {
+  // `class A, B, C myCls` uses spaces around the commas. Renaming any id in the list
+  // must follow through — the old regex capped the id-list at the first space, so B/C
+  // were silently left as stale refs (R12-4).
+  const text = ['graph TD', 'A[x] --> B[y] --> C[z]', 'classDef myCls fill:#eee', 'class A, B, C myCls'].join('\n');
+  const { block: b, lines } = block(text);
+  for (const [oldId, newId, expect] of [['A', 'Z', 'class Z, B, C myCls'], ['B', 'Z', 'class A, Z, C myCls'], ['C', 'Z', 'class A, B, Z myCls']] as const) {
+    const r = computeIdRename(b, lines, oldId, newId);
+    assert.equal(r.ok, true);
+    const out = [...lines];
+    for (const e of r.edits) out[e.line] = e.newText;
+    assert.equal(out[3], expect); // spacing + className preserved, target id renamed
+  }
+});
+
+test('computeIdRename: a keyword-CASED id (Graph/Subgraph/...) renames, never silently skipped (R14-1)', () => {
+  // The parser's RESERVED test is case-sensitive, so `Graph` is a real NODE. editor.ts
+  // keyword-skip guards must match that case-sensitivity — a `/i` flag skipped these
+  // lines and silently dropped the rename (false-green ok:true / false "not found").
+  // Manifestation A — declaration + edge refs on separate lines must ALL rename:
+  const a = ['graph TD', 'Graph[Step A]', 'A[Start] --> Graph', 'Graph --> B[Done]'].join('\n');
+  const { block: ba, lines: la } = block(a);
+  const ra = computeIdRename(ba, la, 'Graph', 'step_a');
+  assert.equal(ra.ok, true);
+  const outA = [...la];
+  for (const e of ra.edits) outA[e.line] = e.newText;
+  assert.equal(outA[1], 'step_a[Step A]');       // declaration renamed (was skipped)
+  assert.equal(outA[2], 'A[Start] --> step_a');  // edge target renamed
+  assert.equal(outA[3], 'step_a --> B[Done]');   // edge source renamed (was skipped)
+  assert.ok(!outA.slice(1).join('\n').includes('Graph')); // no orphan / stale id left
+
+  // Manifestation B — declaration + FROM-edge on ONE line must not false-"not found":
+  const b = ['graph TD', 'Subgraph[n1] --> End[n2]'].join('\n');
+  const { block: bb, lines: lb } = block(b);
+  const rb = computeIdRename(bb, lb, 'Subgraph', 'MyNode');
+  assert.equal(rb.ok, true); // was ok:false "Id not found" under /i
+  const outB = [...lb];
+  for (const e of rb.edits) outB[e.line] = e.newText;
+  assert.equal(outB[1], 'MyNode[n1] --> End[n2]'); // End (capital) stays a node, untouched
+});
+
+test('computeLabelEdit: a non-string newLabel returns ok:false (no throw)', () => {
+  const r = computeLabelEdit(block('graph TD\nA[x]').block, 'A', null as unknown as string);
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /must be a string/);
+});
+
+test('computeLabelEdit: refuses an over-bracketed `(((` shape instead of corrupting (R14-2)', () => {
+  // `done(((Complete)))` is an invalid shape that the core PEG grammar rejects at the
+  // block level (returns supported:false + parseError), so the block has no nodes.
+  // computeLabelEdit returns ok:false — safe regardless of the error path taken.
+  // The old regex parser mis-parsed it as open='((' / label='(Complete' and the guard
+  // caught it structurally; the core refuses the whole block. Either way: no edit emitted.
+  const r = computeLabelEdit(block('flowchart TD\ndone(((Complete)))').block, 'done', 'Finished');
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.edits, []); // no edit emitted -> no source corruption
+  // A normal double-paren circle still relabels fine (no false-refuse).
+  const ok = computeLabelEdit(block('flowchart TD\nfin((Complete))').block, 'fin', 'Finished');
+  assert.equal(ok.ok, true);
+});
+
+// --- regression tests (8) ---
+
+test('computeIdRename: renaming `end` used as edge endpoint is refused (reserved keyword)', () => {
+  // `A --> end` — the core PEG grammar marks the block supported:false because `end` is
+  // a reserved Mermaid keyword that cannot be an edge endpoint. The old regex parser
+  // allowed it and produced an edge; the core refuses it at the grammar level.
+  // computeIdRename correctly returns ok:false ("not found") for an unsupported block.
+  // The safe fix in a real diagram is to rename `end` to a non-reserved id first.
+  const text = ['flowchart TD', 'subgraph phase [Phase]', 'A[Step]', 'end', 'A --> end'].join('\n');
+  const { block: b, lines } = block(text);
+  // The block is supported:false because `end` appears as a reserved edge endpoint.
+  assert.equal(b.supported, false);
+  const r = computeIdRename(b, lines, 'end', 'done');
+  assert.equal(r.ok, false); // refused — `end` is not a graph id in the parsed model
+});
+
+test('computeIdRename: a non-string newId returns ok:false (no null/undefined coercion)', () => {
+  const { block: b, lines } = block('graph TD\nA[x] --> B[y]');
+  const r = computeIdRename(b, lines, 'A', null as unknown as string);
+  assert.equal(r.ok, false);
+  assert.match(r.error || '', /must be strings/);
+});
+
+// --- regression tests (10) ---
+
+test('renameIdInLine: does not rewrite an id fragment inside a hyphenated compound', () => {
+  // `receive-order` is truncated to `order` by the parser; renaming `order` must not
+  // corrupt the compound (which would write invalid `receive-safe`).
+  assert.equal(renameIdInLine('receive-order[x] --> B', 'order', 'safe'), 'receive-order[x] --> B');
+  // a genuine standalone `order` is still renamed
+  assert.equal(renameIdInLine('order --> B', 'order', 'safe'), 'safe --> B');
 });
