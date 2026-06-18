@@ -447,6 +447,18 @@ function report({ total, regressions, oldArtifacts, divergences, informationals 
   console.log(line);
 }
 
+// =================================================================================
+// Block-detection leg (imported separately to keep the file scoped)
+// =================================================================================
+import { runBlockDetectionLeg, reportBlockDetectionLeg } from "./block-detection-oracle.mjs";
+
 const result = run();
 report(result);
-process.exit(result.regressions.length ? 1 : 0);
+
+console.log("\n");
+const bdResult = runBlockDetectionLeg();
+const bdExitCode = reportBlockDetectionLeg(bdResult);
+
+// Fail if either leg has failures.
+const contentLegFailed = result.regressions.length > 0 ? 1 : 0;
+process.exit(contentLegFailed || bdExitCode ? 1 : 0);
