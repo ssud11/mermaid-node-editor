@@ -879,3 +879,167 @@ test("rank4: subgraph titleStart/titleEnd are always present and slice to the la
     assert.equal(sg.label, label, `${src}: label`);
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arrow-operator family completeness + ADDITIVE edge metadata.
+//
+// Every arrow form is variadic in shaft length; head/stroke/bidirectional/length
+// mirror REAL Mermaid v11.15.0's FlowDB.getEdges() (`type`/`stroke`/`length`).
+// The ORACLE TABLE below is the regression pin — each row was read directly from
+// Mermaid's own grammar parser (not memory). A row asserts: the block parses
+// (supported:true), one edge, and its head/stroke/bidirectional/length.
+//
+// Drift guard: if a future grammar change perturbs any cell, this fails loudly.
+// ─────────────────────────────────────────────────────────────────────────────
+test("arrow metadata matches the real-Mermaid oracle table (head/stroke/bidir/length)", () => {
+  // [op, head, stroke, bidirectional, length]  — op placed between C and D.
+  const table = [
+    // forward solid (variadic)
+    ["-->",   "arrow",  "solid",     false, 1],
+    ["--->",  "arrow",  "solid",     false, 2],
+    ["---->", "arrow",  "solid",     false, 3],
+    ["---",   "open",   "solid",     false, 1],
+    ["----",  "open",   "solid",     false, 2],
+    // solid tail x/o (variadic)
+    ["--x",   "cross",  "solid",     false, 1],
+    ["---x",  "cross",  "solid",     false, 2],
+    ["----x", "cross",  "solid",     false, 3],
+    ["--o",   "circle", "solid",     false, 1],
+    ["---o",  "circle", "solid",     false, 2],
+    ["----o", "circle", "solid",     false, 3],
+    // thick (variadic)
+    ["==>",   "arrow",  "thick",     false, 1],
+    ["===>",  "arrow",  "thick",     false, 2],
+    ["====>", "arrow",  "thick",     false, 3],
+    ["===",   "open",   "thick",     false, 1],
+    ["====",  "open",   "thick",     false, 2],
+    ["==x",   "cross",  "thick",     false, 1],
+    ["==o",   "circle", "thick",     false, 1],
+    // dotted (variadic)
+    ["-.->",  "arrow",  "dotted",    false, 1],
+    ["-..->", "arrow",  "dotted",    false, 2],
+    ["-.-",   "open",   "dotted",    false, 1],
+    ["-.-x",  "cross",  "dotted",    false, 1],
+    ["-.-o",  "circle", "dotted",    false, 1],
+    // invisible (variadic; >=3 tildes)
+    ["~~~",   "open",   "invisible", false, 1],
+    ["~~~~",  "open",   "invisible", false, 2],
+    // bidirectional (head on BOTH ends; variadic)
+    ["<-->",  "arrow",  "solid",     true,  1],
+    ["<--->", "arrow",  "solid",     true,  2],
+    ["<---->","arrow",  "solid",     true,  3],
+    ["<==>",  "arrow",  "thick",     true,  1],
+    ["<-.->", "arrow",  "dotted",    true,  1],
+    ["o--o",  "circle", "solid",     true,  1],
+    ["o---o", "circle", "solid",     true,  2],
+    ["x--x",  "cross",  "solid",     true,  1],
+    ["x==x",  "cross",  "thick",     true,  1],
+    ["o==o",  "circle", "thick",     true,  1],
+    ["x-.-x", "cross",  "dotted",    true,  1],
+    ["o-.-o", "circle", "dotted",    true,  1],
+    // reverse-only (left head, no right head → arrow_open; reversed swaps from/to)
+    ["<---",  "open",   "solid",     false, 2],
+    ["<----", "open",   "solid",     false, 3],
+    // leading head (decorative per oracle → arrow_point; length shifted +1)
+    ["o-->",  "arrow",  "solid",     false, 2],
+    ["x-->",  "arrow",  "solid",     false, 2],
+    ["o--->", "arrow",  "solid",     false, 3],
+  ];
+  for (const [op, head, stroke, bidirectional, length] of table) {
+    const b = findMermaidBlocks(`graph TD\nC ${op} D`, true)[0];
+    assert.equal(b.supported, true, `${op}: must parse (renders in Mermaid)`);
+    assert.equal(b.edges.length, 1, `${op}: exactly one edge`);
+    const e = b.edges[0];
+    assert.equal(e.head, head, `${op}: head`);
+    assert.equal(e.stroke, stroke, `${op}: stroke`);
+    assert.equal(e.bidirectional, bidirectional, `${op}: bidirectional`);
+    assert.equal(e.length, length, `${op}: length`);
+    // reverse swaps from/to; everything else is C->D
+    const wantFrom = op.startsWith("<") && !op.endsWith(">") ? "D" : "C";
+    const wantTo = wantFrom === "D" ? "C" : "D";
+    assert.equal(e.from, wantFrom, `${op}: from`);
+    assert.equal(e.to, wantTo, `${op}: to`);
+  }
+});
+
+// MUST-PARSE in-contract shaft-variants carry NO warning (a length-variant is the
+// same edge as its canonical form). `<--->`=`<-->`, `o--o`/`x--x`, `--x`/`--o`.
+test("must-parse arrow shaft-variants parse cleanly with NO warning", () => {
+  for (const op of ["<-->", "<--->", "<---->", "o--o", "x--x", "--x", "--o", "<==>"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
+    assert.equal(b.supported, true, `${op}: parses`);
+    assert.equal(b.edges.length, 3, `${op}: all 3 edges present (block survives)`);
+    assert.equal((b.warnings || []).length, 0, `${op}: no warning (must-parse, in-contract)\n  got ${JSON.stringify(b.warnings)}`);
+  }
+});
+
+// WARN-best-effort renders forms parse + attach a `non-canonical-arrow` advisory:
+// leading head (`o-->`/`x-->`), multi-shaft x/o (`---x`/`---o`/`----x`), invisible.
+test("warn-best-effort arrow forms parse + a non-canonical-arrow advisory", () => {
+  for (const op of ["o-->", "x-->", "o--->", "---x", "---o", "----x", "~~~", "~~~~"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
+    assert.equal(b.supported, true, `${op}: parses (renders in Mermaid)`);
+    assert.equal(b.edges.length, 3, `${op}: surrounding edges survive`);
+    assert.ok((b.warnings || []).some((w) => w.code === "non-canonical-arrow"), `${op}: non-canonical-arrow advisory present\n  got ${JSON.stringify((b.warnings || []).map((w) => w.code))}`);
+  }
+});
+
+// FIX C — the STRUCTURAL BACKSTOP: a recognized-but-not-modeled / Mermaid-rejected
+// arrow is dropped BLOCK-LOCALLY with an `unsupported-arrow` advisory; the block
+// stays supported:true and EVERY surrounding valid edge survives. After this, no
+// arrow form can EVER discard the whole block (the maximal silent-loss class).
+test("unsupported-arrow skip-warn: a bad arrow never nukes the block; surroundings survive", () => {
+  // Mermaid-REJECTED forms (`-->o`/`-->x` as a standalone token before a node).
+  for (const op of ["-->o", "-->x", "==>o", "-.->x"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
+    assert.equal(b.supported, true, `${op}: block survives (not whole-block fail)`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "E->F"], `${op}: surrounding edges kept, bad edge skipped`);
+    assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
+  }
+  // Quirky leading-head forms with irregular Mermaid metadata (`o--x`, `x--o`,
+  // `o==>`, `o---`) — also skip-warn rather than model their irregular metadata.
+  for (const op of ["o--x", "x--o", "o==>", "o---", "x==o"]) {
+    const b = findMermaidBlocks(`graph TD\nA-->B\nC ${op} D\nE-->F`, true)[0];
+    assert.equal(b.supported, true, `${op}: block survives`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), ["A->B", "E->F"], `${op}: surroundings kept`);
+    assert.ok((b.warnings || []).some((w) => w.code === "unsupported-arrow"), `${op}: unsupported-arrow advisory`);
+  }
+});
+
+// Node ids that START with `o`/`x` glued to an arrow must NOT be eaten by the
+// circle/cross arrow rules — `a-->x2`, `a-->o2`, bare `a-->x` are normal edges to
+// a node (oracle: Mermaid renders `a → x2`), not the rejected `-->x` form.
+test("a node id starting with o/x glued to an arrow stays a node, not an arrow head", () => {
+  const cases = [
+    ["graph TD\na-->x2", "a", "x2"],
+    ["graph TD\na-->o2", "a", "o2"],
+    ["graph TD\na-->xyz", "a", "xyz"],
+    ["graph TD\nx1-->x2", "x1", "x2"],
+    ["graph TD\nox --> oy", "ox", "oy"],
+    ["graph TD\na-->x", "a", "x"],
+  ];
+  for (const [src, from, to] of cases) {
+    const b = findMermaidBlocks(src, true)[0];
+    assert.equal(b.supported, true, `${src}: parses`);
+    assert.deepEqual(b.edges.map((e) => `${e.from}->${e.to}`), [`${from}->${to}`], `${src}: edge ${from}->${to}`);
+    assert.equal((b.warnings || []).length, 0, `${src}: no spurious warning\n  got ${JSON.stringify(b.warnings)}`);
+  }
+});
+
+// ADDITIVE metadata must not break the long-standing edge shape: from/to/label and
+// the existing position fields are unchanged; the new fields are simply present.
+test("edge metadata is ADDITIVE: from/to/label/positions intact alongside new fields", () => {
+  const b = findMermaidBlocks("graph TD\nA -->|yes| B", true)[0];
+  const e = b.edges[0];
+  assert.equal(e.from, "A");
+  assert.equal(e.to, "B");
+  assert.equal(e.label, "yes");
+  assert.equal(typeof e.line, "number");
+  assert.equal(typeof e.startChar, "number");
+  assert.ok(e.endChar > e.startChar, "real span preserved");
+  // new additive fields present
+  assert.equal(e.head, "arrow");
+  assert.equal(e.stroke, "solid");
+  assert.equal(e.bidirectional, false);
+  assert.equal(e.length, 1);
+});

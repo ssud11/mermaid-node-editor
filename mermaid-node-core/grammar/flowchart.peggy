@@ -149,17 +149,73 @@
     };
   }
 
-  function makeEdge(from, to, label, loc) {
+  // ADDITIVE edge metadata (head / stroke / bidirectional / length) is carried
+  // alongside the long-standing { from, to, label } shape. `meta` is the Link
+  // rule's descriptor; the values mirror REAL Mermaid v11's FlowDB.getEdges()
+  // (`type` → head, `stroke`, `length`):
+  //   - head:   'arrow' (a `>` head, incl. Mermaid's "leading o/x is decorative
+  //             when a `>` is present" rule), 'open' (no head), 'circle' (`o`),
+  //             'cross' (`x').
+  //   - stroke: 'solid' (`--`), 'thick' (`==`), 'dotted' (`-.-`), 'invisible' (`~`).
+  //   - bidirectional: a head on BOTH ends (`<-->`, `o--o`, `x--x` + thick/dotted).
+  //   - length: Mermaid's shaft-length index (`-->`=1, `--->`=2, …) — see linkLen.
+  // The fields are OPTIONAL on the public shape (defaulted here) so existing
+  // from/to/label/reversed consumers are untouched; meta may be omitted entirely.
+  function makeEdge(from, to, label, loc, meta) {
     const s = span(loc);
+    const m = meta || {};
     return {
       kind: "edge",
       from,
       to,
       label: (label === null || label === undefined) ? undefined : label,
+      head: m.head !== undefined ? m.head : "arrow",
+      stroke: m.stroke !== undefined ? m.stroke : "solid",
+      bidirectional: m.bidirectional === true,
+      length: m.length !== undefined ? m.length : 1,
       line: s.line,
       startChar: s.startChar,
       endChar: s.endChar,
     };
+  }
+
+  // Mermaid's shaft-length index, derived from the operator text (oracle-pinned
+  // against FlowDB.getEdges().length in mermaid@11.15.0):
+  //   dash  : headed `-->`(1) `--->`(2)  → (#dash − 1); open `---`(1) `----`(2) → (#dash − 2)
+  //   thick : headed `==>`(1) `===>`(2)  → (#eq  − 1); open `===`(1) `====`(2) → (#eq  − 2)
+  //   dotted: `-.->`(1) `-..->`(2)       → (#dot)     ; open `-.-`(1) `-..-`(2) → (#dot)
+  //   invis : `~~~`(1) `~~~~`(2)         → (#tilde − 2)
+  // `headed` = there is a terminal head char (`>`/`x`/`o`), which shifts the
+  // dash/thick open-vs-headed offset by one. Floors at 1 (Mermaid's minimum).
+  // `t` is the matched operator text — peggy's `text()` is only in scope inside a
+  // rule ACTION, not in this init-block helper, so the caller passes it in.
+  function linkLen(t, stroke, headed) {
+    if (stroke === "dotted") return Math.max(1, (t.match(/\./g) || []).length);
+    if (stroke === "invisible") return Math.max(1, (t.match(/~/g) || []).length - 2);
+    if (stroke === "thick") return Math.max(1, (t.match(/=/g) || []).length - (headed ? 1 : 2));
+    // solid (dash)
+    return Math.max(1, (t.match(/-/g) || []).length - (headed ? 1 : 2));
+  }
+
+  // Length for a LEADING-head solid arrow (`o-->`/`x-->`). Oracle: a leading o/x
+  // SHIFTS Mermaid's length +1 vs the bare arrow — `o-->`=len2 (vs `-->`=len1),
+  // `o--->`=len3 — so length is exactly the dash count (not dash-1). Floors at 1.
+  function leadingLen(t) {
+    return Math.max(1, (t.match(/-/g) || []).length);
+  }
+
+  // A Link descriptor with metadata. `extra` may set inlineDash/inlineDot/unsupported.
+  function link(label, reversed, head, stroke, bidirectional, length, extra) {
+    const d = {
+      label: label === undefined ? undefined : label,
+      reversed: !!reversed,
+      head,
+      stroke,
+      bidirectional: !!bidirectional,
+      length,
+    };
+    if (extra) Object.assign(d, extra);
+    return d;
   }
 
   // The set of flowchart keywords that may never be a node id (per the input
@@ -694,6 +750,33 @@ EdgeChain
       if (link.inlineDot && link.label !== undefined && link.label !== null) {
         pushWarn(warn("inline-dot-label", "inline-dot edge label is non-canonical; prefer the pipe form `-.->|label|`", location()));
       }
+      // FIX C — per-construct `unsupported-arrow` SKIP-WARN recovery. A connector that
+      // is ARROW-SHAPED (matched by an UnsupportedArrow alt of the Link rule) but is
+      // recognized-but-not-modeled OR Mermaid-rejected (`-->o`, `-->x`) is dropped
+      // BLOCK-LOCALLY: this one segment emits NO edge + a single `unsupported-arrow`
+      // advisory, and the surrounding valid edges of the chain survive. This is the
+      // structural backstop: after this, no arrow form can ever discard the whole
+      // block (the maximal silent-loss class). Mirrors the reserved-id / ReservedNodeSeg
+      // skip-and-survive intent. The metadata `head: 'arrow'` defaulting in makeEdge is
+      // irrelevant here — no edge is produced.
+      if (link.unsupported) {
+        pushWarn(warn("unsupported-arrow", "this arrow form is not modeled; the edge is skipped (surrounding edges are kept)", location()));
+        prevGroup = seg.group;
+        continue;
+      }
+      // WARN-best-effort advisory for the renders-but-off-canonical arrow forms
+      // (renders-but-non-canonical → warn): a LEADING circle/cross head on a forward arrow
+      // (`o-->`/`x-->`, decorative per the oracle), a MULTI-shaft x/o head (`---x`,
+      // `----o`; the length-1 `--x`/`--o` is in-contract → no warn), or an INVISIBLE
+      // link (`~~~`). The clean must-parse forms (`-->`, `<-->`/`<--->`, `o--o`/`x--x`,
+      // `--x`/`--o`) do NOT warn. One advisory per segment (deduped per code@line).
+      const isMultiShaftXO = (link.head === "circle" || link.head === "cross") && link.stroke === "solid" && link.length >= 2;
+      if (link.leadingHead || isMultiShaftXO || link.stroke === "invisible") {
+        pushWarn(warn("non-canonical-arrow", "this arrow form renders but is non-canonical; prefer a standard arrow operator", location()));
+      }
+      // ADDITIVE arrow metadata for every edge this segment emits (head/stroke/
+      // bidirectional/length), matching real Mermaid's getEdges() type/stroke/length.
+      const edgeMeta = { head: link.head, stroke: link.stroke, bidirectional: link.bidirectional, length: link.length };
       // Cartesian product of (prev group) × (this group) — one edge per pair, in
       // source order (every prev node against the first next node, then the second…).
       for (const pRef of prevGroup.refs) {
@@ -710,7 +793,7 @@ EdgeChain
           const [from, to] = link.reversed ? [nRef.id, pRef.id] : [pRef.id, nRef.id];
           // edge span: from this prev node's start to this next node's end.
           const loc = { start: pRef.loc.start, end: nRef.loc.end };
-          out.edges.push(makeEdge(from, to, link.label, loc));
+          out.edges.push(makeEdge(from, to, link.label, loc, edgeMeta));
         }
       }
       prevGroup = seg.group;
@@ -742,7 +825,24 @@ EdgeSegGroup
     // (`inline-dot-label`), parallel to inline-dash. A pipe label takes precedence
     // and is canonical, so it clears the dot flag too.
     const inlineDot = !hasPipe && link.inlineDot === true;
-    return { link: { label, reversed: link.reversed, inlineDash, inlineDot }, group };
+    return {
+      link: {
+        label,
+        reversed: link.reversed,
+        inlineDash,
+        inlineDot,
+        // ADDITIVE arrow metadata threaded from the Link rule (head/stroke/
+        // bidirectional/length), plus the `unsupported` flag for a
+        // recognized-but-not-modeled / Mermaid-rejected arrow (fix C: skip-warn).
+        head: link.head,
+        stroke: link.stroke,
+        bidirectional: link.bidirectional,
+        length: link.length,
+        unsupported: link.unsupported === true,
+        leadingHead: link.leadingHead === true,
+      },
+      group,
+    };
   }
 
 PipeLabel
@@ -925,8 +1025,13 @@ Link "arrow"
   // ANY shaft length `-- -* >` / `== =* >` — same length-variant family the bare
   // arrow at the `"--" "-"* ">"` rule accepts) so `A -- text ---> B` consumes the
   // whole `--->` and the shaft chars never leak into the label.
-  = "--" WS? l:InlineDashLabel WS? DashArrowClose { return { label: l, reversed: false, inlineDash: true }; }
-  / "==" WS? l:InlineThickLabel WS? ThickArrowClose { return { label: l, reversed: false, inlineDash: true }; }
+  // NOTE on `length` for the inline-LABEL arms: the matched text includes the label
+  // (which may itself contain `-`/`=`/`.`), so a text()-based shaft count would be
+  // wrong. A labeled edge's shaft length is not meaningful for editing, so these arms
+  // report the canonical `length: 1`; only the BARE arrow arms below derive length
+  // from the shaft via linkLen (where text() IS the shaft).
+  = "--" WS? l:InlineDashLabel WS? DashArrowClose { return link(l, false, "arrow", "solid", false, 1, { inlineDash: true }); }
+  / "==" WS? l:InlineThickLabel WS? ThickArrowClose { return link(l, false, "arrow", "thick", false, 1, { inlineDash: true }); }
   // Labeled OPEN-link (NO arrowhead): `A -- label --- B`, `A -- label -- B`,
   // `A -- label ---- B` (and the thick `A == label === B` variants). Mirrors the
   // labeled-arrow branches above, but the CLOSE is a head-less dash/equals run
@@ -941,8 +1046,8 @@ Link "arrow"
   // close. GENERALIZES the inline-dash family across {close-kind: arrow vs open} ×
   // {shaft-length 2..5} × {label: quoted/unquoted} — every arm now parses to ONE
   // labeled edge instead of phantom-noding.
-  / "--" WS? l:InlineDashLabel WS DashOpenClose { return { label: l, reversed: false, inlineDash: true }; }
-  / "==" WS? l:InlineThickLabel WS ThickOpenClose { return { label: l, reversed: false, inlineDash: true }; }
+  / "--" WS? l:InlineDashLabel WS DashOpenClose { return link(l, false, "open", "solid", false, 1, { inlineDash: true }); }
+  / "==" WS? l:InlineThickLabel WS ThickOpenClose { return link(l, false, "open", "thick", false, 1, { inlineDash: true }); }
   // Inline DOTTED label: `A -. text .-> B` (dotted arrow close) and `A -. text .- B`
   // (dotted head-less close). Real Mermaid renders these as ONE labeled dotted edge,
   // so per the renders-it rule we emit ONE labeled edge (carrying the label + an
@@ -958,8 +1063,8 @@ Link "arrow"
   // arrows below so a labeled dotted edge is claimed here, and before the dotted
   // entries in the MIXED-SHAFT branches never apply (those openers are `--`/`==`, not
   // `-.`), so a dotted open + dotted close is correctly a MATCHED-shaft edge, not mixed.
-  / "-." WS? l:InlineDotLabel WS? DotArrowClose { return { label: l, reversed: false, inlineDot: true }; }
-  / "-." WS? l:InlineDotLabel WS DotOpenClose { return { label: l, reversed: false, inlineDot: true }; }
+  / "-." WS? l:InlineDotLabel WS? DotArrowClose { return link(l, false, "arrow", "dotted", false, 1, { inlineDot: true }); }
+  / "-." WS? l:InlineDotLabel WS DotOpenClose { return link(l, false, "open", "dotted", false, 1, { inlineDot: true }); }
   // MIXED-SHAFT labeled inline edge → honest hard-fail. Real Mermaid REJECTS an edge
   // whose OPEN shaft and CLOSE shaft differ in style (a dash open `--` with a thick or
   // dotted close `===`/`.->`, or vice-versa). These branches are reached ONLY when every
@@ -975,25 +1080,117 @@ Link "arrow"
     { error("edge shaft styles must match: a dash `--` open with a non-dash close is not a valid edge"); }
   / "==" WS MixedShaftLabel WS (DashArrowClose / DashOpenClose / DotClose)
     { error("edge shaft styles must match: a thick `==` open with a non-thick close is not a valid edge"); }
-  // Bidirectional (solid only — Mermaid has no `<==>`).
-  / "<-->" { return { label: undefined, reversed: false }; }
-  / "<--"  { return { label: undefined, reversed: true }; }
+  // ─────────────────────────────────────────────────────────────────────────
+  // FAMILY-COMPLETE bare (unlabeled) arrow operators. Every form below is VARIADIC
+  // in shaft length (parallel to the long-standing forward `"--" "-"* ">"`), so a
+  // length-variant parses as the same edge differing only in `length` (oracle:
+  // `--->`=`-->`, `<--->`=`<-->`, `---x`=`--x`). Metadata (head/stroke/bidirectional/
+  // length) mirrors real Mermaid v11's getEdges() type/stroke/length (oracle-pinned).
+  //
+  // ORDERING is load-bearing (PEG is ordered choice, first match wins):
+  //   1. Mermaid-REJECTED trailing-head forms (`-->o`/`-->x`) — caught FIRST as
+  //      `unsupported` skip-warn so they don't half-match `-->` and orphan the `o`/`x`.
+  //   2. BIDIRECTIONAL before reverse/forward (a head on BOTH ends; `<-->` is a
+  //      superstring of `<--`, `o--o` of `o--`, so the two-headed form must win).
+  //   3. LEADING-head forms (`o-->`,`x-->`) before the bare dash arrows.
+  //   4. trailing-head x/o (variadic) before the head-less open link.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // (1) Mermaid REJECTS a circle/cross AFTER a `>` arrow head when the `o`/`x` is a
+  // STANDALONE token (`C -->o D` → Parse error). It is NOT rejected when the `o`/`x`
+  // is the START of the target node id — `a-->x2`, `a-->o2`, even bare `a-->x`, all
+  // render as `a → <node>` (oracle14). So this rejected-arm must fire ONLY for the
+  // standalone-token case, distinguished by:
+  //   - `!IdChar` after the `o`/`x` → it is a WHOLE token, not the prefix of `x2`/`o2`;
+  //   - `&WS` → it is followed by whitespace + another node (the `C -->o D` shape),
+  //     NOT end-of-line (bare `a-->x`, where `x` IS the target node).
+  // When the arm declines (`a-->x2`, `a-->x`), the line falls through to the plain
+  // `-->` arrow + a normal NodeRef target. Per fix C we do NOT hard-fail even the
+  // genuine rejected form — we MATCH it and mark `unsupported` so EdgeChain drops just
+  // this edge + an `unsupported-arrow` advisory (gentler than Mermaid, never
+  // whole-block loss).
+  / "--" "-"* ">" ("o" / "x") !IdChar &WS   { return link(undefined, false, "arrow", "solid",   false, 1, { unsupported: true }); }
+  / "==" "="* ">" ("o" / "x") !IdChar &WS   { return link(undefined, false, "arrow", "thick",   false, 1, { unsupported: true }); }
+  / "-." "."* "->" ("o" / "x") !IdChar &WS  { return link(undefined, false, "arrow", "dotted",  false, 1, { unsupported: true }); }
+
+  // (2) BIDIRECTIONAL — a head on both ends → Mermaid's double_arrow_* family.
+  //   solid arrow:  `<-->`, `<--->`, `<---->` (variadic) → double_arrow_point.
+  / "<--" "-"* ">"              { return link(undefined, false, "arrow",  "solid",  true, linkLen(text(), "solid", true), {}); }
+  //   thick arrow:  `<==>`, `<===>` → double_arrow_point / thick.
+  / "<==" "="* ">"             { return link(undefined, false, "arrow",  "thick",  true, linkLen(text(), "thick", true), {}); }
+  //   dotted arrow: `<-.->`, `<-..->` → double_arrow_point / dotted.
+  / "<-." "."* "->"           { return link(undefined, false, "arrow",  "dotted", true, linkLen(text(), "dotted", true), {}); }
+  //   circle/cross bidir: `o--o`,`o---o`,`x--x` (+ thick/dotted) → double_arrow_circle/cross.
+  / "o--" "-"* "o"            { return link(undefined, false, "circle", "solid",  true, linkLen(text(), "solid", true), {}); }
+  / "x--" "-"* "x"            { return link(undefined, false, "cross",  "solid",  true, linkLen(text(), "solid", true), {}); }
+  / "o==" "="* "o"            { return link(undefined, false, "circle", "thick",  true, linkLen(text(), "thick", true), {}); }
+  / "x==" "="* "x"            { return link(undefined, false, "cross",  "thick",  true, linkLen(text(), "thick", true), {}); }
+  / "o-." "."* "-o"          { return link(undefined, false, "circle", "dotted", true, linkLen(text(), "dotted", true), {}); }
+  / "x-." "."* "-x"          { return link(undefined, false, "cross",  "dotted", true, linkLen(text(), "dotted", true), {}); }
+
+  // (3) LEADING circle/cross head on a forward arrow. Oracle: a LEADING o/x is
+  // DECORATIVE when a `>` head is present — `o-->`/`x-->` render as `arrow_point`
+  // (the trailing `>` wins), NOT circle/cross. So head:'arrow' here, matching
+  // Mermaid. Tried before the bare dash/thick/dotted arrows. (Mermaid also renders
+  // `o--x` as arrow_cross / `x--o` as arrow_circle — the TRAILING head wins; those
+  // fall through to the trailing-x/o arms below since the leading o/x is skipped by
+  // these `(">")`-only alts. A leading-head + head-less close like `o---` is not a
+  // distinct Mermaid form, so it is left to fall through / be unsupported.)
+  // Only the SOLID leading-arrow is modeled (oracle: `o-->`/`x-->` = arrow_point /
+  // stroke:NORMAL / variadic length — clean). The leading-head over a THICK or DOTTED
+  // shaft is a Mermaid quirk (`o==>` renders arrow_point / stroke:NORMAL, not thick;
+  // `o-.->` renders arrow_point / dotted len1) — irregular metadata, so those are NOT
+  // modeled here; they fall to the fix-C catch-all (unsupported-arrow skip-warn).
+  / "o--" "-"* ">"           { return link(undefined, false, "arrow",  "solid",  false, leadingLen(text()), { leadingHead: true }); }
+  / "x--" "-"* ">"           { return link(undefined, false, "arrow",  "solid",  false, leadingLen(text()), { leadingHead: true }); }
+
+  // reverse-only (a left head, no right head): `<--`, `<---`, `<----` (variadic).
+  // Oracle: arrow_open, reversed (caller swaps from/to). Tried AFTER the bidir `<-->`
+  // arm so the trailing `>` is always claimed as the second head first.
+  / "<--" "-"*                { return link(undefined, true,  "open",   "solid",  false, linkLen(text(), "solid", true), {}); }
+  / "<==" "="*                { return link(undefined, true,  "open",   "thick",  false, linkLen(text(), "thick", true), {}); }
+  / "<-." "."* "-"            { return link(undefined, true,  "open",   "dotted", false, linkLen(text(), "dotted", true), {}); }
+
+  // INVISIBLE link `~~~` / `~~~~` (≥3 tildes; `~~` is a Mermaid lexical error).
+  // Oracle: arrow_open / stroke:invisible / variadic length.
+  / "~~" "~"+                 { return link(undefined, false, "open",   "invisible", false, linkLen(text(), "invisible", false), {}); }
+
   // Thick, with shaft length variants (`==>`, `===>`, `====>`). Routed through
   // ThickArrowClose ("==" "="* ">", any shaft length ending in `>`) so the bare
   // thick arrow accepts every length the labeled-thick form already does — mirror
   // of the bare-dash `"--" "-"* ">"` path below. (Tried before the headless
   // `===`/`====` open link so a trailing `>` is always claimed as the arrow head.)
-  / ThickArrowClose { return { label: undefined, reversed: false }; } // `==>`, `===>`, `====>`
-  / "===" "="* { return { label: undefined, reversed: false }; } // `===`, `====`, … (open link, no head)
-  // Dotted (length variants `-.->`, `-..->`).
-  / "-." "."* "->" { return { label: undefined, reversed: false }; }
-  / "-." "."* "-"  { return { label: undefined, reversed: false }; }
+  / ThickArrowClose            { return link(undefined, false, "arrow",  "thick",  false, linkLen(text(), "thick", true), {}); } // `==>`, `===>`, `====>`
+  / "==" "="* "x"             { return link(undefined, false, "cross",  "thick",  false, linkLen(text(), "thick", true), {}); } // `==x`, `===x`
+  / "==" "="* "o"             { return link(undefined, false, "circle", "thick",  false, linkLen(text(), "thick", true), {}); } // `==o`, `===o`
+  / "===" "="*                 { return link(undefined, false, "open",   "thick",  false, linkLen(text(), "thick", false), {}); } // `===`, `====`, … (open link, no head)
+  // Dotted (length variants `-.->`, `-..->`); + trailing x/o + head-less open.
+  / "-." "."* "->"             { return link(undefined, false, "arrow",  "dotted", false, linkLen(text(), "dotted", true), {}); }
+  / "-." "."* "-x"            { return link(undefined, false, "cross",  "dotted", false, linkLen(text(), "dotted", true), {}); } // `-.-x`, `-..-x`
+  / "-." "."* "-o"            { return link(undefined, false, "circle", "dotted", false, linkLen(text(), "dotted", true), {}); } // `-.-o`, `-..-o`
+  / "-." "."* "-"             { return link(undefined, false, "open",   "dotted", false, linkLen(text(), "dotted", true), {}); }
   // Solid arrow / open link, with length variants (`-->`, `--->`, `---`, `----`).
-  / "--" "-"* ">"  { return { label: undefined, reversed: false }; }
-  / "--x"          { return { label: undefined, reversed: false }; }
-  / "--o"          { return { label: undefined, reversed: false }; }
-  / "--" "-"+      { return { label: undefined, reversed: false }; } // `---`, `----`
-  / "--"           { return { label: undefined, reversed: false }; } // bare open `--`
+  / "--" "-"* ">"              { return link(undefined, false, "arrow",  "solid",  false, linkLen(text(), "solid", true), {}); }
+  / "--" "-"* "x"             { return link(undefined, false, "cross",  "solid",  false, linkLen(text(), "solid", true), {}); } // `--x`, `---x`, `----x`
+  / "--" "-"* "o"             { return link(undefined, false, "circle", "solid",  false, linkLen(text(), "solid", true), {}); } // `--o`, `---o`, `----o`
+  / "--" "-"+                  { return link(undefined, false, "open",   "solid",  false, linkLen(text(), "solid", false), {}); } // `---`, `----`
+  / "--"                       { return link(undefined, false, "open",   "solid",  false, 1, {}); } // bare open `--`
+
+  // FIX C catch-all — a LEADING circle/cross head (`o`/`x`) on a shaft whose
+  // TRAILING combination is NOT one of the cleanly-modeled forms above (e.g.
+  // `o--x`, `x--o`, `o==>`, `o---`). Oracle: these RENDER in Mermaid, but with
+  // IRREGULAR metadata (a leading `o`/`x` over a `==` shaft collapses the stroke to
+  // `normal`; a leading head over a head-less shaft renders `arrow_open`) — too
+  // quirky to model faithfully and outside the stated fix scope. Rather than let
+  // them HARD-FAIL the whole block (the data-loss class this fix exists to kill), we
+  // MATCH the arrow shape and mark it `unsupported` → EdgeChain drops THIS edge with
+  // an `unsupported-arrow` advisory, surrounding edges survive. This is the
+  // structural backstop generalized: any leading-head arrow shape we don't model
+  // skips block-locally, never nuking the block. The shaft run is greedy over the
+  // stroke chars + an optional trailing head, bounded so it stops at the first
+  // non-shaft/non-head char (it can't swallow the next node).
+  / ("o" / "x") ("-" / "=" / ".")+ ("-" / "=" / "." / ">" / "x" / "o")*
+    { return link(undefined, false, "arrow", "solid", false, 1, { unsupported: true }); }
 
 // The closing arrows of the inline-label form, as full-length shaft runs. Any
 // shaft length is one closing arrow (`-->`, `--->`, `---->`, … / `==>`, `===>`,
