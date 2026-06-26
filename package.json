@@ -124,7 +124,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.28.0",
-    "playwright-core": "^1.60.0",
+    "playwright-core": "^1.61.1",
     "typescript": "^5.4.5"
   },
   "dependencies": {
