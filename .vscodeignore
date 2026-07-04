@@ -12,7 +12,7 @@ src/**/*.ts
 esbuild.config.js
 **/.DS_Store
 *.vsix
-*.md
+**/*.md
 !README.md
 !CHANGELOG.md
 package-lock.json
