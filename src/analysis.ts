@@ -9,6 +9,25 @@
 import { MermaidBlock, MermaidNode, scanNodes } from './parser';
 import { protectedRanges } from './editor';
 
+/**
+ * Turn a raw parser error into a short, plain-English hint. Falls back to the
+ * raw message unchanged for anything unmapped — callers keep the raw text
+ * alongside (verbose in brackets / below) so the exact token is still available.
+ */
+export function friendlyParseError(raw: string | undefined): string {
+  const m = raw ?? '';
+  const reserved = m.match(/reserved Mermaid keyword "([^"]+)"/);
+  if (reserved) {
+    return `\`${reserved[1]}\` is a reserved word in Mermaid — rename it or wrap the label in quotes.`;
+  }
+  // The grammar expected a closing bracket sequence to finish a node shape —
+  // `]`, `)`, `}`, or a two-char closer like `))`, `])`, `}}`, `]]`, `)]`.
+  const closer = m.match(/Expected\s+"([\])}]{1,3})"/);
+  if (closer) return `Unclosed shape — add the closing \`${closer[1]}\`.`;
+  if (/Expected\s+.*"flowchart".*"graph"/.test(m)) return "This line isn't valid flowchart syntax.";
+  return m;
+}
+
 export interface Loc {
   line: number;
   startChar: number;
@@ -38,6 +57,37 @@ const IDENT = /[A-Za-z0-9_]+/g;
 const DIRECTIVE = /^(graph|flowchart)\b/i;
 const DIRECTION = /^direction\b/i; // `direction TD` — a keyword line, not tags
 const STYLING = /^(style|classDef|linkStyle|click)\b/i; // CSS values / classes / URLs, not tags
+
+/**
+ * The first line of diagram BODY content (the line with `graph`/`flowchart`, or
+ * the first content line after YAML frontmatter). The core does not advance
+ * `block.contentStart` past frontmatter, so callers that need to skip frontmatter
+ * (analysis + findDuplicates) use this instead of `block.contentStart` as the
+ * lower bound for line-scanning.
+ *
+ * Frontmatter is a `--- … ---` block at the very start of the content range.
+ * If no frontmatter is present the result equals `block.contentStart`.
+ */
+function bodyStart(block: MermaidBlock, lines: string[]): number {
+  const { contentStart, contentEnd } = block;
+  // Skip leading blank / comment lines.
+  let i = contentStart;
+  while (i < contentEnd && (lines[i]?.trim() === '' || lines[i]?.trim().startsWith('%%'))) {
+    i++;
+  }
+  if (i >= contentEnd || lines[i]?.trim() !== '---') {
+    return contentStart; // no frontmatter
+  }
+  // Advance past the closing `---`.
+  let j = i + 1;
+  while (j < contentEnd && lines[j]?.trim() !== '---') {
+    j++;
+  }
+  if (j >= contentEnd) {
+    return contentStart; // unterminated — treat as no frontmatter
+  }
+  return j + 1; // first line after the closing `---`
+}
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -75,7 +125,8 @@ export function findTagAtPosition(
   }
   // Only tags inside the diagram body are navigable — not frontmatter, the
   // markdown fence, the diagram directive, or `direction` keyword lines.
-  if (line < block.contentStart || line >= block.contentEnd) {
+  const start = bodyStart(block, lines);
+  if (line < start || line >= block.contentEnd) {
     return undefined;
   }
   const trimmed = text.trim();
@@ -136,7 +187,11 @@ export function findDeclaration(block: MermaidBlock, id: string): Declaration | 
   if (node) {
     return { id, kind: 'node', line: node.line, startChar: node.startChar, endChar: node.startChar + id.length };
   }
-  const sg = block.subgraphs.find((s) => s.hasId && s.id === id);
+  // Match an id-less (`subgraph "Title"`) subgraph too — its id IS its title, and
+  // idStart/idEnd point at the title token — so the read API reports declaration.kind
+  // 'subgraph' for it (the discriminator consumers use to spot a phase container),
+  // not null. (Renaming a subgraph id is still gated separately on hasId.)
+  const sg = block.subgraphs.find((s) => s.id === id);
   if (sg) {
     return { id, kind: 'subgraph', line: sg.line, startChar: sg.idStart, endChar: sg.idEnd };
   }
@@ -158,7 +213,7 @@ export function findReferences(
   const decl = findDeclaration(block, id);
   const out: Loc[] = [];
   const re = new RegExp(`\\b${escapeRegExp(id)}\\b`, 'g');
-  for (let ln = block.contentStart; ln < block.contentEnd; ln++) {
+  for (let ln = bodyStart(block, lines); ln < block.contentEnd; ln++) {
     const text = lines[ln];
     if (text === undefined) {
       continue;
@@ -210,7 +265,7 @@ export function findReferences(
 export function findDuplicateDeclarations(block: MermaidBlock, lines: string[]): DuplicateGroup[] {
   // All node declarations, including repeats (the block collapses them to first).
   const nodeDecls: MermaidNode[] = [];
-  for (let i = block.contentStart; i < block.contentEnd; i++) {
+  for (let i = bodyStart(block, lines); i < block.contentEnd; i++) {
     const raw = lines[i];
     if (raw === undefined) {
       continue;

@@ -286,7 +286,10 @@ function showState(text, isError) {
     s.classList.remove('hidden');
   }
   const st = $('stage');
-  if (st) st.replaceChildren();
+  // On a render ERROR keep the last good diagram visible and overlay the error
+  // banner over it (see #state.err); only a non-error state message (no diagram /
+  // unsupported type) clears the stage.
+  if (st && !isError) st.replaceChildren();
   const tb = $('toolbar');
   if (tb) tb.classList.add('hidden');
 }
@@ -296,7 +299,7 @@ function clearState() {
   if (s) s.classList.add('hidden');
 }
 
-async function render(code, id, key) {
+async function render(code, id, key, errorPrimary) {
   const gen = ++renderGen;
   initMermaid(); // re-read theme vars each render so a VS Code theme switch applies
   clearState();
@@ -339,7 +342,9 @@ async function render(code, id, key) {
   } catch (err) {
     if (gen !== renderGen) return; // a newer render superseded this one — drop the stale error
     const message = err && err.message ? err.message : String(err);
-    showState(message, true);
+    // Lead with the extension's plain-English hint (if any); keep Mermaid's raw
+    // message below it for debugging.
+    showState(errorPrimary ? errorPrimary + '\n\n' + message : message, true);
     post({ type: 'rendered', ok: false, ms: Math.round(performance.now() - t0), error: message });
   }
 }
@@ -355,7 +360,7 @@ window.addEventListener('message', (e) => {
   const msg = e.data;
   if (!msg || typeof msg !== 'object') return;
   if (msg.type === 'render') {
-    render(String(msg.code), msg.id, msg.key);
+    render(String(msg.code), msg.id, msg.key, msg.errorPrimary);
   } else if (msg.type === 'focus') {
     focusId = msg.id || null;
     applyFocus();
