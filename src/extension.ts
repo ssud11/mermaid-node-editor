@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { MermaidEditorProvider, isSupportedDoc, isMmd } from './webview/panel';
 import { MermaidPreviewPanel } from './webview/previewPanel';
 import { findMermaidBlocks } from './parser';
-import { findDuplicateDeclarations } from './analysis';
+import { findDuplicateDeclarations, friendlyParseError } from './analysis';
 import { MermaidDefinitionProvider, MermaidReferenceProvider, MermaidRenameProvider } from './providers';
 
 // Providers fire for .mmd and inside ```mermaid fences in markdown (gated by
@@ -54,7 +54,10 @@ export function computeMermaidDiagnostics(doc: vscode.TextDocument): vscode.Diag
           col < lineText.length
             ? new vscode.Range(el, col, el, lineText.length)
             : new vscode.Range(el, 0, el, lineText.length);
-        const d = new vscode.Diagnostic(range, block.parseError, vscode.DiagnosticSeverity.Error);
+        // Plain-English primary + the raw parser message kept below for debugging.
+        const friendly = friendlyParseError(block.parseError);
+        const msg = friendly === block.parseError ? friendly : `${friendly}\n${block.parseError}`;
+        const d = new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error);
         d.source = 'Mermaid Node Editor';
         d.code = 'flowchart-parse-error';
         out.push(d);

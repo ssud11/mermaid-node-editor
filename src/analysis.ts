@@ -9,6 +9,25 @@
 import { MermaidBlock, MermaidNode, scanNodes } from './parser';
 import { protectedRanges } from './editor';
 
+/**
+ * Turn a raw parser error into a short, plain-English hint. Falls back to the
+ * raw message unchanged for anything unmapped — callers keep the raw text
+ * alongside (verbose in brackets / below) so the exact token is still available.
+ */
+export function friendlyParseError(raw: string | undefined): string {
+  const m = raw ?? '';
+  const reserved = m.match(/reserved Mermaid keyword "([^"]+)"/);
+  if (reserved) {
+    return `\`${reserved[1]}\` is a reserved word in Mermaid — rename it or wrap the label in quotes.`;
+  }
+  // The grammar expected a closing bracket sequence to finish a node shape —
+  // `]`, `)`, `}`, or a two-char closer like `))`, `])`, `}}`, `]]`, `)]`.
+  const closer = m.match(/Expected\s+"([\])}]{1,3})"/);
+  if (closer) return `Unclosed shape — add the closing \`${closer[1]}\`.`;
+  if (/Expected\s+.*"flowchart".*"graph"/.test(m)) return "This line isn't valid flowchart syntax.";
+  return m;
+}
+
 export interface Loc {
   line: number;
   startChar: number;

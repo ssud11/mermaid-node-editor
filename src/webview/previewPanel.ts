@@ -11,11 +11,11 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { MermaidBlock } from '../parser';
 import { isMmd, isSupportedDoc, getBlockAtLine, getBlocks, tabColumnForUri } from './panel';
-import { findTagAtPosition, findDeclaration } from '../analysis';
+import { findTagAtPosition, findDeclaration, friendlyParseError } from '../analysis';
 import { buildDiagramSource } from '../preview-source';
 
 type RenderMsg =
-  | { type: 'render'; code: string; id: string; key: string }
+  | { type: 'render'; code: string; id: string; key: string; errorPrimary?: string }
   | { type: 'state'; kind: 'empty' | 'unsupported'; text: string };
 
 const HIGHLIGHT_SETTING = 'mermaid-node-editor.preview.highlightOnSelect';
@@ -392,7 +392,13 @@ export class MermaidPreviewPanel {
   private showBlock(doc: vscode.TextDocument, block: MermaidBlock): void {
     this.sourceUri = doc.uri;
     this.sourceBlockStart = block.startLine;
-    if (block.supported) {
+    // A broken FLOWCHART is still sent to render: the webview's mermaid fails
+    // gracefully, keeping the last good diagram and overlaying an error banner
+    // (see showState). Only a genuinely unsupported diagram TYPE
+    // (sequence/state/class/er) gets the blank "unsupported" notice.
+    const dt = (block.diagramType ?? '').trim().toLowerCase();
+    const isFlowchart = dt.startsWith('flowchart') || dt.startsWith('graph');
+    if (block.supported || isFlowchart) {
       this.renderBlock(doc, block);
     } else {
       this.send({
@@ -411,7 +417,10 @@ export class MermaidPreviewPanel {
     // key identifies "the same diagram" so the webview keeps zoom/pan across a
     // live-edit re-render but fits fresh when you switch to a different block.
     const key = `${doc.uri.toString()}#${block.startLine}`;
-    this.send({ type: 'render', code, id: 'm' + ++this.renderSeq, key });
+    // For a broken flowchart, carry a plain-English primary error so the webview's
+    // banner leads with it (Mermaid's raw message stays below for debugging).
+    const errorPrimary = block.supported ? undefined : friendlyParseError(block.parseError);
+    this.send({ type: 'render', code, id: 'm' + ++this.renderSeq, key, errorPrimary });
   }
 
   private send(msg: RenderMsg): void {
