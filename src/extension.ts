@@ -35,6 +35,30 @@ export function computeMermaidDiagnostics(doc: vscode.TextDocument): vscode.Diag
   const out: vscode.Diagnostic[] = [];
   for (const block of findMermaidBlocks(text, isMmd(doc))) {
     if (!block.supported) {
+      // Surface a broken FLOWCHART's parse failure as an Error diagnostic (red
+      // squiggle + Problems panel) carrying the parser's reason — without it a
+      // syntax error is silent (the diagram just stops rendering). Unsupported
+      // diagram TYPES (sequence/state/class/er/…) are the panel's "unsupported"
+      // notice, not an error, so they are not flagged here.
+      const dt = (block.diagramType ?? '').trim().toLowerCase();
+      const isFlowchart = dt.startsWith('flowchart') || dt.startsWith('graph');
+      if (isFlowchart && block.parseError) {
+        // Point the squiggle at the actual failing line/column when the parser
+        // reports one; fall back to the diagram header otherwise.
+        const el = Math.max(0, Math.min(block.parseErrorLine ?? block.contentStart, lines.length - 1));
+        const lineText = lines[el] ?? '';
+        const col = Math.min(block.parseErrorColumn ?? 0, lineText.length);
+        // From the error column to end of line; if it lands at end-of-line (e.g. a
+        // missing closer), mark the whole line so the marker is visible.
+        const range =
+          col < lineText.length
+            ? new vscode.Range(el, col, el, lineText.length)
+            : new vscode.Range(el, 0, el, lineText.length);
+        const d = new vscode.Diagnostic(range, block.parseError, vscode.DiagnosticSeverity.Error);
+        d.source = 'Mermaid Node Editor';
+        d.code = 'flowchart-parse-error';
+        out.push(d);
+      }
       continue;
     }
     for (const dup of findDuplicateDeclarations(block, lines)) {

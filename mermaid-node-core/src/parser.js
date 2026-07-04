@@ -122,6 +122,10 @@ function parseBlockContent(content, lineOffset) {
   } catch (err) {
     if (err instanceof PeggySyntaxError || (err && err.name === "SyntaxError")) {
       const firstLine = (content.split(/\r?\n/).find((l) => l.trim() !== "") || "").trim();
+      // Peggy reports a 1-based, content-relative location. Shift the line to a
+      // 0-based document line the same way applyLineOffset does for nodes; columns
+      // are already document-relative (the grammar sees each line from column 0).
+      const loc = err.location && err.location.start;
       return {
         supported: false,
         diagramType: firstLine,
@@ -130,6 +134,8 @@ function parseBlockContent(content, lineOffset) {
         subgraphs: [],
         warnings: [],
         parseError: err.message,
+        parseErrorLine: loc ? lineOffset + (loc.line - 1) : undefined,
+        parseErrorColumn: loc ? loc.column - 1 : undefined,
       };
     }
     throw err; // a non-grammar error is a real bug — don't swallow it

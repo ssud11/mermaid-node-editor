@@ -70,6 +70,13 @@ export interface MermaidBlock {
   contentEnd: number;
   diagramType: string;
   supported: boolean;
+  /** The parser's reason when `supported` is false (a hard parse failure);
+   *  undefined when the block parses. Surfaced as an Error diagnostic. */
+  parseError?: string;
+  /** 0-based document line/column of the parse failure (for a precise squiggle);
+   *  undefined when the block parses or the location is unavailable. */
+  parseErrorLine?: number;
+  parseErrorColumn?: number;
   nodes: MermaidNode[];
   subgraphs: MermaidSubgraph[];
   edges: MermaidEdge[];
