@@ -2,6 +2,19 @@
 
 All notable changes to Mermaid Node Editor are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-07-05
+
+"Real parser, clearer errors" — a grammar-backed parser under the hood, and broken diagrams now tell you what's wrong.
+
+### Added
+
+- **Inline parse-error diagnostics** — a broken flowchart shows an Error squiggle at the point of failure, with a plain-English message instead of a raw parser dump.
+- **Graceful preview on a broken edit** — the live preview keeps your last good diagram behind an error banner instead of going blank while you fix a typo.
+
+### Changed
+
+- **New positioned parser under the hood** — the read path (find / validate / rename / navigate) is now backed by a grammar-based parser that preserves exact source positions, so rename-propagation and go-to-definition are more accurate across edge cases. Write-back is unchanged and still lossless.
+
 ## [1.3.0] - 2026-06-12
 
 "Editing-aware preview" — the preview now talks back to your source.
@@ -79,6 +92,7 @@ Initial release. Flowcharts only (`graph` / `flowchart`).
 - Node shapes `[]` `()` `([])` `[[]]` `[()]` `(())` `{}` `{{}}` `>]`, with the shape and quoting preserved on write-back.
 - An "unsupported" notice for non-flowchart diagrams.
 
+[1.5.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.5.0
 [1.3.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.3.0
 [1.2.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ssud11/mermaid-node-editor/releases/tag/v1.1.0
