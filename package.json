@@ -120,7 +120,7 @@
     "visual:preview": "node ./test/visual/preview-b3.js"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^26.1.1",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.28.0",
