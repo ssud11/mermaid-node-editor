@@ -129,6 +129,6 @@
   },
   "dependencies": {
     "@mermaid-js/layout-elk": "^0.2.1",
-    "mermaid": "^11.15.0"
+    "mermaid": "^11.16.0"
   }
 }
